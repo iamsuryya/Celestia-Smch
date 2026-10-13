@@ -1,0 +1,2182 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  ShieldCheck, 
+  Lock, 
+  Users, 
+  Eye, 
+  Edit3, 
+  CheckCircle, 
+  AlertCircle, 
+  Clock, 
+  PauseCircle, 
+  XCircle, 
+  Trash2, 
+  Download, 
+  Search, 
+  Filter, 
+  RefreshCw, 
+  ExternalLink, 
+  Building2, 
+  CreditCard, 
+  FileText, 
+  Calendar, 
+  ArrowLeft, 
+  X, 
+  Sparkles,
+  Save,
+  Check,
+  AlertTriangle,
+  UserCheck,
+  Image as ImageIcon,
+  FileImage,
+  ZoomIn,
+  RotateCcw,
+  FileQuestion,
+  Phone,
+  Mail,
+  MapPin,
+  User,
+  GraduationCap,
+  Sliders,
+  Play,
+  Square,
+  KeyRound
+} from 'lucide-react';
+import { useRegistration } from '../context/RegistrationContext';
+import { RegistrationSubmission, ParticipantMember } from '../types/registration';
+import { EVENTS_DATA } from '../data/festivalData';
+import { 
+  isEventRegistrationOpen, 
+  setEventRegistrationOpen, 
+  setAllEventsRegistrationOpen, 
+  getEventRegistrationStatusMap,
+  getSmchPasscode,
+  setSmchPasscode
+} from '../utils/registrationStatus';
+import { 
+  isSupabaseConfigured, 
+  supabase 
+} from '../lib/supabase';
+import { supabaseRegistrationService } from '../services/supabaseRegistrationService';
+
+interface Admin1RegistrationsPageProps {
+  onExit: () => void;
+  onNavigateToTabulation?: () => void;
+}
+
+export type DeskStatus = 'PENDING' | 'VERIFIED' | 'REJECTED' | 'NOT_COMPLETE';
+
+/**
+ * Maps a registration to one of the 4 explicit admin desk states:
+ * 1. PENDING: Admin didn't do anything yet (default state for submitted entries)
+ * 2. VERIFIED: Admin clicked the Verified button
+ * 3. REJECTED: Admin clicked the Reject button
+ * 4. NOT_COMPLETE: The person didn't complete registration (draft / incomplete / flagged)
+ */
+export function getDeskStatus(reg: RegistrationSubmission): DeskStatus {
+  if (reg.paymentStatus === 'Verified' || reg.registrationStatus === 'Confirmed') {
+    return 'VERIFIED';
+  }
+  if (reg.paymentStatus === 'Rejected' || reg.registrationStatus === 'Rejected') {
+    return 'REJECTED';
+  }
+  if (
+    reg.registrationStatus === 'Draft' || 
+    !reg.paymentConfirmed || 
+    reg.utrNumber === 'NOT_SUBMITTED'
+  ) {
+    return 'NOT_COMPLETE';
+  }
+  return 'PENDING';
+}
+
+export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = ({
+  onExit,
+  onNavigateToTabulation,
+}) => {
+  const { myRegistrations } = useRegistration();
+
+  // Authentication State
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return (
+      sessionStorage.getItem('celestia_admin_auth') === 'true' || 
+      sessionStorage.getItem('celestia_admin1_auth') === 'true'
+    );
+  });
+  const [authMode, setAuthMode] = useState<'supabase_auth' | 'passkey'>(
+    isSupabaseConfigured ? 'supabase_auth' : 'passkey'
+  );
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [passkeyInput, setPasskeyInput] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
+
+  // Registrations state
+  const [cloudRegistrations, setCloudRegistrations] = useState<RegistrationSubmission[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Search & Filters
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'VERIFIED' | 'REJECTED' | 'NOT_COMPLETE'>('ALL');
+  const [eventFilter, setEventFilter] = useState<string>('ALL');
+
+  // Modals state
+  const [inspectRegistration, setInspectRegistration] = useState<RegistrationSubmission | null>(null);
+  const [editingRegistration, setEditingRegistration] = useState<RegistrationSubmission | null>(null);
+  const [rejectModalRegistration, setRejectModalRegistration] = useState<RegistrationSubmission | null>(null);
+  const [rejectReasonInput, setRejectReasonInput] = useState('Payment UTR mismatch or invalid proof');
+  const [incompleteModalRegistration, setIncompleteModalRegistration] = useState<RegistrationSubmission | null>(null);
+  const [incompleteReasonInput, setIncompleteReasonInput] = useState('Missing required student credentials or incomplete fee remittance');
+  const [deleteConfirmRegistration, setDeleteConfirmRegistration] = useState<RegistrationSubmission | null>(null);
+
+  // Event Registration On/Off Controls
+  const [showRegistrationControls, setShowRegistrationControls] = useState<boolean>(false);
+  const [eventRegMap, setEventRegMap] = useState<Record<string, boolean>>(() => getEventRegistrationStatusMap());
+  const [smchCodeInput, setSmchCodeInput] = useState(getSmchPasscode());
+  const [savedPasscodeSuccess, setSavedPasscodeSuccess] = useState(false);
+
+  const handleSaveSmchPasscode = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!smchCodeInput.trim()) return;
+    setSmchPasscode(smchCodeInput.trim());
+    setSavedPasscodeSuccess(true);
+    showToast(`SMCH Passcode updated to: ${smchCodeInput.trim()}`);
+    setTimeout(() => setSavedPasscodeSuccess(false), 3000);
+  };
+
+  const handleToggleEventReg = (eventId: string, eventCode: string, currentOpen: boolean) => {
+    const nextState = !currentOpen;
+    setEventRegistrationOpen(eventId, nextState);
+    setEventRegistrationOpen(eventCode, nextState);
+    setEventRegMap(getEventRegistrationStatusMap());
+    showToast(
+      nextState 
+        ? `Registration REOPENED for ${eventCode}. Students can now register.`
+        : `Registration STOPPED for ${eventCode}. New entries are now blocked.`
+    );
+  };
+
+  const handleStopAllReg = () => {
+    setAllEventsRegistrationOpen(false);
+    setEventRegMap(getEventRegistrationStatusMap());
+    showToast('Registration STOPPED for ALL events.');
+  };
+
+  const handleReopenAllReg = () => {
+    setAllEventsRegistrationOpen(true);
+    setEventRegMap(getEventRegistrationStatusMap());
+    showToast('Registration REOPENED for ALL events.');
+  };
+
+  // Image Lightbox Viewer
+  const [activeLightbox, setActiveLightbox] = useState<{
+    url: string;
+    title: string;
+    subtitle?: string;
+    fileName?: string;
+  } | null>(null);
+
+  // Edit form state
+  const [editFormData, setEditFormData] = useState<{
+    captainName: string;
+    captainEmail: string;
+    captainMobile: string;
+    teamName: string;
+    collegeName: string;
+    collegeCity: string;
+    collegeState: string;
+    contactPerson: string;
+    contactMobile: string;
+    contactEmail: string;
+    utrNumber: string;
+    adminNotes: string;
+  }>({
+    captainName: '',
+    captainEmail: '',
+    captainMobile: '',
+    teamName: '',
+    collegeName: '',
+    collegeCity: '',
+    collegeState: '',
+    contactPerson: '',
+    contactMobile: '',
+    contactEmail: '',
+    utrNumber: '',
+    adminNotes: '',
+  });
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3800);
+  };
+
+  // Helper to resolve an image URL (Data URL, Public HTTP, or Storage path)
+  const getMediaUrl = (pathOrDataUrl?: string, bucket: 'id-cards' | 'payment-proofs' = 'payment-proofs') => {
+    return supabaseRegistrationService.resolveMediaUrl(pathOrDataUrl, bucket);
+  };
+
+  // Fetch registrations from Supabase
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const data = await supabaseRegistrationService.fetchAdminRegistrations();
+      setCloudRegistrations(data);
+    } catch {
+      // Fallback
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadData();
+    }
+  }, [isAuthenticated]);
+
+  // Merge cloud with local state
+  const allRegistrations: RegistrationSubmission[] = useMemo(() => {
+    const map = new Map<string, RegistrationSubmission>();
+    myRegistrations.forEach((r) => map.set(r.id, r));
+    cloudRegistrations.forEach((r) => map.set(r.id, r));
+    return Array.from(map.values());
+  }, [myRegistrations, cloudRegistrations]);
+
+  // Filtered registrations
+  const filteredRegistrations = useMemo(() => {
+    return allRegistrations.filter((r) => {
+      const deskStatus = getDeskStatus(r);
+
+      // Search term
+      if (searchTerm.trim()) {
+        const q = searchTerm.toLowerCase();
+        const captain = r.participants[0]?.fullName.toLowerCase() || '';
+        const college = r.college?.collegeName.toLowerCase() || '';
+        const id = r.id.toLowerCase();
+        const code = r.eventCode.toLowerCase();
+        const title = r.eventTitle?.toLowerCase() || '';
+        const utr = (r.utrNumber || '').toLowerCase();
+        const mobile = (r.participants[0]?.mobile || '').toLowerCase();
+        const team = (r.teamName || '').toLowerCase();
+        const hostReg = (r.college?.hostRegisterNumber || '').toLowerCase();
+        const hostBatch = (r.college?.hostBatch || '').toLowerCase();
+
+        if (
+          !id.includes(q) &&
+          !captain.includes(q) &&
+          !college.includes(q) &&
+          !code.includes(q) &&
+          !title.includes(q) &&
+          !utr.includes(q) &&
+          !mobile.includes(q) &&
+          !team.includes(q) &&
+          !hostReg.includes(q) &&
+          !hostBatch.includes(q)
+        ) {
+          return false;
+        }
+      }
+
+      // Status filter matching user requirement:
+      // PENDING = Admin didn't do anything
+      // VERIFIED = Admin clicked verified button
+      // REJECTED = Admin clicked reject button
+      // NOT_COMPLETE = Person didn't complete registration
+      if (statusFilter !== 'ALL' && deskStatus !== statusFilter) {
+        return false;
+      }
+
+      // Event filter
+      if (eventFilter !== 'ALL' && r.eventCode !== eventFilter) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [allRegistrations, searchTerm, statusFilter, eventFilter]);
+
+  // Statistics
+  const stats = useMemo(() => {
+    let pending = 0;
+    let verified = 0;
+    let rejected = 0;
+    let notComplete = 0;
+    let totalRevenue = 0;
+
+    allRegistrations.forEach((r) => {
+      const status = getDeskStatus(r);
+      if (status === 'VERIFIED') {
+        verified++;
+        totalRevenue += r.totalAmount || 0;
+      } else if (status === 'REJECTED') {
+        rejected++;
+      } else if (status === 'NOT_COMPLETE') {
+        notComplete++;
+      } else {
+        pending++;
+      }
+    });
+
+    return {
+      total: allRegistrations.length,
+      pending,
+      verified,
+      rejected,
+      notComplete,
+      totalRevenue,
+    };
+  }, [allRegistrations]);
+
+  // Actions
+  const handleVerify = async (regId: string) => {
+    const res = await supabaseRegistrationService.updateStatus(regId, 'verify');
+    showToast(`Registration ${regId} VERIFIED successfully`);
+    loadData();
+    setCloudRegistrations((prev) =>
+      prev.map((r) =>
+        r.id === regId
+          ? { ...r, paymentStatus: 'Verified', registrationStatus: 'Confirmed', paymentConfirmed: true }
+          : r
+      )
+    );
+    if (inspectRegistration && inspectRegistration.id === regId) {
+      setInspectRegistration((prev) => prev ? { ...prev, paymentStatus: 'Verified', registrationStatus: 'Confirmed', paymentConfirmed: true } : null);
+    }
+  };
+
+  const handleOpenRejectModal = (reg: RegistrationSubmission) => {
+    setRejectModalRegistration(reg);
+    setRejectReasonInput('Payment reference mismatch or invalid slip');
+  };
+
+  const handleConfirmReject = async () => {
+    if (!rejectModalRegistration) return;
+    const regId = rejectModalRegistration.id;
+    const res = await supabaseRegistrationService.updateStatus(regId, 'reject', rejectReasonInput);
+    showToast(`Registration ${regId} REJECTED`);
+    setRejectModalRegistration(null);
+    loadData();
+    setCloudRegistrations((prev) =>
+      prev.map((r) =>
+        r.id === regId
+          ? { ...r, paymentStatus: 'Rejected', registrationStatus: 'Rejected' }
+          : r
+      )
+    );
+    if (inspectRegistration && inspectRegistration.id === regId) {
+      setInspectRegistration((prev) => prev ? { ...prev, paymentStatus: 'Rejected', registrationStatus: 'Rejected' } : null);
+    }
+  };
+
+  const handleOpenIncompleteModal = (reg: RegistrationSubmission) => {
+    setIncompleteModalRegistration(reg);
+    setIncompleteReasonInput('Registration incomplete or missing mandatory student credentials');
+  };
+
+  const handleConfirmIncomplete = async () => {
+    if (!incompleteModalRegistration) return;
+    const regId = incompleteModalRegistration.id;
+    const res = await supabaseRegistrationService.updateStatus(regId, 'not_complete', incompleteReasonInput);
+    showToast(`Registration ${regId} marked as REGISTRATION NOT COMPLETE`);
+    setIncompleteModalRegistration(null);
+    loadData();
+    setCloudRegistrations((prev) =>
+      prev.map((r) =>
+        r.id === regId
+          ? { ...r, paymentStatus: 'Pending', registrationStatus: 'Draft' }
+          : r
+      )
+    );
+    if (inspectRegistration && inspectRegistration.id === regId) {
+      setInspectRegistration((prev) => prev ? { ...prev, paymentStatus: 'Pending', registrationStatus: 'Draft' } : null);
+    }
+  };
+
+  const handleResetToPending = async (regId: string) => {
+    const res = await supabaseRegistrationService.updateStatus(regId, 'reset_pending');
+    showToast(`Registration ${regId} reset to PENDING (Awaiting action)`);
+    loadData();
+    setCloudRegistrations((prev) =>
+      prev.map((r) =>
+        r.id === regId
+          ? { ...r, paymentStatus: 'Submitted', registrationStatus: 'Submitted' }
+          : r
+      )
+    );
+    if (inspectRegistration && inspectRegistration.id === regId) {
+      setInspectRegistration((prev) => prev ? { ...prev, paymentStatus: 'Submitted', registrationStatus: 'Submitted' } : null);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteConfirmRegistration) return;
+    const regId = deleteConfirmRegistration.id;
+    const res = await supabaseRegistrationService.deleteRegistration(regId);
+    showToast(res.message);
+    setDeleteConfirmRegistration(null);
+    if (inspectRegistration && inspectRegistration.id === regId) {
+      setInspectRegistration(null);
+    }
+    loadData();
+    setCloudRegistrations((prev) => prev.filter((r) => r.id !== regId));
+  };
+
+  const handleOpenEdit = (reg: RegistrationSubmission) => {
+    setEditingRegistration(reg);
+    setEditFormData({
+      captainName: reg.participants[0]?.fullName || '',
+      captainEmail: reg.participants[0]?.email || '',
+      captainMobile: reg.participants[0]?.mobile || '',
+      teamName: reg.teamName || '',
+      collegeName: reg.college?.collegeName || '',
+      collegeCity: reg.college?.city || '',
+      collegeState: reg.college?.state || '',
+      contactPerson: reg.college?.contactPerson || '',
+      contactMobile: reg.college?.contactMobile || '',
+      contactEmail: reg.college?.contactEmail || '',
+      utrNumber: reg.utrNumber || '',
+      adminNotes: '',
+    });
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingRegistration) return;
+
+    const res = await supabaseRegistrationService.updateRegistrationDetails(
+      editingRegistration.id,
+      editFormData
+    );
+
+    showToast(res.message);
+    setEditingRegistration(null);
+    loadData();
+
+    // Local mirror update
+    setCloudRegistrations((prev) =>
+      prev.map((r) => {
+        if (r.id !== editingRegistration.id) return r;
+        const updatedParticipants = [...r.participants];
+        if (updatedParticipants[0]) {
+          updatedParticipants[0] = {
+            ...updatedParticipants[0],
+            fullName: editFormData.captainName,
+            email: editFormData.captainEmail,
+            mobile: editFormData.captainMobile,
+          };
+        }
+        return {
+          ...r,
+          teamName: editFormData.teamName,
+          utrNumber: editFormData.utrNumber,
+          college: {
+            ...r.college,
+            collegeName: editFormData.collegeName,
+            city: editFormData.collegeCity,
+            state: editFormData.collegeState,
+            contactPerson: editFormData.contactPerson,
+            contactMobile: editFormData.contactMobile,
+            contactEmail: editFormData.contactEmail,
+          },
+          participants: updatedParticipants,
+        };
+      })
+    );
+  };
+
+  // Export full registered data as CSV
+  const handleExportCSV = () => {
+    if (allRegistrations.length === 0) {
+      showToast('No registration data available to export.');
+      return;
+    }
+
+    const headers = [
+      'Registration ID',
+      'Desk Status (Pending/Verified/Rejected/Not Complete)',
+      'Event Code',
+      'Event Title',
+      'Event Type',
+      'Event Category',
+      'Team Name',
+      'College Name',
+      'City',
+      'State',
+      'College Representative',
+      'College Mobile',
+      'College Email',
+      'College Delegation',
+      'Total Participants',
+      'Primary Contact Name',
+      'Primary Contact Mobile',
+      'Primary Contact Email',
+      'Primary Contact Gender',
+      'Primary Contact Age',
+      'Total Fee Amount (INR)',
+      'Fee Structure',
+      'UTR Reference Number',
+      'Payment Screenshot Attached',
+      'ID Cards Uploaded Count',
+      'Date Created',
+      'All Participants Roster'
+    ];
+
+    const rows = allRegistrations.map((r) => {
+      const deskStatus = getDeskStatus(r);
+      const idCardsCount = r.participants.filter(p => Boolean(p.idCardFileData || p.idCardStoragePath || p.idCardFileName)).length;
+      const hasPaymentProof = Boolean(r.paymentScreenshotData || r.paymentScreenshotPath || r.paymentScreenshotName);
+
+      const rosterSummary = r.participants
+        .map((p, i) => `#${i + 1} ${p.fullName} (${p.role || 'Member'}, ${p.gender}, Age ${p.age}, ${p.mobile}${p.idCardFileData || p.idCardStoragePath ? ', ID Card attached' : ''})`)
+        .join(' | ');
+
+      return [
+        `"${r.id}"`,
+        `"${deskStatus}"`,
+        `"${r.eventCode}"`,
+        `"${r.eventTitle}"`,
+        `"${r.eventType}"`,
+        `"${r.eventCategory}"`,
+        `"${r.teamName || ''}"`,
+        `"${r.college?.collegeName || ''}"`,
+        `"${r.college?.city || ''}"`,
+        `"${r.college?.state || ''}"`,
+        `"${r.college?.contactPerson || ''}"`,
+        `"${r.college?.contactMobile || ''}"`,
+        `"${r.college?.contactEmail || ''}"`,
+        `"${r.college?.isCollegeDelegation ? 'Yes' : 'No'}"`,
+        r.participants.length,
+        `"${r.participants[0]?.fullName || ''}"`,
+        `"${r.participants[0]?.mobile || ''}"`,
+        `"${r.participants[0]?.email || ''}"`,
+        `"${r.participants[0]?.gender || ''}"`,
+        `"${r.participants[0]?.age || ''}"`,
+        r.totalAmount,
+        `"${r.feeType}"`,
+        `"${r.utrNumber || ''}"`,
+        `"${hasPaymentProof ? 'Yes' : 'No'}"`,
+        `"${idCardsCount} of ${r.participants.length}"`,
+        `"${r.createdAt}"`,
+        `"${rosterSummary.replace(/"/g, '""')}"`
+      ].join(',');
+    });
+
+    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `Celestia26_Admin1_Full_Registrations_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast(`Exported ${allRegistrations.length} registrations to CSV`);
+  };
+
+  // Auth Handler
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+
+    if (authMode === 'supabase_auth') {
+      if (!adminEmail.trim() || !adminPassword) {
+        setAuthError('Please enter administrator email and password.');
+        return;
+      }
+      setIsSubmittingAuth(true);
+      try {
+        if (!supabase) throw new Error('Supabase client not initialized.');
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: adminEmail.trim(),
+          password: adminPassword,
+        });
+        if (error) throw error;
+        if (data.session) {
+          setIsAuthenticated(true);
+          sessionStorage.setItem('celestia_admin1_auth', 'true');
+          sessionStorage.setItem('celestia_admin_auth', 'true');
+          showToast(`Logged in as Admin: ${data.user?.email}`);
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Login failed';
+        setAuthError(`Auth error: ${msg}. You may also use Passkey Bypass.`);
+      } finally {
+        setIsSubmittingAuth(false);
+      }
+    } else {
+      if (
+        passkeyInput.trim() === 'celestia2026' ||
+        passkeyInput.trim() === 'admin' ||
+        passkeyInput.trim() === 'CELESTIA2026ADMIN' ||
+        passkeyInput.trim() === 'admin1'
+      ) {
+        setIsAuthenticated(true);
+        sessionStorage.setItem('celestia_admin1_auth', 'true');
+        sessionStorage.setItem('celestia_admin_auth', 'true');
+        showToast('Admin 1 Operations Desk Unlocked');
+      } else {
+        setAuthError('Invalid Security Passkey.');
+      }
+    }
+  };
+
+  // Render Gatekeeper if unauthenticated
+  if (!isAuthenticated) {
+    return (
+      <div className="relative z-10 pt-20 sm:pt-28 pb-12 sm:pb-24 px-3 sm:px-6 lg:px-8 max-w-md mx-auto min-h-[70vh] flex items-center justify-center">
+        <div className="w-full celestial-glass rounded-2xl p-6 sm:p-8 border border-[#D4AF37]/40 shadow-2xl relative overflow-hidden">
+          <div className="text-center mb-6">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-[#D4AF37]/20 border border-[#D4AF37]/50 flex items-center justify-center text-[#E6C57D] mb-4">
+              <ShieldCheck className="w-8 h-8" />
+            </div>
+            <span className="text-[11px] font-mono tracking-widest uppercase text-[#D4AF37] block font-semibold mb-1">
+              REGISTRATION OPERATIONS DESK (/admin1)
+            </span>
+            <h2 className="font-cinzel text-2xl font-bold text-white tracking-wide">
+              ADMIN-1 Portal
+            </h2>
+            <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">
+              Verify payments, review uploaded student ID cards & payment receipts, approve/reject/hold submissions, and export data.
+            </p>
+          </div>
+
+          {/* Mode Selector */}
+          <div className="flex rounded-xl bg-black/40 p-1 mb-4 border border-white/10 text-xs">
+            <button
+              type="button"
+              onClick={() => { setAuthMode('supabase_auth'); setAuthError(''); }}
+              className={`flex-1 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
+                authMode === 'supabase_auth' ? 'bg-[#D4AF37] text-black font-bold' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Supabase Auth
+            </button>
+            <button
+              type="button"
+              onClick={() => { setAuthMode('passkey'); setAuthError(''); }}
+              className={`flex-1 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
+                authMode === 'passkey' ? 'bg-[#D4AF37] text-black font-bold' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Passkey Bypass
+            </button>
+          </div>
+
+          <form onSubmit={handleLogin} className="space-y-4">
+            {authMode === 'supabase_auth' ? (
+              <>
+                <div>
+                  <label className="block text-xs font-mono uppercase text-slate-300 mb-1.5">
+                    Admin Email
+                  </label>
+                  <input
+                    type="email"
+                    value={adminEmail}
+                    onChange={(e) => setAdminEmail(e.target.value)}
+                    placeholder="admin@celestia.edu"
+                    className="w-full px-4 py-2.5 rounded-xl bg-[#070B1C]/90 border border-white/15 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-[#D4AF37]"
+                    autoFocus
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-mono uppercase text-slate-300 mb-1.5">
+                    Password
+                  </label>
+                  <input
+                    type="password"
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    placeholder="••••••••••••"
+                    className="w-full px-4 py-2.5 rounded-xl bg-[#070B1C]/90 border border-white/15 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-[#D4AF37]"
+                  />
+                </div>
+              </>
+            ) : (
+              <div>
+                <label className="block text-xs font-mono uppercase text-slate-300 mb-1.5">
+                  Security Passkey
+                </label>
+                <input
+                  type="password"
+                  value={passkeyInput}
+                  onChange={(e) => setPasskeyInput(e.target.value)}
+                  placeholder="Enter passkey (celestia2026)..."
+                  className="w-full px-4 py-2.5 rounded-xl bg-[#070B1C]/90 border border-white/15 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-[#D4AF37]"
+                  autoFocus
+                />
+              </div>
+            )}
+
+            {authError && (
+              <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{authError}</span>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isSubmittingAuth}
+              className="w-full py-3 px-4 rounded-xl font-bold text-xs uppercase tracking-wider text-[#050714] bg-gradient-to-r from-[#F5E7C4] via-[#D4AF37] to-[#B38F26] hover:brightness-110 transition-all cursor-pointer shadow-lg shadow-[#D4AF37]/20 disabled:opacity-50"
+            >
+              {isSubmittingAuth ? 'Authenticating...' : 'Enter Admin 1 Console'}
+            </button>
+          </form>
+
+          {/* Quick Demo Assist */}
+          <div className="mt-5 pt-4 border-t border-white/10 text-center">
+            <button
+              type="button"
+              onClick={() => {
+                setPasskeyInput('celestia2026');
+                setIsAuthenticated(true);
+                sessionStorage.setItem('celestia_admin1_auth', 'true');
+                showToast('Unlocked via demo passkey: celestia2026');
+              }}
+              className="text-xs font-mono text-[#D4AF37] hover:underline cursor-pointer bg-[#D4AF37]/10 px-3 py-1.5 rounded-lg border border-[#D4AF37]/25"
+            >
+              Quick Passkey Unlock (celestia2026)
+            </button>
+          </div>
+
+          <div className="mt-4 text-center">
+            <button
+              type="button"
+              onClick={onExit}
+              className="text-xs text-slate-400 hover:text-white transition-colors cursor-pointer"
+            >
+              ← Return to Main Fest Site
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative z-10 pt-20 sm:pt-24 pb-12 sm:pb-24 px-2.5 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+      
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl bg-[#0E163B] border border-[#D4AF37] text-white shadow-2xl flex items-center gap-3 animate-fade-in text-xs font-medium">
+          <Sparkles className="w-4 h-4 text-[#D4AF37]" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Top Header */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between pb-6 mb-6 border-b border-white/10 gap-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-[11px] font-mono tracking-widest uppercase text-[#D4AF37] font-semibold">
+              CELESTIA'26 · ADMIN 1 REGISTRATION MANAGEMENT CONSOLE
+            </span>
+          </div>
+          <h1 className="font-cinzel text-2xl sm:text-3xl font-bold text-white tracking-wide">
+            Registration & Verification Desk
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-300 mt-1 leading-relaxed">
+            Verify student ID cards, inspect payment screenshots, audit all entered columns, approve/reject/hold registrations, and download attendee datasets.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {onNavigateToTabulation && (
+            <button
+              type="button"
+              onClick={onNavigateToTabulation}
+              className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-medium text-slate-200 transition-colors flex items-center gap-2 cursor-pointer"
+            >
+              <span>Main Tabulation Console (/admin)</span>
+              <ExternalLink className="w-3.5 h-3.5 text-[#D4AF37]" />
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={onExit}
+            className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-medium text-slate-300 hover:text-white transition-colors cursor-pointer"
+          >
+            Exit Console
+          </button>
+        </div>
+      </div>
+
+      {/* Status Definitions Notice Bar */}
+      <div className="p-3.5 rounded-xl bg-black/40 border border-[#D4AF37]/30 mb-6 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2 text-slate-300">
+          <ShieldCheck className="w-4 h-4 text-[#D4AF37] shrink-0" />
+          <span className="font-medium text-white">Status Protocol:</span>
+        </div>
+        <div className="flex items-center gap-3 flex-wrap text-[11px]">
+          <span className="flex items-center gap-1.5 text-amber-300">
+            <span className="w-2 h-2 rounded-full bg-amber-400" />
+            <strong>Pending:</strong> Admin didn't take action yet
+          </span>
+          <span className="flex items-center gap-1.5 text-emerald-300">
+            <span className="w-2 h-2 rounded-full bg-emerald-400" />
+            <strong>Verified:</strong> Admin clicked Verified
+          </span>
+          <span className="flex items-center gap-1.5 text-rose-300">
+            <span className="w-2 h-2 rounded-full bg-rose-400" />
+            <strong>Rejected:</strong> Admin clicked Reject
+          </span>
+          <span className="flex items-center gap-1.5 text-slate-300">
+            <span className="w-2 h-2 rounded-full bg-slate-400" />
+            <strong>Not Complete:</strong> Person didn't finish registration
+          </span>
+        </div>
+      </div>
+
+      {/* Statistics Bar */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+        <div className="p-3.5 rounded-xl bg-[#090E26] border border-white/10">
+          <span className="text-[10px] uppercase font-mono tracking-wider text-slate-400 block">Total Records</span>
+          <span className="font-cinzel text-xl sm:text-2xl font-bold text-white mt-1 block">{stats.total}</span>
+        </div>
+
+        <div className="p-3.5 rounded-xl bg-[#090E26] border border-amber-500/25">
+          <span className="text-[10px] uppercase font-mono tracking-wider text-amber-400 block">🟡 Pending</span>
+          <span className="font-cinzel text-xl sm:text-2xl font-bold text-amber-300 mt-1 block">{stats.pending}</span>
+          <span className="text-[9px] text-slate-400 block">Awaiting review</span>
+        </div>
+
+        <div className="p-3.5 rounded-xl bg-[#090E26] border border-emerald-500/25">
+          <span className="text-[10px] uppercase font-mono tracking-wider text-emerald-400 block">🟢 Verified</span>
+          <span className="font-cinzel text-xl sm:text-2xl font-bold text-emerald-300 mt-1 block">{stats.verified}</span>
+          <span className="text-[9px] text-slate-400 block">Approved by admin</span>
+        </div>
+
+        <div className="p-3.5 rounded-xl bg-[#090E26] border border-rose-500/25">
+          <span className="text-[10px] uppercase font-mono tracking-wider text-rose-400 block">🔴 Rejected</span>
+          <span className="font-cinzel text-xl sm:text-2xl font-bold text-rose-300 mt-1 block">{stats.rejected}</span>
+          <span className="text-[9px] text-slate-400 block">Declined by admin</span>
+        </div>
+
+        <div className="p-3.5 rounded-xl bg-[#090E26] border border-slate-500/25">
+          <span className="text-[10px] uppercase font-mono tracking-wider text-slate-400 block">⚪ Not Complete</span>
+          <span className="font-cinzel text-xl sm:text-2xl font-bold text-slate-300 mt-1 block">{stats.notComplete}</span>
+          <span className="text-[9px] text-slate-400 block">Incomplete entry</span>
+        </div>
+
+        <div className="p-3.5 rounded-xl bg-[#090E26] border border-[#D4AF37]/30">
+          <span className="text-[10px] uppercase font-mono tracking-wider text-[#D4AF37] block">Verified Fees</span>
+          <span className="font-cinzel text-lg sm:text-xl font-bold text-[#F5E7C4] mt-1 block">
+            ₹{stats.totalRevenue.toLocaleString('en-IN')}
+          </span>
+          <span className="text-[9px] text-[#E6C57D]/70 block">Cleared bank remittance</span>
+        </div>
+      </div>
+
+      {/* Operations Toolbar */}
+      <div className="p-4 rounded-2xl bg-[#090E26] border border-white/10 mb-6 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+        {/* Search */}
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search by Reg ID, Student Name, College, Mobile, UTR..."
+            className="w-full pl-9 pr-4 py-2 rounded-xl bg-black/40 border border-white/15 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-[#D4AF37]"
+          />
+        </div>
+
+        {/* Filters and Actions */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Status Filter */}
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as any)}
+            className="px-3 py-2 rounded-xl bg-black/40 border border-white/15 text-xs text-slate-200 focus:outline-none focus:border-[#D4AF37]"
+          >
+            <option value="ALL">All Statuses ({allRegistrations.length})</option>
+            <option value="PENDING">🟡 Pending ({stats.pending})</option>
+            <option value="VERIFIED">🟢 Verified ({stats.verified})</option>
+            <option value="REJECTED">🔴 Rejected ({stats.rejected})</option>
+            <option value="NOT_COMPLETE">⚪ Not Complete ({stats.notComplete})</option>
+          </select>
+
+          {/* Event Filter */}
+          <select
+            value={eventFilter}
+            onChange={(e) => setEventFilter(e.target.value)}
+            className="px-3 py-2 rounded-xl bg-black/40 border border-white/15 text-xs text-slate-200 focus:outline-none focus:border-[#D4AF37]"
+          >
+            <option value="ALL">All {EVENTS_DATA.length} Events</option>
+            {EVENTS_DATA.map((ev) => (
+              <option key={ev.code} value={ev.code}>{ev.code} ({ev.title})</option>
+            ))}
+          </select>
+
+          {/* Refresh */}
+          <button
+            type="button"
+            onClick={loadData}
+            disabled={loading}
+            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer disabled:opacity-50"
+            title="Refresh submissions"
+          >
+            <RefreshCw className={`w-4 h-4 text-[#D4AF37] ${loading ? 'animate-spin' : ''}`} />
+          </button>
+
+          {/* Toggle Registration Controls Panel */}
+          <button
+            type="button"
+            onClick={() => setShowRegistrationControls(!showRegistrationControls)}
+            className={`px-3.5 py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer border ${
+              showRegistrationControls
+                ? 'bg-[#15204C] text-[#F5E7C4] border-[#D4AF37]'
+                : 'bg-white/5 hover:bg-white/10 text-slate-200 border-white/10'
+            }`}
+            title="Stop or reopen registrations per event"
+          >
+            <Sliders className="w-3.5 h-3.5 text-[#D4AF37]" />
+            <span>Registration Controls</span>
+            {EVENTS_DATA.some(ev => isEventRegistrationOpen(ev.id) === false) && (
+              <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px] font-mono font-bold">
+                {EVENTS_DATA.filter(ev => isEventRegistrationOpen(ev.id) === false).length} Stopped
+              </span>
+            )}
+          </button>
+
+          {/* Download CSV */}
+          <button
+            type="button"
+            onClick={handleExportCSV}
+            className="px-3.5 py-2 rounded-xl font-bold text-xs uppercase tracking-wider text-[#050714] bg-gradient-to-r from-[#F5E7C4] via-[#D4AF37] to-[#B38F26] hover:brightness-110 transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-[#D4AF37]/20"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Download All Data (CSV)</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Event Registration Control Panel (Visible when toggled) */}
+      {showRegistrationControls && (
+        <div className="mb-6 p-5 sm:p-6 rounded-2xl bg-[#090E26] border-2 border-[#D4AF37]/50 celestial-glass shadow-2xl space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
+            <div>
+              <div className="flex items-center gap-2">
+                <Sliders className="w-4 h-4 text-[#D4AF37]" />
+                <h3 className="font-cinzel text-base sm:text-lg font-bold text-white">
+                  Event Registration Controls (Admin 1 Desk)
+                </h3>
+              </div>
+              <p className="text-xs text-slate-300 mt-1">
+                Registrations stay open for all events until you manually stop them. Stop or reopen registration for any event at any time.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleReopenAllReg}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Play className="w-3.5 h-3.5" />
+                <span>Open All Events</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleStopAllReg}
+                className="px-3 py-1.5 rounded-lg bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/40 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Square className="w-3.5 h-3.5" />
+                <span>Stop All Events</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Grid of all events with individual status & toggle */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {EVENTS_DATA.map((ev, idx) => {
+              const isOpen = isEventRegistrationOpen(ev.id);
+              return (
+                <div
+                  key={ev.id}
+                  className={`p-3.5 rounded-xl border transition-all flex items-center justify-between gap-3 ${
+                    isOpen
+                      ? 'bg-[#0B102B]/80 border-white/10 hover:border-emerald-500/30'
+                      : 'bg-rose-950/20 border-rose-500/40'
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-bold text-[#D4AF37]">
+                        #{idx + 1} {ev.code}
+                      </span>
+                      <span
+                        className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${
+                          isOpen
+                            ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                            : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                        }`}
+                      >
+                        {isOpen ? 'OPEN' : 'STOPPED'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-white font-medium truncate mt-0.5">
+                      {ev.title}
+                    </p>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      {ev.type} · {ev.registrationFee}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleToggleEventReg(ev.id, ev.code, isOpen)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                      isOpen
+                        ? 'bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/40 hover:brightness-110'
+                        : 'bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 hover:brightness-110'
+                    }`}
+                  >
+                    {isOpen ? 'Stop Reg' : 'Reopen Reg'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* SMCH Host Passcode Management Box */}
+          <div className="mt-5 pt-4 border-t border-white/10">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="font-cinzel text-sm font-bold text-[#F5E7C4] flex items-center gap-1.5">
+                <KeyRound className="w-4 h-4 text-[#D4AF37]" />
+                Srinivasan Medical College Passcode Settings
+              </h4>
+              <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">
+                Active Code: {getSmchPasscode()}
+              </span>
+            </div>
+            <p className="text-xs text-slate-300 mb-3">
+              Students from Srinivasan Medical College entering this verification passcode during registration get free (₹0) entry fee waiver.
+            </p>
+            <form onSubmit={handleSaveSmchPasscode} className="flex flex-col sm:flex-row items-center gap-2">
+              <input
+                type="text"
+                value={smchCodeInput}
+                onChange={(e) => setSmchCodeInput(e.target.value)}
+                placeholder="Enter passcode (e.g. CELESMCH)"
+                className="w-full sm:w-64 px-3 py-2 bg-[#060A1D] border border-white/20 focus:border-[#D4AF37] rounded-lg text-xs font-mono text-white focus:outline-none"
+              />
+              <button
+                type="submit"
+                className="w-full sm:w-auto px-4 py-2 bg-[#D4AF37] hover:brightness-110 text-[#070B1B] font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer whitespace-nowrap shadow-sm"
+              >
+                Update Passcode
+              </button>
+              {savedPasscodeSuccess && (
+                <span className="text-xs text-emerald-400 font-medium flex items-center gap-1">
+                  <CheckCircle className="w-3.5 h-3.5" /> Saved!
+                </span>
+              )}
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Main Registrations Table */}
+      {filteredRegistrations.length === 0 ? (
+        <div className="py-16 text-center rounded-2xl bg-[#080D21]/60 border border-white/10">
+          <Users className="w-10 h-10 text-slate-500 mx-auto mb-3" />
+          <h4 className="text-white font-medium text-sm">No matching registrations found</h4>
+          <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1">
+            Try adjusting your search query or status filter to see other submissions.
+          </p>
+        </div>
+      ) : (
+        <div className="celestial-glass rounded-2xl overflow-hidden border border-white/10 shadow-xl">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-white/10 bg-black/50 text-[11px] font-mono uppercase tracking-wider text-[#D4AF37]">
+                  <th className="py-3.5 px-3">Reg ID & Event</th>
+                  <th className="py-3.5 px-3">Primary Captain</th>
+                  <th className="py-3.5 px-3">College & City</th>
+                  <th className="py-3.5 px-3">Roster & ID Proofs</th>
+                  <th className="py-3.5 px-3">Payment & Receipt</th>
+                  <th className="py-3.5 px-3 text-center">Desk Status</th>
+                  <th className="py-3.5 px-3 text-center">Verify / Reject Action</th>
+                  <th className="py-3.5 px-3 text-right">Dossier / Manage</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {filteredRegistrations.map((reg) => {
+                  const deskStatus = getDeskStatus(reg);
+                  const isPending = deskStatus === 'PENDING';
+                  const isVerified = deskStatus === 'VERIFIED';
+                  const isRejected = deskStatus === 'REJECTED';
+                  const isNotComplete = deskStatus === 'NOT_COMPLETE';
+
+                  const paymentMediaUrl = getMediaUrl(
+                    reg.paymentScreenshotData || reg.paymentScreenshotPath,
+                    'payment-proofs'
+                  );
+
+                  const uploadedIdCount = reg.participants.filter(
+                    (p) => Boolean(p.idCardFileData || p.idCardStoragePath || p.idCardFileName)
+                  ).length;
+
+                  return (
+                    <tr key={reg.id} className="hover:bg-white/[0.02] transition-colors">
+                      {/* 1. Reg ID & Event */}
+                      <td className="py-3 px-3 font-mono">
+                        <div className="font-bold text-white text-xs">{reg.id}</div>
+                        <div className="text-[11px] text-[#E6C57D] font-semibold">{reg.eventCode} · {reg.eventTitle}</div>
+                        <div className="text-[10px] text-slate-400">{reg.eventType} · {reg.createdAt}</div>
+                      </td>
+
+                      {/* 2. Primary Captain */}
+                      <td className="py-3 px-3">
+                        <div className="font-semibold text-white">{reg.participants[0]?.fullName || 'Participant'}</div>
+                        <div className="text-slate-300 text-[11px] flex items-center gap-1 mt-0.5">
+                          <Phone className="w-3 h-3 text-[#D4AF37]/70" />
+                          <span>{reg.participants[0]?.mobile || 'N/A'}</span>
+                        </div>
+                        <div className="text-slate-400 text-[10px] truncate max-w-[140px] mt-0.5">
+                          {reg.participants[0]?.email || 'N/A'}
+                        </div>
+                      </td>
+
+                      {/* 3. College & City */}
+                      <td className="py-3 px-3">
+                        <div className="text-slate-200 font-medium truncate max-w-[160px]" title={reg.college?.collegeName}>
+                          {reg.college?.collegeName || 'N/A'}
+                        </div>
+                        <div className="text-slate-400 text-[11px] flex items-center gap-1 mt-0.5">
+                          <MapPin className="w-3 h-3 text-slate-500" />
+                          <span>{reg.college?.city}, {reg.college?.state}</span>
+                        </div>
+                        {reg.college?.isHostCollege && (
+                          <div className="mt-1 flex flex-wrap items-center gap-1">
+                            <span className="px-1.5 py-0.2 rounded text-[9px] bg-emerald-500/25 text-emerald-300 font-mono font-bold border border-emerald-500/40">
+                              SMCH Host · Free ₹0
+                            </span>
+                            {reg.college.hostRegisterNumber && (
+                              <span className="text-[9px] font-mono text-[#F5E7C4]">
+                                Reg: {reg.college.hostRegisterNumber}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {reg.college?.isCollegeDelegation && !reg.college?.isHostCollege && (
+                          <span className="inline-block mt-1 px-1.5 py-0.2 rounded text-[9px] bg-purple-500/20 text-purple-300 font-mono">
+                            College Delegation
+                          </span>
+                        )}
+                      </td>
+
+                      {/* 4. Roster & ID Proofs */}
+                      <td className="py-3 px-3">
+                        <div className="font-mono text-white text-xs">
+                          <strong className="text-[#E6C57D]">{reg.participants.length}</strong> member{reg.participants.length !== 1 ? 's' : ''}
+                        </div>
+                        {reg.teamName && (
+                          <div className="text-[10px] text-slate-300 truncate max-w-[130px]" title={reg.teamName}>
+                            Team: {reg.teamName}
+                          </div>
+                        )}
+                        
+                        {/* ID Cards Uploaded Indicator & Quick View */}
+                        <div className="mt-1.5 flex items-center gap-1.5">
+                          {uploadedIdCount > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => setInspectRegistration(reg)}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-[#D4AF37]/15 text-[#F5E7C4] border border-[#D4AF37]/30 hover:bg-[#D4AF37]/25 transition-colors cursor-pointer"
+                              title="Inspect uploaded ID cards"
+                            >
+                              <FileImage className="w-3 h-3 text-[#D4AF37]" />
+                              <span>{uploadedIdCount}/{reg.participants.length} IDs (View)</span>
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-slate-500 italic">
+                              No IDs uploaded
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* 5. Payment & Receipt */}
+                      <td className="py-3 px-3">
+                        <div className="text-emerald-400 font-bold font-mono text-xs">
+                          {reg.college?.isHostCollege ? '₹0 (Host Pass)' : `₹${reg.totalAmount}`}
+                        </div>
+                        <div className="text-[10px] font-mono text-slate-300 truncate max-w-[120px]" title={reg.utrNumber}>
+                          {reg.college?.isHostCollege ? 'Waiver: SMCH-FREE' : `UTR: ${reg.utrNumber || 'N/A'}`}
+                        </div>
+
+                        {/* Payment Screenshot Thumbnail & Button */}
+                        <div className="mt-1.5">
+                          {paymentMediaUrl ? (
+                            <button
+                              type="button"
+                              onClick={() => setActiveLightbox({
+                                url: paymentMediaUrl,
+                                title: `Payment Receipt Slip · ${reg.id}`,
+                                subtitle: `UTR: ${reg.utrNumber} · Amount: ₹${reg.totalAmount} · ${reg.college?.collegeName}`,
+                                fileName: reg.paymentScreenshotName || 'receipt_screenshot.png'
+                              })}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25 transition-colors cursor-pointer"
+                              title="Click to view payment screenshot"
+                            >
+                              <ImageIcon className="w-3 h-3 text-emerald-400" />
+                              <span>View Slip 🔍</span>
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-amber-400/80 italic">
+                              No slip uploaded
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* 6. Desk Status Badge */}
+                      <td className="py-3 px-3 text-center">
+                        {isVerified ? (
+                          <div className="inline-flex flex-col items-center">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                              <CheckCircle className="w-3 h-3" />
+                              VERIFIED
+                            </span>
+                            <span className="text-[9px] text-emerald-400/80 mt-0.5">Admin Approved</span>
+                          </div>
+                        ) : isRejected ? (
+                          <div className="inline-flex flex-col items-center">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                              <XCircle className="w-3 h-3" />
+                              REJECTED
+                            </span>
+                            <span className="text-[9px] text-rose-400/80 mt-0.5">Admin Rejected</span>
+                          </div>
+                        ) : isNotComplete ? (
+                          <div className="inline-flex flex-col items-center">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-500/20 text-slate-300 border border-slate-500/40">
+                              <AlertCircle className="w-3 h-3" />
+                              NOT COMPLETE
+                            </span>
+                            <span className="text-[9px] text-slate-400 mt-0.5">Student Draft</span>
+                          </div>
+                        ) : (
+                          <div className="inline-flex flex-col items-center">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
+                              <Clock className="w-3 h-3" />
+                              PENDING
+                            </span>
+                            <span className="text-[9px] text-amber-400/80 mt-0.5">Awaiting Review</span>
+                          </div>
+                        )}
+                      </td>
+
+                      {/* 7. Verify / Reject Action */}
+                      <td className="py-3 px-3 text-center">
+                        <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                          {/* 1. Verify Button */}
+                          {!isVerified && (
+                            <button
+                              type="button"
+                              onClick={() => handleVerify(reg.id)}
+                              className="px-2.5 py-1 rounded-md bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold transition-colors cursor-pointer flex items-center gap-1"
+                              title="Verify payment and approve registration"
+                            >
+                              <Check className="w-3 h-3" />
+                              <span>Verify</span>
+                            </button>
+                          )}
+
+                          {/* 2. Reject Button */}
+                          {!isRejected && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenRejectModal(reg)}
+                              className="px-2.5 py-1 rounded-md bg-rose-500/15 hover:bg-rose-500/35 text-rose-300 border border-rose-500/40 text-[10px] font-semibold transition-colors cursor-pointer flex items-center gap-1"
+                              title="Reject registration"
+                            >
+                              <X className="w-3 h-3" />
+                              <span>Reject</span>
+                            </button>
+                          )}
+
+                          {/* 3. Mark Not Complete / Hold Button */}
+                          {!isNotComplete && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenIncompleteModal(reg)}
+                              className="px-2 py-1 rounded-md bg-slate-500/15 hover:bg-slate-500/30 text-slate-300 border border-slate-500/30 text-[10px] transition-colors cursor-pointer"
+                              title="Mark as Registration Not Complete"
+                            >
+                              Hold / Incomplete
+                            </button>
+                          )}
+
+                          {/* 4. Reset to Pending if already decided */}
+                          {(isVerified || isRejected || isNotComplete) && (
+                            <button
+                              type="button"
+                              onClick={() => handleResetToPending(reg.id)}
+                              className="p-1 rounded-md bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                              title="Reset back to Pending"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* 8. Dossier / Manage */}
+                      <td className="py-3 px-3 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {/* Check All Columns */}
+                          <button
+                            type="button"
+                            onClick={() => setInspectRegistration(reg)}
+                            className="p-1.5 rounded-lg bg-[#D4AF37]/15 hover:bg-[#D4AF37]/30 text-[#E6C57D] hover:text-white transition-colors cursor-pointer border border-[#D4AF37]/30"
+                            title="Inspect full details, ID cards & payment slip"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Edit Details */}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEdit(reg)}
+                            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-slate-300 hover:text-white transition-colors cursor-pointer border border-white/10"
+                            title="Edit registration details"
+                          >
+                            <Edit3 className="w-3.5 h-3.5 text-slate-200" />
+                          </button>
+
+                          {/* Delete */}
+                          <button
+                            type="button"
+                            onClick={() => setDeleteConfirmRegistration(reg)}
+                            className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/25 text-rose-400 transition-colors cursor-pointer border border-rose-500/20"
+                            title="Delete registration permanently"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* MODAL 1: CHECK ALL COLUMNS / DOSSIER (EVERY SINGLE DETAIL VISIBLE) */}
+      {/* ==================================================================== */}
+      {inspectRegistration && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
+          <div className="relative w-full max-w-4xl celestial-glass rounded-2xl p-6 sm:p-8 border border-[#D4AF37]/50 shadow-2xl space-y-6 my-8 max-h-[92vh] overflow-y-auto">
+            
+            {/* Modal Header */}
+            <div className="flex items-start justify-between pb-4 border-b border-white/10 gap-3">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[10px] font-mono text-[#D4AF37] uppercase tracking-wider font-semibold">
+                    COMPLETE REGISTRATION DOSSIER & DOCUMENT AUDIT
+                  </span>
+                  {(() => {
+                    const status = getDeskStatus(inspectRegistration);
+                    if (status === 'VERIFIED') {
+                      return <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">VERIFIED</span>;
+                    }
+                    if (status === 'REJECTED') {
+                      return <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">REJECTED</span>;
+                    }
+                    if (status === 'NOT_COMPLETE') {
+                      return <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-slate-500/20 text-slate-300 border border-slate-500/40">NOT COMPLETE</span>;
+                    }
+                    return <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">PENDING REVIEW</span>;
+                  })()}
+                </div>
+                <h3 className="font-cinzel text-xl sm:text-2xl font-bold text-white tracking-wide">
+                  {inspectRegistration.id} · {inspectRegistration.eventCode} ({inspectRegistration.eventTitle})
+                </h3>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setInspectRegistration(null)}
+                  className="p-2 rounded-xl bg-white/5 hover:bg-white/15 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                  title="Close dossier"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Action Bar inside Dossier */}
+            <div className="p-3.5 rounded-xl bg-[#070B1E] border border-white/10 flex items-center justify-between gap-3 flex-wrap">
+              <span className="text-xs text-slate-300">
+                <strong>Admin Decision:</strong> Mark status for this registrant
+              </span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => handleVerify(inspectRegistration.id)}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Verify Registration</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleOpenRejectModal(inspectRegistration)}
+                  className="px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/35 text-rose-300 border border-rose-500/40 text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Reject</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleOpenIncompleteModal(inspectRegistration)}
+                  className="px-3 py-1.5 rounded-lg bg-slate-500/20 hover:bg-slate-500/35 text-slate-300 border border-slate-500/30 text-xs transition-colors cursor-pointer"
+                >
+                  Mark Not Complete
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleResetToPending(inspectRegistration.id)}
+                  className="px-2.5 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs transition-colors cursor-pointer flex items-center gap-1"
+                  title="Reset to Pending"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Reset Pending</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Section 1: Event & Rules Metadata */}
+            <div className="p-4 rounded-xl bg-black/40 border border-white/10 space-y-3">
+              <h4 className="font-cinzel text-xs font-bold text-[#E6C57D] flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-[#D4AF37]" />
+                <span>EVENT DETAILS & PARTICIPATION TYPE</span>
+              </h4>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                <div>
+                  <span className="text-slate-400 text-[10px] block">EVENT CODE</span>
+                  <span className="font-bold text-[#D4AF37] font-mono text-sm">{inspectRegistration.eventCode}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block">EVENT NAME</span>
+                  <span className="font-semibold text-white">{inspectRegistration.eventTitle}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block">PARTICIPATION TYPE</span>
+                  <span className="text-slate-200">{inspectRegistration.eventType} ({inspectRegistration.participants.length} Participant{inspectRegistration.participants.length !== 1 ? 's' : ''})</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block">SUBMISSION DATE</span>
+                  <span className="text-slate-200 font-mono">{inspectRegistration.createdAt}</span>
+                </div>
+                {inspectRegistration.teamName && (
+                  <div className="sm:col-span-2">
+                    <span className="text-slate-400 text-[10px] block">REGISTERED TEAM NAME</span>
+                    <span className="font-medium text-white">{inspectRegistration.teamName}</span>
+                  </div>
+                )}
+                <div className="sm:col-span-2">
+                  <span className="text-slate-400 text-[10px] block">EVENT CATEGORY & VENUE</span>
+                  <span className="text-slate-300">{inspectRegistration.eventCategory} · {inspectRegistration.venue}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 2: College Affiliation */}
+            <div className="p-4 rounded-xl bg-black/40 border border-white/10 space-y-3">
+              <h4 className="font-cinzel text-xs font-bold text-[#E6C57D] flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-[#D4AF37]" />
+                <span>COLLEGE & INSTITUTION DETAILS</span>
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div className="sm:col-span-2">
+                  <span className="text-slate-400 text-[10px] block">COLLEGE / UNIVERSITY NAME</span>
+                  <span className="text-white font-medium text-sm">{inspectRegistration.college?.collegeName || 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block">LOCATION</span>
+                  <span className="text-slate-200">{inspectRegistration.college?.city}, {inspectRegistration.college?.state}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block">COLLEGE REPRESENTATIVE / HOD</span>
+                  <span className="text-slate-200 font-medium">{inspectRegistration.college?.contactPerson || 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block">REPRESENTATIVE MOBILE</span>
+                  <span className="text-slate-200 font-mono">{inspectRegistration.college?.contactMobile || 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block">REPRESENTATIVE EMAIL</span>
+                  <span className="text-slate-200">{inspectRegistration.college?.contactEmail || 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block">DELEGATION STATUS</span>
+                  <span className={`inline-block mt-0.5 px-2 py-0.5 rounded text-[10px] font-mono ${inspectRegistration.college?.isCollegeDelegation ? 'bg-purple-500/20 text-purple-300' : 'bg-slate-500/20 text-slate-300'}`}>
+                    {inspectRegistration.college?.isCollegeDelegation ? 'Official College Delegation' : 'Individual Collegiate Entry'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Host College Student Verification Card */}
+              {inspectRegistration.college?.isHostCollege && (
+                <div className="mt-3 p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs">
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-emerald-500/20">
+                    <span className="font-bold text-emerald-300 flex items-center gap-1.5">
+                      <GraduationCap className="w-4 h-4 text-[#D4AF37]" />
+                      SRINIVASAN MEDICAL COLLEGE (SMCH) HOST STUDENT WAIVER · ₹0
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-200 text-[10px] font-mono font-bold">
+                      VERIFIED HOST ENTRY
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-[11px]">
+                    <div>
+                      <span className="text-slate-400 block font-mono">STUDENT REGISTER NO:</span>
+                      <span className="font-mono font-bold text-white text-xs">
+                        {inspectRegistration.college.hostRegisterNumber || 'Provided during Registration'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block font-mono">MBBS BATCH / YEAR:</span>
+                      <span className="font-semibold text-white">
+                        {inspectRegistration.college.hostBatch || 'N/A'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block font-mono">DEPARTMENT / SECTION:</span>
+                      <span className="text-slate-200">
+                        {inspectRegistration.college.hostDepartment || 'MBBS'}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-[10px] text-amber-300 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3 shrink-0" />
+                    <span>Check physical SMCH ID card at registration helpdesk. If non-SMCH student misuses this, click Reject to disqualify.</span>
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Section 3: Financial & Payment Verification (WITH ACTUAL PAYMENT SCREENSHOT) */}
+            <div className="p-4 rounded-xl bg-black/40 border border-[#D4AF37]/35 space-y-4">
+              <h4 className="font-cinzel text-xs font-bold text-[#E6C57D] flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CreditCard className="w-4 h-4 text-[#D4AF37]" />
+                  <span>PAYMENT REMITTANCE & UPLOADED SCREENSHOT AUDIT</span>
+                </div>
+                <span className="text-[10px] font-mono text-emerald-400 font-bold">
+                  Fee: ₹{inspectRegistration.totalAmount}
+                </span>
+              </h4>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                <div>
+                  <span className="text-slate-400 text-[10px] block">TOTAL AMOUNT PAID</span>
+                  <span className="font-bold text-emerald-400 font-mono text-base">₹{inspectRegistration.totalAmount}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block">FEE STRUCTURE</span>
+                  <span className="text-slate-200 font-mono">₹{inspectRegistration.feePerUnit} ({inspectRegistration.feeType})</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block">UPI UTR / TRANSACTION ID</span>
+                  <span className="font-mono text-[#F5E7C4] font-bold text-sm bg-black/50 px-2 py-1 rounded inline-block">
+                    {inspectRegistration.utrNumber || 'None'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block">CONFIRMATION CHECK</span>
+                  <span className="text-slate-200">{inspectRegistration.paymentConfirmed ? '✅ Confirmed by student' : '⚠️ Unconfirmed'}</span>
+                </div>
+              </div>
+
+              {/* Uploaded Payment Screenshot Visual Display */}
+              <div className="pt-3 border-t border-white/10">
+                <span className="text-xs font-semibold text-slate-200 block mb-2">
+                  Uploaded Payment Screenshot / Remittance Slip:
+                </span>
+
+                {(() => {
+                  const mediaUrl = getMediaUrl(
+                    inspectRegistration.paymentScreenshotData || inspectRegistration.paymentScreenshotPath,
+                    'payment-proofs'
+                  );
+
+                  if (mediaUrl) {
+                    return (
+                      <div className="p-3 rounded-xl bg-[#070B1E] border border-emerald-500/30 flex flex-col sm:flex-row items-center gap-4">
+                        {/* Thumbnail with Click to Enlarge */}
+                        <div 
+                          onClick={() => setActiveLightbox({
+                            url: mediaUrl,
+                            title: `Payment Screenshot · ${inspectRegistration.id}`,
+                            subtitle: `UTR: ${inspectRegistration.utrNumber} · Amount: ₹${inspectRegistration.totalAmount} · ${inspectRegistration.college?.collegeName}`,
+                            fileName: inspectRegistration.paymentScreenshotName || 'receipt_slip.png'
+                          })}
+                          className="w-36 h-28 sm:w-44 sm:h-32 rounded-lg overflow-hidden border border-white/20 bg-black/60 shrink-0 relative group cursor-pointer"
+                        >
+                          <img 
+                            src={mediaUrl} 
+                            alt="Payment Slip" 
+                            className="w-full h-full object-contain group-hover:scale-105 transition-transform" 
+                          />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                            <span className="text-[10px] text-white font-bold flex items-center gap-1 bg-black/70 px-2 py-1 rounded">
+                              <ZoomIn className="w-3 h-3" /> Click to Enlarge
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* File details & actions */}
+                        <div className="flex-1 space-y-1.5 w-full">
+                          <div className="flex items-center gap-2">
+                            <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                            <span className="text-xs font-semibold text-white">Payment Receipt Attached</span>
+                          </div>
+                          <span className="text-[11px] text-slate-300 font-mono block">
+                            File: {inspectRegistration.paymentScreenshotName || 'payment_proof_receipt.png'}
+                          </span>
+                          <span className="text-[10px] text-slate-400 block">
+                            Click image or the button below to view full-resolution remittance proof.
+                          </span>
+
+                          <div className="pt-1 flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setActiveLightbox({
+                                url: mediaUrl,
+                                title: `Payment Screenshot · ${inspectRegistration.id}`,
+                                subtitle: `UTR: ${inspectRegistration.utrNumber} · Amount: ₹${inspectRegistration.totalAmount} · ${inspectRegistration.college?.collegeName}`,
+                                fileName: inspectRegistration.paymentScreenshotName || 'receipt_slip.png'
+                              })}
+                              className="px-3 py-1.5 rounded-lg bg-[#D4AF37] hover:brightness-110 text-black text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                            >
+                              <ZoomIn className="w-3.5 h-3.5" />
+                              <span>View Full Size Screenshot</span>
+                            </button>
+                            <a
+                              href={mediaUrl}
+                              download={inspectRegistration.paymentScreenshotName || `${inspectRegistration.id}_receipt.png`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>Download</span>
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>
+                        No payment screenshot was uploaded by the student during registration. (UTR Number provided: <strong>{inspectRegistration.utrNumber || 'N/A'}</strong>)
+                      </span>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* Section 4: All Registered Participants & Their Uploaded ID Cards */}
+            <div className="p-4 rounded-xl bg-black/40 border border-white/10 space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="font-cinzel text-xs font-bold text-[#E6C57D] flex items-center gap-2">
+                  <Users className="w-4 h-4 text-[#D4AF37]" />
+                  <span>ALL REGISTERED PARTICIPANTS & STUDENT ID PROOFS ({inspectRegistration.participants.length} MEMBERS)</span>
+                </h4>
+                <span className="text-[10px] font-mono text-slate-400">
+                  Audit each member's credentials and college ID
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                {inspectRegistration.participants.map((p, idx) => {
+                  const idMediaUrl = getMediaUrl(
+                    p.idCardFileData || p.idCardStoragePath,
+                    'id-cards'
+                  );
+
+                  return (
+                    <div 
+                      key={idx} 
+                      className="p-3.5 rounded-xl bg-[#070B1E] border border-white/10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
+                    >
+                      {/* Left: Member info */}
+                      <div className="flex-1 space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="w-6 h-6 rounded-full bg-[#D4AF37]/20 border border-[#D4AF37]/50 text-[#F5E7C4] text-xs font-bold flex items-center justify-center shrink-0">
+                            {idx + 1}
+                          </span>
+                          <span className="font-bold text-white text-sm">{p.fullName}</span>
+                          <span className="text-[11px] font-mono text-[#D4AF37] px-2 py-0.5 rounded bg-black/50 border border-white/10">
+                            {p.role || (idx === 0 ? 'Team Captain / Primary Contact' : 'Team Member')}
+                          </span>
+                        </div>
+
+                        <div className="text-xs text-slate-300 grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
+                          <div>
+                            <span className="text-slate-500 text-[10px] block">GENDER & AGE</span>
+                            <span>{p.gender}, Age {p.age}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 text-[10px] block">MOBILE</span>
+                            <span className="font-mono text-white">{p.mobile || 'N/A'}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 text-[10px] block">EMAIL</span>
+                            <span className="text-slate-300">{p.email || 'N/A'}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right: Uploaded ID Card Box */}
+                      <div className="w-full md:w-auto shrink-0 pt-2 md:pt-0 border-t md:border-t-0 md:border-l border-white/10 md:pl-4">
+                        {idMediaUrl ? (
+                          <div className="flex items-center gap-3">
+                            <div 
+                              onClick={() => setActiveLightbox({
+                                url: idMediaUrl,
+                                title: `Student ID Card · ${p.fullName}`,
+                                subtitle: `${p.role || 'Participant'} · ${inspectRegistration.college?.collegeName} · ${inspectRegistration.id}`,
+                                fileName: p.idCardFileName || `id_card_${idx + 1}.jpg`
+                              })}
+                              className="w-20 h-16 rounded-lg overflow-hidden border border-[#D4AF37]/40 bg-black/80 relative group cursor-pointer shrink-0"
+                            >
+                              <img 
+                                src={idMediaUrl} 
+                                alt={`ID card of ${p.fullName}`} 
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform" 
+                              />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                <ZoomIn className="w-3.5 h-3.5 text-white" />
+                              </div>
+                            </div>
+
+                            <div className="space-y-1">
+                              <span className="text-[11px] font-bold text-white block">ID Card Proof</span>
+                              <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-mono">
+                                <Check className="w-3 h-3" /> Attached
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setActiveLightbox({
+                                  url: idMediaUrl,
+                                  title: `Student ID Card · ${p.fullName}`,
+                                  subtitle: `${p.role || 'Participant'} · ${inspectRegistration.college?.collegeName} · ${inspectRegistration.id}`,
+                                  fileName: p.idCardFileName || `id_card_${idx + 1}.jpg`
+                                })}
+                                className="text-[10px] text-[#D4AF37] hover:underline font-semibold cursor-pointer block"
+                              >
+                                View ID Full Size 🔍
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-2 rounded-lg bg-white/5 border border-white/10 text-slate-400 text-xs flex items-center gap-2">
+                            <FileQuestion className="w-4 h-4 text-slate-500 shrink-0" />
+                            <span className="text-[11px]">No ID card uploaded</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Modal Footer Controls */}
+            <div className="flex items-center justify-between pt-4 border-t border-white/10">
+              <span className="text-xs text-slate-400 font-mono">
+                Registrant ID: {inspectRegistration.id}
+              </span>
+              <button
+                type="button"
+                onClick={() => setInspectRegistration(null)}
+                className="px-5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-colors cursor-pointer"
+              >
+                Close Dossier
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* LIGHTBOX MODAL: FULL RESOLUTION PREVIEW FOR ID CARDS & RECEIPTS */}
+      {/* ==================================================================== */}
+      {activeLightbox && (
+        <div 
+          onClick={() => setActiveLightbox(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/95 backdrop-blur-md animate-fade-in"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="relative max-w-4xl max-h-[90vh] flex flex-col celestial-glass rounded-2xl overflow-hidden border border-[#D4AF37]/50 shadow-2xl"
+          >
+            {/* Header */}
+            <div className="p-4 bg-black/70 border-b border-white/10 flex items-center justify-between gap-3">
+              <div>
+                <h4 className="font-cinzel text-base font-bold text-white">
+                  {activeLightbox.title}
+                </h4>
+                {activeLightbox.subtitle && (
+                  <span className="text-xs text-slate-300 block mt-0.5">
+                    {activeLightbox.subtitle}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={activeLightbox.url}
+                  download={activeLightbox.fileName || 'celestia_document.png'}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setActiveLightbox(null)}
+                  className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Image Preview Box */}
+            <div className="p-4 flex items-center justify-center bg-black/90 overflow-auto max-h-[75vh]">
+              <img 
+                src={activeLightbox.url} 
+                alt={activeLightbox.title} 
+                className="max-h-[70vh] max-w-full object-contain rounded-lg shadow-lg border border-white/10" 
+              />
+            </div>
+
+            {/* Footer with filename */}
+            <div className="p-3 bg-black/70 border-t border-white/10 text-center text-xs text-slate-400 font-mono">
+              {activeLightbox.fileName || 'Uploaded Verification Proof'}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* MODAL 2: REJECT REGISTRATION WITH REASON */}
+      {/* ==================================================================== */}
+      {rejectModalRegistration && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-sm">
+          <div className="relative w-full max-w-md celestial-glass rounded-2xl p-6 border border-rose-500/40 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0">
+                <XCircle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-cinzel text-base font-bold text-white">Reject Registration</h3>
+                <span className="text-xs text-slate-400 font-mono">{rejectModalRegistration.id}</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Are you sure you want to <strong>REJECT</strong> this registration for <strong>{rejectModalRegistration.participants[0]?.fullName}</strong> ({rejectModalRegistration.eventCode})? Specify the reason:
+            </p>
+
+            <textarea
+              rows={3}
+              value={rejectReasonInput}
+              onChange={(e) => setRejectReasonInput(e.target.value)}
+              className="w-full p-3 rounded-xl bg-black/40 border border-white/15 text-xs text-white focus:outline-none focus:border-rose-400"
+              placeholder="e.g. UTR mismatch with bank statement"
+            />
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setRejectModalRegistration(null)}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs text-slate-300 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReject}
+                className="px-4 py-2 rounded-xl font-bold text-xs uppercase text-white bg-rose-600 hover:bg-rose-500 transition-colors cursor-pointer"
+              >
+                Confirm Rejection
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* MODAL 3: MARK NOT COMPLETE / HOLD WITH REASON */}
+      {/* ==================================================================== */}
+      {incompleteModalRegistration && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-sm">
+          <div className="relative w-full max-w-md celestial-glass rounded-2xl p-6 border border-slate-500/40 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-slate-500/20 text-slate-300 flex items-center justify-center shrink-0">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-cinzel text-base font-bold text-white">Mark as Registration Not Complete</h3>
+                <span className="text-xs text-slate-400 font-mono">{incompleteModalRegistration.id}</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Flagging this registration as <strong>Not Complete</strong> indicates the applicant has not finished their registration or has missing documentation.
+            </p>
+
+            <textarea
+              rows={3}
+              value={incompleteReasonInput}
+              onChange={(e) => setIncompleteReasonInput(e.target.value)}
+              className="w-full p-3 rounded-xl bg-black/40 border border-white/15 text-xs text-white focus:outline-none focus:border-slate-400"
+              placeholder="e.g. Missing student ID card or pending fee proof"
+            />
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIncompleteModalRegistration(null)}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs text-slate-300 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmIncomplete}
+                className="px-4 py-2 rounded-xl font-bold text-xs uppercase text-white bg-slate-600 hover:bg-slate-500 transition-colors cursor-pointer"
+              >
+                Mark Incomplete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* MODAL 4: EDIT REGISTRATION DETAILS */}
+      {/* ==================================================================== */}
+      {editingRegistration && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-sm overflow-y-auto">
+          <div className="relative w-full max-w-2xl celestial-glass rounded-2xl p-6 border border-[#D4AF37]/40 shadow-2xl space-y-4 my-8">
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <h3 className="font-cinzel text-base font-bold text-white flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-[#D4AF37]" />
+                <span>Edit Registration · {editingRegistration.id}</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditingRegistration(null)}
+                className="p-1 rounded-lg bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-400 block mb-1">Primary Captain / Delegate Name</label>
+                  <input
+                    type="text"
+                    value={editFormData.captainName}
+                    onChange={(e) => setEditFormData({ ...editFormData, captainName: e.target.value })}
+                    className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/15 text-white"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Captain Mobile</label>
+                  <input
+                    type="text"
+                    value={editFormData.captainMobile}
+                    onChange={(e) => setEditFormData({ ...editFormData, captainMobile: e.target.value })}
+                    className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/15 text-white font-mono"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Captain Email</label>
+                  <input
+                    type="email"
+                    value={editFormData.captainEmail}
+                    onChange={(e) => setEditFormData({ ...editFormData, captainEmail: e.target.value })}
+                    className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/15 text-white"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Team Name (if applicable)</label>
+                  <input
+                    type="text"
+                    value={editFormData.teamName}
+                    onChange={(e) => setEditFormData({ ...editFormData, teamName: e.target.value })}
+                    className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/15 text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-white/10">
+                <span className="font-semibold text-[#D4AF37] block mb-2">College Affiliation</span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="sm:col-span-3">
+                    <label className="text-slate-400 block mb-1">College Name</label>
+                    <input
+                      type="text"
+                      value={editFormData.collegeName}
+                      onChange={(e) => setEditFormData({ ...editFormData, collegeName: e.target.value })}
+                      className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/15 text-white"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">City</label>
+                    <input
+                      type="text"
+                      value={editFormData.collegeCity}
+                      onChange={(e) => setEditFormData({ ...editFormData, collegeCity: e.target.value })}
+                      className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/15 text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">State</label>
+                    <input
+                      type="text"
+                      value={editFormData.collegeState}
+                      onChange={(e) => setEditFormData({ ...editFormData, collegeState: e.target.value })}
+                      className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/15 text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Contact Officer</label>
+                    <input
+                      type="text"
+                      value={editFormData.contactPerson}
+                      onChange={(e) => setEditFormData({ ...editFormData, contactPerson: e.target.value })}
+                      className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/15 text-white"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-white/10 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-400 block mb-1">UTR / Transaction Reference</label>
+                  <input
+                    type="text"
+                    value={editFormData.utrNumber}
+                    onChange={(e) => setEditFormData({ ...editFormData, utrNumber: e.target.value })}
+                    className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/15 text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Admin Audit Notes</label>
+                  <input
+                    type="text"
+                    value={editFormData.adminNotes}
+                    onChange={(e) => setEditFormData({ ...editFormData, adminNotes: e.target.value })}
+                    placeholder="e.g. Verified by phone call with HOD"
+                    className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/15 text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setEditingRegistration(null)}
+                  className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-slate-300 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl font-bold text-xs uppercase text-black bg-[#D4AF37] hover:brightness-110 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Save Changes</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* MODAL 5: DELETE RECORD CONFIRMATION */}
+      {/* ==================================================================== */}
+      {deleteConfirmRegistration && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-sm">
+          <div className="relative w-full max-w-md celestial-glass rounded-2xl p-6 border border-rose-500/40 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-cinzel text-base font-bold text-white">Confirm Record Deletion</h3>
+                <span className="text-xs text-slate-400 font-mono">{deleteConfirmRegistration.id}</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Are you sure you want to delete this registration for <strong>{deleteConfirmRegistration.participants[0]?.fullName}</strong> ({deleteConfirmRegistration.eventCode})? This will permanently remove the registration record, participant list, and payment submission from the database.
+              <span className="text-amber-300 font-medium block mt-2">
+                * Note: Deleting this entry will NOT affect the numbering or sequence of any other registrations or events.
+              </span>
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmRegistration(null)}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs text-slate-300 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                className="px-4 py-2 rounded-xl font-bold text-xs uppercase text-white bg-rose-600 hover:bg-rose-500 transition-colors cursor-pointer"
+              >
+                Delete Permanently
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin 1 Desk Footer */}
+      <footer className="mt-12 pt-6 pb-8 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
+        <div>
+          Celestia'26 · Registration Operations Desk · Srinivasan Medical College & Hospital
+        </div>
+        <div className="flex items-center gap-1.5 text-slate-300">
+          <span className="text-slate-400">Website created by</span>
+          <span className="font-semibold text-[#F5E7C4] font-cinzel">Surya Narayan P</span>
+        </div>
+      </footer>
+    </div>
+  );
+};

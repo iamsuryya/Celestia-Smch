@@ -1,0 +1,6 @@
+{
+  "name": "Celestia'26 - Intercollegiate Cultural Fest",
+  "description": "Official portal for Celestia'26, the annual intercollegiate cultural festival of Srinivasan Medical College and Hospital, Trichy. November 3, 4 & 5, 2026.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
