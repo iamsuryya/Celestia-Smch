@@ -46,23 +46,21 @@ export const EventsPage: React.FC<EventsPageProps> = ({
   }, [selectedCategory, selectedType, searchQuery]);
 
   return (
-    <div className="relative z-10 pt-20 sm:pt-28 pb-12 sm:pb-20 px-3 sm:px-6 lg:px-8 max-w-7xl mx-auto">
-      {/* Page Header */}
+    <div className="relative z-10 pt-20 sm:pt-28 pb-12 sm:pb-20 px-3.5 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+      {/* Page Header - Matching Screen 2 of Reference Image */}
       <div className="text-center max-w-3xl mx-auto mb-6 sm:mb-10">
-        <div className="inline-flex items-center gap-2 text-xs font-semibold tracking-widest uppercase text-[#D4AF37] mb-2">
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>FESTIVAL DIRECTORY</span>
-        </div>
-        <h1 className="font-cinzel text-2xl sm:text-5xl font-bold text-white mb-2 sm:mb-3">
-          Events & Competitions
+        <h1 className="font-cinzel text-3xl sm:text-5xl font-extrabold text-[#F5E7C4] tracking-wide mb-1 sm:mb-2">
+          OUR EVENTS
         </h1>
-        <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-          Official competition roster for {FESTIVAL_METADATA.edition} at {FESTIVAL_METADATA.collegeName}, Trichy. Registration deadline: <strong className="text-[#F5E7C4]">{FESTIVAL_METADATA.registrationDeadlineFormatted}</strong>.
-        </p>
+        <div className="flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold tracking-widest uppercase text-[#D4AF37]">
+          <span>12 UNIQUE EVENTS</span>
+          <span>✦</span>
+          <span>MULTIPLE CATEGORIES</span>
+        </div>
       </div>
 
       {/* Filter and Search Controls */}
-      <div className="celestial-glass rounded-xl p-3.5 sm:p-6 mb-6 sm:mb-8 border border-[#D4AF37]/25 space-y-3.5 sm:space-y-4">
+      <div className="celestial-glass rounded-2xl p-3.5 sm:p-6 mb-6 sm:mb-8 border border-[#D4AF37]/25 space-y-3.5 sm:space-y-4">
         {/* Search input */}
         <div className="relative">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5 pointer-events-none" />
@@ -70,11 +68,12 @@ export const EventsPage: React.FC<EventsPageProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search events by name, code (e.g. SERAPHIA, SYMPHORA, NRITYARA), or category..."
-            className="w-full pl-10 pr-10 py-2.5 bg-[#080D24] border border-white/10 rounded-lg text-sm text-white placeholder-slate-400 focus:outline-none focus:border-[#D4AF37] transition-colors"
+            placeholder="Search events by name, code (SERAPHIA, SYMPHORA...), or category..."
+            className="w-full pl-10 pr-10 py-2.5 bg-[#080D24] border border-white/15 rounded-xl text-xs sm:text-sm text-white placeholder-slate-400 focus:outline-none focus:border-[#D4AF37] transition-colors"
           />
           {searchQuery && (
             <button
+              type="button"
               onClick={() => setSearchQuery('')}
               className="absolute right-3.5 top-3.5 text-slate-400 hover:text-white"
             >
@@ -83,17 +82,16 @@ export const EventsPage: React.FC<EventsPageProps> = ({
           )}
         </div>
 
-        {/* Filter Tabs */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pt-2 border-t border-white/5">
-          {/* Category Tabs: All, Music, Dance, Fashion, Entertainment, Special Events */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-            <span className="text-xs text-slate-400 font-medium mr-1 shrink-0">Category:</span>
+        {/* Filter Category Pills Row (Matching Screen 2) */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-2 border-t border-white/10">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
             <button
+              type="button"
               onClick={() => onCategoryChange('all')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors cursor-pointer ${
+              className={`px-4 py-1.5 text-xs font-semibold rounded-full whitespace-nowrap transition-all cursor-pointer ${
                 selectedCategory === 'all'
-                  ? 'bg-gradient-to-r from-[#F5E7C4] to-[#D4AF37] text-[#070B1B] font-bold shadow-sm'
-                  : 'bg-[#090E25] text-slate-300 hover:text-white border border-white/5 hover:border-white/20'
+                  ? 'bg-[#E8DFFA] text-[#060B1E] font-bold shadow-md'
+                  : 'bg-white/10 text-slate-200 hover:bg-white/15 border border-white/10'
               }`}
             >
               All
@@ -102,30 +100,32 @@ export const EventsPage: React.FC<EventsPageProps> = ({
               const isSelected = selectedCategory === cat.id;
               return (
                 <button
+                  type="button"
                   key={cat.id}
                   onClick={() => onCategoryChange(cat.id)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors cursor-pointer ${
+                  className={`px-4 py-1.5 text-xs font-semibold rounded-full whitespace-nowrap transition-all cursor-pointer ${
                     isSelected
-                      ? 'bg-gradient-to-r from-[#F5E7C4] to-[#D4AF37] text-[#070B1B] font-bold shadow-sm'
-                      : 'bg-[#090E25] text-slate-300 hover:text-white border border-white/5 hover:border-white/20'
+                      ? 'bg-[#E8DFFA] text-[#060B1E] font-bold shadow-md'
+                      : 'bg-white/10 text-slate-200 hover:bg-white/15 border border-white/10'
                   }`}
                 >
-                  {cat.title}
+                  {cat.title} ✦
                 </button>
               );
             })}
           </div>
 
-          {/* Format Tabs: Solo, Duo, Team */}
-          <div className="flex items-center gap-1.5 shrink-0">
+          {/* Type Selector Pills */}
+          <div className="flex items-center gap-1.5 shrink-0 pt-1 md:pt-0">
             <span className="text-xs text-slate-400 font-medium mr-1">Type:</span>
             {(['all', 'Solo', 'Duo', 'Team'] as const).map((fmt) => (
               <button
+                type="button"
                 key={fmt}
                 onClick={() => setSelectedType(fmt)}
-                className={`px-2.5 py-1 text-xs rounded transition-colors cursor-pointer ${
+                className={`px-3 py-1 text-xs rounded-full transition-all cursor-pointer ${
                   selectedType === fmt
-                    ? 'bg-[#15204C] text-[#F5E7C4] font-semibold border border-[#D4AF37]/50'
+                    ? 'bg-[#182352] text-[#F5E7C4] font-semibold border border-[#D4AF37]/50'
                     : 'text-slate-400 hover:text-white bg-transparent hover:bg-white/5'
                 }`}
               >
@@ -136,35 +136,29 @@ export const EventsPage: React.FC<EventsPageProps> = ({
         </div>
       </div>
 
-      {/* Results Count & Reset Filter Indicator */}
-      <div className="flex items-center justify-between text-xs text-slate-400 mb-6 px-1">
+      {/* Results Count */}
+      <div className="flex items-center justify-between text-xs text-slate-300 mb-4 px-1 font-medium">
         <div>
-          Showing <span className="font-semibold text-white">{filteredEvents.length}</span> event{filteredEvents.length !== 1 ? 's' : ''}
-          {selectedCategory !== 'all' && (
-            <span> in <span className="text-[#E6C57D] capitalize">{selectedCategory}</span></span>
-          )}
-          {selectedType !== 'all' && (
-            <span> ({selectedType} only)</span>
-          )}
+          Showing <span className="font-bold text-[#F5E7C4]">{filteredEvents.length}</span> event{filteredEvents.length !== 1 ? 's' : ''}
         </div>
-
         {(selectedCategory !== 'all' || selectedType !== 'all' || searchQuery) && (
           <button
+            type="button"
             onClick={() => {
               onCategoryChange('all');
               setSelectedType('all');
               setSearchQuery('');
             }}
-            className="text-[11px] text-[#D4AF37] hover:underline cursor-pointer"
+            className="text-xs text-[#D4AF37] hover:underline"
           >
             Reset Filters
           </button>
         )}
       </div>
 
-      {/* Events Grid */}
+      {/* Event Grid - Mobile uses horizontal cards, desktop uses 3-column cards */}
       {filteredEvents.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-6">
           {filteredEvents.map((event) => (
             <EventCard
               key={event.id}
@@ -175,23 +169,18 @@ export const EventsPage: React.FC<EventsPageProps> = ({
           ))}
         </div>
       ) : (
-        <div className="celestial-glass rounded-2xl p-12 text-center max-w-md mx-auto border border-white/10">
-          <Sparkles className="w-8 h-8 text-[#D4AF37] mx-auto mb-3 opacity-60" />
-          <h3 className="font-cinzel text-lg font-bold text-white mb-1">
-            No Competitions Found
-          </h3>
-          <p className="text-xs text-slate-400 mb-4">
-            Try adjusting your search keywords or switching category filters.
-          </p>
+        <div className="celestial-glass rounded-2xl p-10 text-center border border-white/10 space-y-3">
+          <p className="text-slate-300 text-sm">No events found matching your filter criteria.</p>
           <button
+            type="button"
             onClick={() => {
               onCategoryChange('all');
               setSelectedType('all');
               setSearchQuery('');
             }}
-            className="py-2 px-4 text-xs font-semibold text-[#070B1B] bg-gradient-to-r from-[#F5E7C4] to-[#D4AF37] rounded-md transition-all cursor-pointer"
+            className="px-4 py-2 text-xs font-bold text-[#060B1E] bg-[#D4AF37] rounded-full"
           >
-            Clear All Filters
+            Clear Filters
           </button>
         </div>
       )}

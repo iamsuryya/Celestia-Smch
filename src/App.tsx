@@ -21,7 +21,7 @@ import { EventItem, CategoryInfo } from './data/festivalData';
 
 function AppContent() {
   const [currentPage, setCurrentPage] = useState<NavigationPage>(() => {
-    // Support direct navigation to /admin, /admin1 or hash variations
+    // Support direct navigation for admin portals (/admin, /admin1)
     const path = window.location.pathname.toLowerCase();
     const hash = window.location.hash.toLowerCase();
     if (path === '/admin1' || hash === '#/admin1' || hash === '#admin1') {
@@ -30,11 +30,7 @@ function AppContent() {
     if (path === '/admin' || hash === '#/admin' || hash === '#admin') {
       return 'admin';
     }
-    if (path === '/schedule' || hash === '#/schedule' || hash === '#schedule') return 'schedule';
-    if (path === '/accommodation' || hash === '#/accommodation' || hash === '#accommodation' || path === '/accomodation' || hash === '#/accomodation' || hash === '#accomodation') return 'accommodation';
-    if (path === '/results' || hash === '#/results' || hash === '#results') return 'results';
-    if (path === '/guests' || hash === '#/guests' || hash === '#guests') return 'guests';
-    if (path === '/events' || hash === '#/events' || hash === '#events') return 'events';
+    // Always default to homepage whenever someone opens or refreshes the website
     return 'home';
   });
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<CategoryInfo['id'] | 'all'>('all');
@@ -43,7 +39,7 @@ function AppContent() {
 
   const { currentUser, startNewRegistration, goToStep, logoutUser } = useRegistration();
 
-  // Listen to popstate / hashchange to allow direct route /admin and /admin1 typing
+  // Handle URL hash / path popstate events
   React.useEffect(() => {
     const handleUrlChange = () => {
       const path = window.location.pathname.toLowerCase();
@@ -56,6 +52,16 @@ function AppContent() {
         setIsRegisteringView(false);
       }
     };
+    
+    // Ensure on initial load non-admin paths are clean and on home page
+    const currentPath = window.location.pathname.toLowerCase();
+    const currentHash = window.location.hash.toLowerCase();
+    if (!currentPath.includes('/admin') && !currentHash.includes('admin')) {
+      if (window.location.hash && window.location.hash !== '#/' && window.location.hash !== '#') {
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+    }
+
     window.addEventListener('popstate', handleUrlChange);
     window.addEventListener('hashchange', handleUrlChange);
     return () => {
@@ -102,7 +108,7 @@ function AppContent() {
   };
 
   return (
-    <div className="min-h-screen bg-[#050714] text-[#E5E9F0] relative selection:bg-[#D4AF37]/30 selection:text-[#FFF7D6]">
+    <div className="min-h-screen bg-[#080C1F] text-[#F8F0E3] relative selection:bg-[#D4AF37]/30 selection:text-[#FFF7D6]">
       {/* Dynamic layered cosmic background */}
       <CosmicBackground />
 
