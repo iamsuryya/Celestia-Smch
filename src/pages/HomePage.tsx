@@ -164,7 +164,7 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
 
         {/* Prominent "View All Events" CTA Banner */}
-        <div className="celestial-glass rounded-xl p-5 border border-[#D4AF37]/30 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
+        <div className="celestial-glass rounded-xl p-5 border border-[#D4AF37]/30 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left bg-[#0A0F2C]">
           <div>
             <h3 className="font-cinzel text-base sm:text-lg font-bold text-white">
               Looking for Symphora, Nrityara, Step Sync, and more?
@@ -225,7 +225,7 @@ export const HomePage: React.FC<HomePageProps> = ({
 
       {/* 7. HOMEPAGE CONTACT & HELPLINE BAR (Touch-to-call & mail optimized for mobile) */}
       <section className="py-4 sm:py-6 px-4 sm:px-6 max-w-4xl mx-auto">
-        <div className="celestial-glass rounded-2xl p-5 sm:p-6 border border-[#D4AF37]/30 text-center sm:text-left flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
+        <div className="celestial-glass rounded-2xl p-5 sm:p-6 border border-[#D4AF37]/30 bg-[#080D24]/90 text-center sm:text-left flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
           <div className="space-y-1">
             <span className="text-[10px] font-mono text-[#D4AF37] uppercase tracking-widest block font-semibold">
               OFFICIAL FESTIVAL HELPDESK
