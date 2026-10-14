@@ -1,5 +1,5 @@
-import React from 'react';
-import { User, Sparkles } from 'lucide-react';
+import React, { useRef } from 'react';
+import { User, Camera, Upload, Trash2 } from 'lucide-react';
 import { useInlineEditor } from '../context/EditorContext';
 
 interface GuestPhotoUploaderProps {
@@ -10,11 +10,6 @@ interface GuestPhotoUploaderProps {
   role?: string;
 }
 
-/**
- * Pristine Guest Portrait Display Component.
- * In production/hosting mode, all editing triggers and upload buttons
- * are completely removed so guests are presented cleanly and professionally.
- */
 export const GuestPhotoUploader: React.FC<GuestPhotoUploaderProps> = ({
   guestId,
   guestName,
@@ -22,27 +17,55 @@ export const GuestPhotoUploader: React.FC<GuestPhotoUploaderProps> = ({
   variant = 'compact',
   role,
 }) => {
-  const { getGuestPhoto } = useInlineEditor();
+  const { getGuestPhoto, setGuestPhoto, removeGuestPhoto } = useInlineEditor();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const currentPhoto = getGuestPhoto(guestId, defaultPhoto);
   const isLarge = variant === 'large';
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Please select a valid image file (PNG, JPG, WEBP).');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      if (dataUrl) {
+        setGuestPhoto(guestId, dataUrl);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   return (
-    <div className="relative w-full h-full flex flex-col items-center justify-center overflow-hidden rounded-lg bg-[#070B1E]">
-      {/* Pristine Guest Photo Display */}
+    <div className="relative w-full h-full flex flex-col items-center justify-center overflow-hidden rounded-lg bg-[#070B1E] group">
+      {/* Hidden File Input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleFileChange}
+        className="hidden"
+      />
+
+      {/* Guest Photo Display */}
       {currentPhoto ? (
         <img
           src={currentPhoto}
           alt={guestName}
-          className="w-full h-full object-cover object-top select-none pointer-events-none"
+          className="w-full h-full object-cover object-top select-none"
           loading="lazy"
           onError={(e) => {
-            // Graceful fallback to styled silhouette if image fails to load
             (e.target as HTMLElement).style.display = 'none';
           }}
         />
       ) : (
-        /* Celestial Dignitary Silhouette for unannounced guests */
+        /* Celestial Dignitary Silhouette fallback */
         <div className="flex flex-col items-center justify-center p-3 text-center w-full h-full bg-gradient-to-b from-[#0C1333] to-[#070B1E]">
           <div className={`${isLarge ? 'w-14 h-14' : 'w-10 h-10'} rounded-full bg-[#121B40] border border-[#D4AF37]/35 flex items-center justify-center mb-2 text-[#E6C57D] shadow-inner`}>
             <User className={`${isLarge ? 'w-7 h-7' : 'w-5 h-5'} text-[#D4AF37]/80`} />
@@ -53,7 +76,30 @@ export const GuestPhotoUploader: React.FC<GuestPhotoUploaderProps> = ({
         </div>
       )}
 
-      {/* Subtle Role Badge */}
+      {/* Interactive Photo Upload / Change Overlay */}
+      <div className="absolute inset-0 bg-[#070B1E]/75 backdrop-blur-xs opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 p-2 z-20">
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-[#F5E7C4] to-[#D4AF37] text-[#070B1B] text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 hover:brightness-110 shadow-lg cursor-pointer transition-transform active:scale-95"
+        >
+          <Camera className="w-3.5 h-3.5" />
+          <span>Upload Photo</span>
+        </button>
+
+        {currentPhoto && currentPhoto !== defaultPhoto && (
+          <button
+            type="button"
+            onClick={() => removeGuestPhoto(guestId)}
+            className="px-2.5 py-1 rounded-md bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 text-[10px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+          >
+            <Trash2 className="w-3 h-3" />
+            <span>Reset</span>
+          </button>
+        )}
+      </div>
+
+      {/* Role Badge */}
       {role && !isLarge && (
         <div className="absolute bottom-2 left-2 pointer-events-none z-10 max-w-[calc(100%-16px)]">
           <span className="inline-block px-2 py-0.5 rounded text-[9px] font-mono uppercase tracking-wider text-[#F5E7C4] bg-[#070B1E]/90 border border-[#D4AF37]/35 backdrop-blur-sm truncate max-w-full">

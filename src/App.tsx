@@ -179,7 +179,12 @@ function AppContent() {
 
           {currentPage === 'about' && <AboutPage />}
 
-          {currentPage === 'contact' && <ContactPage />}
+          {currentPage === 'contact' && (
+            <ContactPage
+              onNavigate={handleNavigate}
+              onOpenRegister={() => handleOpenRegister()}
+            />
+          )}
         </main>
       )}
 

@@ -1,22 +1,81 @@
-<svg xmlns='http://www.w3.org/2000/svg' width='600' height='750' viewBox='0 0 600 750'>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="100%" height="100%">
   <defs>
-    <linearGradient id='bg' x1='0%' y1='0%' x2='100%' y2='100%'>
-      <stop offset='0%' stop-color='#0B1333'/>
-      <stop offset='50%' stop-color='#101C46'/>
-      <stop offset='100%' stop-color='#060A1D'/>
+    <!-- Background Gradient -->
+    <linearGradient id="rioBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#080D24"/>
+      <stop offset="40%" stop-color="#121D42"/>
+      <stop offset="100%" stop-color="#060918"/>
     </linearGradient>
-    <linearGradient id='gold' x1='0%' y1='0%' x2='100%' y2='100%'>
-      <stop offset='0%' stop-color='#F5E7C4'/>
-      <stop offset='100%' stop-color='#D4AF37'/>
+
+    <!-- Gold Accent Gradients -->
+    <linearGradient id="goldGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFF6DF"/>
+      <stop offset="50%" stop-color="#E6C57D"/>
+      <stop offset="100%" stop-color="#D4AF37"/>
     </linearGradient>
+
+    <linearGradient id="redShirt" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#DC2626"/>
+      <stop offset="60%" stop-color="#B91C1C"/>
+      <stop offset="100%" stop-color="#991B1B"/>
+    </linearGradient>
+
+    <radialGradient id="aura" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#D4AF37" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#080D24" stop-opacity="0"/>
+    </radialGradient>
   </defs>
-  <rect width='600' height='750' fill='url(#bg)'/>
-  <circle cx='300' cy='320' r='140' fill='#172458' stroke='url(#gold)' stroke-width='4'/>
-  <path d='M220,440 Q300,370 380,440 L400,600 L200,600 Z' fill='#1B2C68' opacity='0.85'/>
-  <!-- Person silhouette -->
-  <circle cx='300' cy='280' r='60' fill='url(#gold)' opacity='0.9'/>
-  <path d='M210,480 C210,380 390,380 390,480 L390,560 L210,560 Z' fill='url(#gold)' opacity='0.85'/>
-  <text x='300' y='600' font-family='sans-serif' font-size='32' font-weight='bold' fill='#FFFFFF' text-anchor='middle'>RIO RAJ</text>
-  <text x='300' y='640' font-family='sans-serif' font-size='20' font-weight='600' fill='url(#gold)' text-anchor='middle'>ACTOR &amp; TELEVISION HOST</text>
-  <text x='300' y='675' font-family='sans-serif' font-size='15' fill='#94A3B8' text-anchor='middle'>Chief Guest · Celestia '26</text>
+
+  <!-- Background -->
+  <rect width="800" height="1000" fill="url(#rioBg)"/>
+  <circle cx="400" cy="380" r="320" fill="url(#aura)"/>
+
+  <!-- Outer Celestial Gold Frame Ring -->
+  <circle cx="400" cy="380" r="280" fill="none" stroke="url(#goldGlow)" stroke-width="4" stroke-dasharray="12 6" opacity="0.6"/>
+  <circle cx="400" cy="380" r="260" fill="none" stroke="url(#goldGlow)" stroke-width="2" opacity="0.8"/>
+
+  <!-- Bridge Railing Backdrop Detail -->
+  <path d="M 100 520 L 700 520 L 700 540 L 100 540 Z" fill="#1E293B" opacity="0.7"/>
+  <path d="M 120 540 L 120 700 M 240 540 L 240 700 M 360 540 L 360 700 M 480 540 L 480 700 M 600 540 L 600 700" stroke="#334155" stroke-width="8" opacity="0.5"/>
+
+  <!-- Character Silhouette Representation (Rio Raj in Red Shirt) -->
+  <g id="character">
+    <!-- Torso / Red Long Sleeve Shirt -->
+    <path d="M 240 560 C 260 480 340 440 400 440 C 460 440 540 480 560 560 L 580 750 L 220 750 Z" fill="url(#redShirt)"/>
+    <!-- Fold details -->
+    <path d="M 320 480 Q 360 540 330 650" fill="none" stroke="#7F1D1D" stroke-width="4" opacity="0.6"/>
+    <path d="M 460 490 Q 440 560 470 660" fill="none" stroke="#7F1D1D" stroke-width="4" opacity="0.6"/>
+
+    <!-- Neck and Collar -->
+    <path d="M 360 440 Q 400 460 440 440 L 430 380 L 370 380 Z" fill="#E2A782"/>
+    <!-- Collar shadow -->
+    <path d="M 360 440 Q 400 460 440 440" fill="none" stroke="#9A5936" stroke-width="3"/>
+
+    <!-- Head & Face -->
+    <ellipse cx="400" cy="330" rx="75" ry="90" fill="#F0B28A"/>
+
+    <!-- Beard / Hair Style (Rio Raj) -->
+    <!-- Hair -->
+    <path d="M 315 310 C 310 230 360 210 400 210 C 450 210 490 230 485 310 C 470 240 440 230 400 235 C 360 230 330 240 315 310 Z" fill="#1C1917"/>
+    <!-- Beard & Stubble -->
+    <path d="M 330 330 C 330 410 470 410 470 330 C 470 385 450 415 400 415 C 350 415 330 385 330 330 Z" fill="#262626" opacity="0.85"/>
+    <!-- Mustache -->
+    <path d="M 360 365 Q 400 355 440 365 Q 400 380 360 365 Z" fill="#1C1917"/>
+
+    <!-- Eyes and Eyebrows -->
+    <path d="M 350 310 Q 370 300 385 312" fill="none" stroke="#1C1917" stroke-width="5" stroke-linecap="round"/>
+    <path d="M 415 312 Q 430 300 450 310" fill="none" stroke="#1C1917" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="368" cy="325" r="7" fill="#1C1917"/>
+    <circle cx="432" cy="325" r="7" fill="#1C1917"/>
+
+    <!-- Smile -->
+    <path d="M 370 378 Q 400 398 430 378" fill="none" stroke="#9A5936" stroke-width="4" stroke-linecap="round"/>
+  </g>
+
+  <!-- Bottom Information Banner -->
+  <rect x="80" y="760" width="640" height="180" rx="20" fill="#0B122E" stroke="url(#goldGlow)" stroke-width="2" opacity="0.95"/>
+  <text x="400" y="815" font-family="'Cinzel', Georgia, serif" font-size="36" font-weight="bold" fill="url(#goldGlow)" text-anchor="middle" letter-spacing="2">RIO RAJ</text>
+  <text x="400" y="855" font-family="'Plus Jakarta Sans', sans-serif" font-size="20" font-weight="700" fill="#F5E7C4" text-anchor="middle" letter-spacing="1">ACTOR &amp; TELEVISION PRESENTER</text>
+  <text x="400" y="890" font-family="monospace" font-size="14" fill="#E6C57D" text-anchor="middle" letter-spacing="2">CHIEF GUEST · CELESTIA '26</text>
+  <text x="400" y="915" font-family="sans-serif" font-size="12" fill="#94A3B8" text-anchor="middle">Srinivasan Medical College and Hospital, Trichy</text>
 </svg>

@@ -1,8 +1,13 @@
 import React, { useState } from 'react';
-import { Mail, Phone, MapPin, Send, CheckCircle2, MessageSquare, Compass, ExternalLink } from 'lucide-react';
+import { Mail, Phone, MapPin, Send, CheckCircle2, MessageSquare, Sparkles, ArrowRight, GraduationCap, Compass } from 'lucide-react';
 import { FESTIVAL_METADATA } from '../data/festivalData';
 
-export const ContactPage: React.FC = () => {
+interface ContactPageProps {
+  onNavigate?: (page: any) => void;
+  onOpenRegister?: () => void;
+}
+
+export const ContactPage: React.FC<ContactPageProps> = ({ onNavigate, onOpenRegister }) => {
   const [formData, setFormData] = useState({
     name: '',
     college: '',
@@ -19,22 +24,15 @@ export const ContactPage: React.FC = () => {
     setSubmitted(true);
   };
 
-  const coordinators = [
-    { name: 'Student Coordinator 1', role: 'Student Secretariat & Contingent Lead', dept: 'SMCH Fest Council', contact: '+91 9080813899' },
-    { name: 'Student Coordinator 2', role: 'Registration & Cultural Secretary', dept: 'SMCH Fest Council', contact: '+91 9150272527' },
-    { name: 'Festival Secretariat', role: 'Official Inquiries & Accounts', dept: 'Celestia Desk', contact: 'celestiasmch@gmail.com' },
-    { name: 'Campus Hospitality', role: 'Transport & Accommodation', dept: 'Logistics Team', contact: '+91 9080813899' },
-  ];
-
   return (
-    <div className="relative z-10 pt-20 sm:pt-28 pb-12 sm:pb-20 px-3 sm:px-6 lg:px-8 max-w-6xl mx-auto space-y-8 sm:space-y-12">
-      {/* Page Title */}
+    <div className="relative z-10 pt-20 sm:pt-28 pb-16 sm:pb-24 px-3 sm:px-6 lg:px-8 max-w-6xl mx-auto space-y-8 sm:space-y-12">
+      {/* Page Header */}
       <div className="text-center max-w-3xl mx-auto">
-        <div className="inline-flex items-center gap-2 text-xs font-semibold tracking-widest uppercase text-[#D4AF37] mb-2">
+        <div className="inline-flex items-center gap-2 text-xs font-semibold tracking-widest uppercase text-[#D4AF37] mb-2 px-3 py-1 rounded-full celestial-glass border border-[#D4AF37]/30">
           <MessageSquare className="w-3.5 h-3.5" />
-          <span>HELP DESK & CONVENORS</span>
+          <span>HELP DESK & ORGANIZING SECRETARIAT</span>
         </div>
-        <h1 className="font-cinzel text-2xl sm:text-5xl font-bold text-white mb-2 sm:mb-3">
+        <h1 className="font-cinzel text-2xl sm:text-5xl font-extrabold text-white mb-2 sm:mb-3 tracking-wide">
           Contact & Travel Assistance
         </h1>
         <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-xl mx-auto">
@@ -48,14 +46,14 @@ export const ContactPage: React.FC = () => {
             className="px-3.5 py-1.5 rounded-full bg-[#D4AF37]/15 hover:bg-[#D4AF37]/25 border border-[#D4AF37]/40 text-xs text-[#F5E7C4] hover:text-white flex items-center gap-1.5 transition-colors font-mono"
           >
             <Phone className="w-3 h-3 text-[#D4AF37]" />
-            <span>+91 9080813899</span>
+            <span>+91 90808 13899</span>
           </a>
           <a
             href="tel:+919150272527"
             className="px-3.5 py-1.5 rounded-full bg-[#D4AF37]/15 hover:bg-[#D4AF37]/25 border border-[#D4AF37]/40 text-xs text-[#F5E7C4] hover:text-white flex items-center gap-1.5 transition-colors font-mono"
           >
             <Phone className="w-3 h-3 text-[#D4AF37]" />
-            <span>+91 9150272527</span>
+            <span>+91 91502 72527</span>
           </a>
           <a
             href="mailto:celestiasmch@gmail.com"
@@ -67,14 +65,14 @@ export const ContactPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-10">
-        {/* Contact Form */}
-        <div className="celestial-glass rounded-2xl p-5 sm:p-8 border border-[#D4AF37]/30">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-10 items-start">
+        {/* Left Side: Contact Inquiry Form */}
+        <div className="celestial-glass rounded-2xl p-5 sm:p-8 border border-[#D4AF37]/30 shadow-xl">
           <h2 className="font-cinzel text-lg sm:text-2xl font-bold text-white mb-1.5">
             Send an Inquiry
           </h2>
           <p className="text-xs text-slate-300 mb-5">
-            Our student secretariat will respond within 24 working hours.
+            Our student secretariat and organizing team will respond within 24 working hours.
           </p>
 
           {!submitted ? (
@@ -198,39 +196,45 @@ export const ContactPage: React.FC = () => {
           )}
         </div>
 
-        {/* Coordinators & Logistics Info */}
+        {/* Right Side Column (In Order: Faculty Co-ordinator -> Volunteer Contacts -> College Directions) */}
         <div className="space-y-6">
-          {/* Institution Location */}
-          <div className="celestial-glass rounded-2xl p-6 sm:p-8 border border-white/10">
-            <h3 className="font-cinzel text-lg font-bold text-white mb-2 flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-[#D4AF37]" />
-              <span>Campus Address</span>
-            </h3>
-            <p className="text-sm font-semibold text-[#F5E7C4] mb-1">
-              {FESTIVAL_METADATA.collegeName}
-            </p>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              NH-45 Trichy-Chennai Highway, Samayapuram, Tiruchirappalli, Tamil Nadu 621112.
-            </p>
+          {/* 1. FACULTY CO-ORDINATOR CARD (Refined, Error-Free & Premium) */}
+          <div className="celestial-glass rounded-2xl p-5 sm:p-7 border-2 border-[#D4AF37]/60 bg-gradient-to-br from-[#182046] via-[#101736] to-[#1C244C] shadow-2xl relative overflow-hidden group hover:border-[#D4AF37] transition-all">
+            {/* Corner Decorative Accent */}
+            <div className="absolute top-0 right-0 w-24 h-24 bg-[#D4AF37]/10 rounded-bl-full pointer-events-none" />
+            
+            {/* Header Badge Row */}
+            <div className="flex items-center justify-between gap-2 mb-3.5 pb-2.5 border-b border-[#D4AF37]/30">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-[#080D24] border border-[#D4AF37]/50 flex items-center justify-center text-[#E6C57D]">
+                  <GraduationCap className="w-4 h-4 text-[#D4AF37]" />
+                </div>
+                <span className="text-xs font-mono uppercase tracking-widest text-[#D4AF37] font-bold">
+                  Faculty Co-ordinator
+                </span>
+              </div>
+              <div className="inline-flex items-center gap-1 text-[10px] font-mono font-bold uppercase tracking-wider text-[#070B1B] bg-gradient-to-r from-[#F5E7C4] to-[#D4AF37] px-2.5 py-0.5 rounded-full shadow-sm shrink-0">
+                <Sparkles className="w-3 h-3 text-[#070B1B]" />
+                <span>FACULTY LEAD</span>
+              </div>
+            </div>
 
-            <div className="mt-4 pt-4 border-t border-white/10 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-slate-300">
-              <div className="p-2.5 rounded-lg bg-[#080D24]">
-                <div className="text-[10px] uppercase text-[#D4AF37]">Trichy Junction (TPJ)</div>
-                <div className="font-medium mt-0.5">~18 km (30 mins)</div>
-              </div>
-              <div className="p-2.5 rounded-lg bg-[#080D24]">
-                <div className="text-[10px] uppercase text-[#D4AF37]">Central Bus Stand</div>
-                <div className="font-medium mt-0.5">~19 km (35 mins)</div>
-              </div>
-              <div className="p-2.5 rounded-lg bg-[#080D24]">
-                <div className="text-[10px] uppercase text-[#D4AF37]">Trichy Airport (TRZ)</div>
-                <div className="font-medium mt-0.5">~22 km (40 mins)</div>
-              </div>
+            {/* Content Details */}
+            <div className="space-y-1.5">
+              <h3 className="font-cinzel text-xl sm:text-2xl font-extrabold text-[#FFF6DF] tracking-wide drop-shadow-md">
+                Dr. K. J. M. KARTHIKEYAN
+              </h3>
+              <p className="text-xs sm:text-sm font-bold uppercase tracking-wider text-[#E6C57D]">
+                DEPT OF FORENSIC MEDICINE
+              </p>
+              <p className="text-xs text-slate-300 font-medium">
+                Srinivasan Medical College and Hospital, Trichy
+              </p>
             </div>
           </div>
 
-          {/* Final Contact List */}
-          <div className="celestial-glass rounded-2xl p-6 sm:p-8 border border-white/10 space-y-6">
+          {/* 2. CELESTIA'26 VOLUNTEER & ORGANIZER CONTACT LIST */}
+          <div className="celestial-glass rounded-2xl p-6 sm:p-8 border border-white/10 space-y-6 shadow-xl">
             <h3 className="font-cinzel text-lg font-bold text-white mb-2 border-b border-white/10 pb-2">
               CELESTIA’26 – Final Contact List
             </h3>
@@ -243,10 +247,10 @@ export const ContactPage: React.FC = () => {
                   { name: 'Amlesh', phone: '+91 90808 13899', raw: '+919080813899' },
                   { name: 'Kaviya', phone: '+91 91502 72527', raw: '+919150272527' },
                 ].map((item, idx) => (
-                  <div key={idx} className="p-3 rounded-xl bg-[#080D24] border border-white/5 flex items-center justify-between">
+                  <div key={idx} className="p-3 rounded-xl bg-[#080D24] border border-white/5 flex items-center justify-between hover:border-[#D4AF37]/40 transition-colors">
                     <span className="text-sm font-semibold text-white">{item.name}</span>
                     <a href={`tel:${item.raw}`} className="text-xs font-mono text-[#E6C57D] hover:underline flex items-center gap-1.5">
-                      <Phone className="w-3 h-3 text-[#D4AF37]" />
+                      <Phone className="w-3.5 h-3.5 text-[#D4AF37]" />
                       <span>{item.phone}</span>
                     </a>
                   </div>
@@ -264,10 +268,10 @@ export const ContactPage: React.FC = () => {
                   { name: 'Aparna', phone: '+91 96779 84191', raw: '+919677984191' },
                   { name: 'Dhanush P C', phone: '+91 82483 01304', raw: '+918248301304' },
                 ].map((item, idx) => (
-                  <div key={idx} className="p-3 rounded-xl bg-[#080D24] border border-white/5 flex items-center justify-between">
+                  <div key={idx} className="p-3 rounded-xl bg-[#080D24] border border-white/5 flex items-center justify-between hover:border-[#D4AF37]/40 transition-colors">
                     <span className="text-sm font-semibold text-white">{item.name}</span>
                     <a href={`tel:${item.raw}`} className="text-xs font-mono text-[#E6C57D] hover:underline flex items-center gap-1.5">
-                      <Phone className="w-3 h-3 text-[#D4AF37]" />
+                      <Phone className="w-3.5 h-3.5 text-[#D4AF37]" />
                       <span>{item.phone}</span>
                     </a>
                   </div>
@@ -283,10 +287,10 @@ export const ContactPage: React.FC = () => {
                   { name: 'Mohammed Asif Kamal', phone: '+91 90033 26006', raw: '+919003326006' },
                   { name: 'Pooja Sushma', phone: '+91 63831 83246', raw: '+916383183246' },
                 ].map((item, idx) => (
-                  <div key={idx} className="p-3 rounded-xl bg-[#080D24] border border-white/5 flex items-center justify-between">
+                  <div key={idx} className="p-3 rounded-xl bg-[#080D24] border border-white/5 flex items-center justify-between hover:border-[#D4AF37]/40 transition-colors">
                     <span className="text-sm font-semibold text-white">{item.name}</span>
                     <a href={`tel:${item.raw}`} className="text-xs font-mono text-[#E6C57D] hover:underline flex items-center gap-1.5">
-                      <Phone className="w-3 h-3 text-[#D4AF37]" />
+                      <Phone className="w-3.5 h-3.5 text-[#D4AF37]" />
                       <span>{item.phone}</span>
                     </a>
                   </div>
@@ -304,16 +308,106 @@ export const ContactPage: React.FC = () => {
                   { name: 'Yogeshwaran', phone: '+91 63821 00725', raw: '+916382100725' },
                   { name: 'Kanagadharini', phone: '+91 63812 28064', raw: '+916381228064' },
                 ].map((item, idx) => (
-                  <div key={idx} className="p-3 rounded-xl bg-[#080D24] border border-white/5 flex items-center justify-between">
+                  <div key={idx} className="p-3 rounded-xl bg-[#080D24] border border-white/5 flex items-center justify-between hover:border-[#D4AF37]/40 transition-colors">
                     <span className="text-sm font-semibold text-white">{item.name}</span>
                     <a href={`tel:${item.raw}`} className="text-xs font-mono text-[#E6C57D] hover:underline flex items-center gap-1.5">
-                      <Phone className="w-3 h-3 text-[#D4AF37]" />
+                      <Phone className="w-3.5 h-3.5 text-[#D4AF37]" />
                       <span>{item.phone}</span>
                     </a>
                   </div>
                 ))}
               </div>
             </div>
+          </div>
+
+          {/* 3. COLLEGE DIRECTIONS / CAMPUS ADDRESS BOX (Now Placed BELOW Volunteer Contacts) */}
+          <div className="celestial-glass rounded-2xl p-6 sm:p-8 border border-white/10 shadow-lg space-y-4">
+            <h3 className="font-cinzel text-lg font-bold text-white flex items-center gap-2 border-b border-white/10 pb-2.5">
+              <Compass className="w-4 h-4 text-[#D4AF37]" />
+              <span>College Directions & Campus Address</span>
+            </h3>
+
+            <div>
+              <p className="text-sm font-semibold text-[#F5E7C4] mb-1">
+                {FESTIVAL_METADATA.collegeName}
+              </p>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                NH-45 Trichy-Chennai Trunk Road, near Samayapuram Toll Plaza, Samayapuram, Tiruchirappalli, Tamil Nadu – 621112.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs text-slate-300 pt-2">
+              <div className="p-3 rounded-xl bg-[#080D24] border border-white/5">
+                <div className="text-[10px] font-mono font-bold uppercase text-[#D4AF37]">Trichy Junction (TPJ)</div>
+                <div className="font-medium mt-0.5">~18 km (30 mins)</div>
+              </div>
+              <div className="p-3 rounded-xl bg-[#080D24] border border-white/5">
+                <div className="text-[10px] font-mono font-bold uppercase text-[#D4AF37]">Central Bus Stand</div>
+                <div className="font-medium mt-0.5">~19 km (35 mins)</div>
+              </div>
+              <div className="p-3 rounded-xl bg-[#080D24] border border-white/5">
+                <div className="text-[10px] font-mono font-bold uppercase text-[#D4AF37]">Trichy Airport (TRZ)</div>
+                <div className="font-medium mt-0.5">~22 km (40 mins)</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Navigation CTA Bar at the bottom */}
+      <div className="pt-8 border-t border-white/10">
+        <div className="celestial-glass rounded-2xl p-6 sm:p-8 border border-[#D4AF37]/30 bg-gradient-to-r from-[#101736] via-[#161C3B] to-[#0A0F26] flex flex-col md:flex-row items-center justify-between gap-6 text-center md:text-left">
+          <div>
+            <span className="text-xs font-mono uppercase tracking-widest text-[#D4AF37] block mb-1">
+              Explore Celestia'26
+            </span>
+            <h3 className="font-cinzel text-xl sm:text-2xl font-bold text-white">
+              Navigate to Other Portal Sections
+            </h3>
+            <p className="text-xs text-slate-300 mt-1">
+              Browse events, check schedule timelines, view accommodation guidelines or register your contingent.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-2.5">
+            {onNavigate && (
+              <>
+                <button
+                  onClick={() => onNavigate('home')}
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold text-[#F5E7C4] bg-white/5 border border-white/10 hover:border-[#D4AF37]/50 hover:bg-white/10 transition-colors cursor-pointer"
+                >
+                  Home
+                </button>
+                <button
+                  onClick={() => onNavigate('events')}
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold text-[#F5E7C4] bg-white/5 border border-white/10 hover:border-[#D4AF37]/50 hover:bg-white/10 transition-colors cursor-pointer"
+                >
+                  Events
+                </button>
+                <button
+                  onClick={() => onNavigate('schedule')}
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold text-[#F5E7C4] bg-white/5 border border-white/10 hover:border-[#D4AF37]/50 hover:bg-white/10 transition-colors cursor-pointer"
+                >
+                  Schedule
+                </button>
+                <button
+                  onClick={() => onNavigate('accommodation')}
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold text-[#F5E7C4] bg-white/5 border border-white/10 hover:border-[#D4AF37]/50 hover:bg-white/10 transition-colors cursor-pointer"
+                >
+                  Accommodation
+                </button>
+              </>
+            )}
+
+            {onOpenRegister && (
+              <button
+                onClick={onOpenRegister}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider text-[#070B1B] bg-gradient-to-r from-[#F5E7C4] via-[#E6C57D] to-[#D4AF37] hover:brightness-110 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-[#D4AF37]/30"
+              >
+                <span>Register Now</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
       </div>

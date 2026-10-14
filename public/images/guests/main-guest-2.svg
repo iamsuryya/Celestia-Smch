@@ -1,21 +1,88 @@
-<svg xmlns='http://www.w3.org/2000/svg' width='600' height='750' viewBox='0 0 600 750'>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="100%" height="100%">
   <defs>
-    <linearGradient id='bg2' x1='0%' y1='0%' x2='100%' y2='100%'>
-      <stop offset='0%' stop-color='#0B1333'/>
-      <stop offset='50%' stop-color='#1A153A'/>
-      <stop offset='100%' stop-color='#060A1D'/>
+    <!-- Background Gradient -->
+    <linearGradient id="aparnaBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#180C26"/>
+      <stop offset="50%" stop-color="#2A123E"/>
+      <stop offset="100%" stop-color="#0B0614"/>
     </linearGradient>
-    <linearGradient id='gold2' x1='0%' y1='0%' x2='100%' y2='100%'>
-      <stop offset='0%' stop-color='#F5E7C4'/>
-      <stop offset='100%' stop-color='#D4AF37'/>
+
+    <!-- Gold Accent Gradients -->
+    <linearGradient id="goldGlow2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFF6DF"/>
+      <stop offset="50%" stop-color="#E6C57D"/>
+      <stop offset="100%" stop-color="#D4AF37"/>
     </linearGradient>
+
+    <linearGradient id="redDress" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#E11D48"/>
+      <stop offset="60%" stop-color="#BE123C"/>
+      <stop offset="100%" stop-color="#881337"/>
+    </linearGradient>
+
+    <radialGradient id="bokeh1" cx="20%" cy="20%" r="40%">
+      <stop offset="0%" stop-color="#E6C57D" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#180C26" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bokeh2" cx="80%" cy="30%" r="45%">
+      <stop offset="0%" stop-color="#D4AF37" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#180C26" stop-opacity="0"/>
+    </radialGradient>
   </defs>
-  <rect width='600' height='750' fill='url(#bg2)'/>
-  <circle cx='300' cy='320' r='140' fill='#241B4E' stroke='url(#gold2)' stroke-width='4'/>
-  <!-- Person silhouette -->
-  <circle cx='300' cy='280' r='60' fill='url(#gold2)' opacity='0.9'/>
-  <path d='M210,480 C210,380 390,380 390,480 L390,560 L210,560 Z' fill='url(#gold2)' opacity='0.85'/>
-  <text x='300' y='600' font-family='sans-serif' font-size='28' font-weight='bold' fill='#FFFFFF' text-anchor='middle'>DISTINGUISHED GUEST</text>
-  <text x='300' y='640' font-family='sans-serif' font-size='20' font-weight='600' fill='url(#gold2)' text-anchor='middle'>GUEST OF HONOUR</text>
-  <text x='300' y='675' font-family='sans-serif' font-size='15' fill='#94A3B8' text-anchor='middle'>Celestia '26 Dignitary</text>
+
+  <!-- Background -->
+  <rect width="800" height="1000" fill="url(#aparnaBg)"/>
+  <circle cx="160" cy="200" r="200" fill="url(#bokeh1)"/>
+  <circle cx="640" cy="280" r="220" fill="url(#bokeh2)"/>
+
+  <!-- Outer Celestial Gold Frame Ring -->
+  <circle cx="400" cy="380" r="280" fill="none" stroke="url(#goldGlow2)" stroke-width="4" stroke-dasharray="12 6" opacity="0.6"/>
+  <circle cx="400" cy="380" r="260" fill="none" stroke="url(#goldGlow2)" stroke-width="2" opacity="0.8"/>
+
+  <!-- Character Representation (Aparna Das in Red Ethnic Outfit & Silver Embroidery) -->
+  <g id="character2">
+    <!-- Dupatta & Dress Body -->
+    <path d="M 220 540 C 250 460 340 430 400 430 C 460 430 550 460 580 540 L 620 760 L 180 760 Z" fill="url(#redDress)"/>
+
+    <!-- Silver Embroidery Borders -->
+    <path d="M 330 440 C 310 500 290 600 270 760" fill="none" stroke="#E2E8F0" stroke-width="12" opacity="0.9"/>
+    <path d="M 330 440 C 310 500 290 600 270 760" fill="none" stroke="#94A3B8" stroke-width="4" stroke-dasharray="6 4"/>
+
+    <path d="M 470 440 C 490 500 510 600 530 760" fill="none" stroke="#E2E8F0" stroke-width="12" opacity="0.9"/>
+    <path d="M 470 440 C 490 500 510 600 530 760" fill="none" stroke="#94A3B8" stroke-width="4" stroke-dasharray="6 4"/>
+
+    <!-- Neckline -->
+    <path d="M 340 430 Q 400 470 460 430 L 440 370 L 360 370 Z" fill="#F3C6A5"/>
+
+    <!-- Head & Face -->
+    <ellipse cx="400" cy="320" rx="70" ry="85" fill="#F8D3B7"/>
+
+    <!-- Long Dark Hair flowing over shoulders -->
+    <path d="M 320 280 C 290 220 350 190 400 190 C 450 190 510 220 480 280 C 520 350 510 480 480 540 C 450 510 470 380 460 320 C 450 220 350 220 340 320 C 330 380 350 510 320 540 C 290 480 280 350 320 280 Z" fill="#1C1917"/>
+
+    <!-- Bindi -->
+    <circle cx="400" cy="285" r="3" fill="#991B1B"/>
+
+    <!-- Jhumka Earrings (Gold) -->
+    <!-- Left Earring -->
+    <path d="M 325 330 L 325 345 M 320 345 C 310 360 340 360 330 345" stroke="#D4AF37" stroke-width="3" fill="#E6C57D"/>
+    <!-- Right Earring -->
+    <path d="M 475 330 L 475 345 M 470 345 C 460 360 490 360 480 345" stroke="#D4AF37" stroke-width="3" fill="#E6C57D"/>
+
+    <!-- Eyes and Eyebrows -->
+    <path d="M 355 298 Q 372 290 385 300" fill="none" stroke="#1C1917" stroke-width="4" stroke-linecap="round"/>
+    <path d="M 415 300 Q 428 290 445 298" fill="none" stroke="#1C1917" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="370" cy="312" r="6" fill="#1C1917"/>
+    <circle cx="430" cy="312" r="6" fill="#1C1917"/>
+
+    <!-- Gentle Smile -->
+    <path d="M 375 358 Q 400 372 425 358" fill="none" stroke="#BE123C" stroke-width="4" stroke-linecap="round"/>
+  </g>
+
+  <!-- Bottom Information Banner -->
+  <rect x="80" y="760" width="640" height="180" rx="20" fill="#12091F" stroke="url(#goldGlow2)" stroke-width="2" opacity="0.95"/>
+  <text x="400" y="815" font-family="'Cinzel', Georgia, serif" font-size="36" font-weight="bold" fill="url(#goldGlow2)" text-anchor="middle" letter-spacing="2">APARNA DAS</text>
+  <text x="400" y="855" font-family="'Plus Jakarta Sans', sans-serif" font-size="20" font-weight="700" fill="#F5E7C4" text-anchor="middle" letter-spacing="1">CELEBRITY GUEST &amp; ARTIST</text>
+  <text x="400" y="890" font-family="monospace" font-size="14" fill="#E6C57D" text-anchor="middle" letter-spacing="2">GUEST OF HONOUR · CELESTIA '26</text>
+  <text x="400" y="915" font-family="sans-serif" font-size="12" fill="#94A3B8" text-anchor="middle">Srinivasan Medical College and Hospital, Trichy</text>
 </svg>
