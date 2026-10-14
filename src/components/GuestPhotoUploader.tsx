@@ -1,5 +1,5 @@
-import React, { useRef } from 'react';
-import { User, Camera, Upload, Trash2 } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { User, Camera, Trash2 } from 'lucide-react';
 import { useInlineEditor } from '../context/EditorContext';
 
 interface GuestPhotoUploaderProps {
@@ -19,6 +19,7 @@ export const GuestPhotoUploader: React.FC<GuestPhotoUploaderProps> = ({
 }) => {
   const { getGuestPhoto, setGuestPhoto, removeGuestPhoto } = useInlineEditor();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [hasImgError, setHasImgError] = useState(false);
 
   const currentPhoto = getGuestPhoto(guestId, defaultPhoto);
   const isLarge = variant === 'large';
@@ -36,6 +37,7 @@ export const GuestPhotoUploader: React.FC<GuestPhotoUploaderProps> = ({
     reader.onload = (event) => {
       const dataUrl = event.target?.result as string;
       if (dataUrl) {
+        setHasImgError(false);
         setGuestPhoto(guestId, dataUrl);
       }
     };
@@ -54,14 +56,14 @@ export const GuestPhotoUploader: React.FC<GuestPhotoUploaderProps> = ({
       />
 
       {/* Guest Photo Display */}
-      {currentPhoto ? (
+      {currentPhoto && !hasImgError ? (
         <img
           src={currentPhoto}
           alt={guestName}
           className="w-full h-full object-cover object-top select-none"
           loading="lazy"
-          onError={(e) => {
-            (e.target as HTMLElement).style.display = 'none';
+          onError={() => {
+            setHasImgError(true);
           }}
         />
       ) : (
@@ -70,8 +72,11 @@ export const GuestPhotoUploader: React.FC<GuestPhotoUploaderProps> = ({
           <div className={`${isLarge ? 'w-14 h-14' : 'w-10 h-10'} rounded-full bg-[#121B40] border border-[#D4AF37]/35 flex items-center justify-center mb-2 text-[#E6C57D] shadow-inner`}>
             <User className={`${isLarge ? 'w-7 h-7' : 'w-5 h-5'} text-[#D4AF37]/80`} />
           </div>
-          <span className="text-[10px] uppercase font-mono tracking-wider text-[#D4AF37]/80">
-            Dignitary of Honour
+          <span className="text-xs font-bold text-[#F5E7C4] tracking-wide">
+            {guestName}
+          </span>
+          <span className="text-[10px] uppercase font-mono tracking-wider text-[#D4AF37]/80 mt-0.5">
+            {role || 'Honoured Guest'}
           </span>
         </div>
       )}
@@ -90,7 +95,10 @@ export const GuestPhotoUploader: React.FC<GuestPhotoUploaderProps> = ({
         {currentPhoto && currentPhoto !== defaultPhoto && (
           <button
             type="button"
-            onClick={() => removeGuestPhoto(guestId)}
+            onClick={() => {
+              setHasImgError(false);
+              removeGuestPhoto(guestId);
+            }}
             className="px-2.5 py-1 rounded-md bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 text-[10px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
           >
             <Trash2 className="w-3 h-3" />

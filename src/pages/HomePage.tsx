@@ -164,7 +164,7 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
 
         {/* Prominent "View All Events" CTA Banner */}
-        <div className="celestial-glass rounded-xl p-5 border border-[#D4AF37]/30 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
+        <div className="celestial-glass rounded-xl p-5 border border-[#D4AF37]/30 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left bg-[#0A0F2C]">
           <div>
             <h3 className="font-cinzel text-base sm:text-lg font-bold text-white">
               Looking for Symphora, Nrityara, Step Sync, and more?
@@ -187,9 +187,6 @@ export const HomePage: React.FC<HomePageProps> = ({
       {/* 6. REGISTRATION CTA */}
       <section className="py-12 sm:py-16 px-4 sm:px-6 max-w-4xl mx-auto">
         <div className="relative celestial-glass rounded-3xl p-8 sm:p-12 text-center border border-[#D4AF37]/35 shadow-2xl overflow-hidden">
-          {/* Subtle star ring */}
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full border border-[#D4AF37]/10 animate-orbit pointer-events-none" />
-
           <div className="relative z-10 max-w-xl mx-auto">
             <div className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-[#D4AF37] mb-2">
               <Sparkles className="w-3.5 h-3.5" />
@@ -225,7 +222,7 @@ export const HomePage: React.FC<HomePageProps> = ({
 
       {/* 7. HOMEPAGE CONTACT & HELPLINE BAR (Touch-to-call & mail optimized for mobile) */}
       <section className="py-4 sm:py-6 px-4 sm:px-6 max-w-4xl mx-auto">
-        <div className="celestial-glass rounded-2xl p-5 sm:p-6 border border-[#D4AF37]/30 text-center sm:text-left flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
+        <div className="celestial-glass rounded-2xl p-5 sm:p-6 border border-[#D4AF37]/30 bg-[#080D24]/90 text-center sm:text-left flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
           <div className="space-y-1">
             <span className="text-[10px] font-mono text-[#D4AF37] uppercase tracking-widest block font-semibold">
               OFFICIAL FESTIVAL HELPDESK
