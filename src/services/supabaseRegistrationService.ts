@@ -325,10 +325,21 @@ export const supabaseRegistrationService = {
             .insert(participantRows);
 
           if (partError) {
-            console.warn('Participant roster insert notice:', partError.message);
+            console.error('Participant roster insert error:', partError.message);
+            return {
+              success: false,
+              registrationCode,
+              error: `Failed to save participant roster: ${partError.message}`,
+            };
           }
         } catch (pErr) {
-          console.warn('Participants insert non-fatal error:', pErr);
+          const pMsg = pErr instanceof Error ? pErr.message : 'Participant insert error';
+          console.error('Participants insert exception:', pMsg);
+          return {
+            success: false,
+            registrationCode,
+            error: `Failed to save participant details: ${pMsg}`,
+          };
         }
       }
 
@@ -356,10 +367,21 @@ export const supabaseRegistrationService = {
             .insert([paymentData]);
 
           if (payError) {
-            console.warn('Payment submissions insert notice:', payError.message);
+            console.error('Payment submission insert error:', payError.message);
+            return {
+              success: false,
+              registrationCode,
+              error: `Failed to save payment record: ${payError.message}`,
+            };
           }
         } catch (payErr) {
-          console.warn('Payment insert non-fatal error:', payErr);
+          const payMsg = payErr instanceof Error ? payErr.message : 'Payment insert error';
+          console.error('Payment insert exception:', payMsg);
+          return {
+            success: false,
+            registrationCode,
+            error: `Failed to save payment details: ${payMsg}`,
+          };
         }
       }
 

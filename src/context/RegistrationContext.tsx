@@ -8,6 +8,7 @@ import {
 } from '../types/registration';
 import { EventItem, EVENTS_DATA } from '../data/festivalData';
 import { supabaseRegistrationService } from '../services/supabaseRegistrationService';
+import { isSupabaseConfigured } from '../lib/supabase';
 import { generateRegistrationCode } from '../utils/registrationCode';
 
 interface RegistrationContextType {
@@ -338,38 +339,45 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     const currentParticipants = [...participants];
 
     // Dispatch and await Supabase cloud record insertion
-    try {
-      const res = await supabaseRegistrationService.submitRegistrationToSupabase({
-        selectedEvent,
-        collegeDetails,
-        participants: currentParticipants,
-        teamName,
-        totalFee: totalAmount,
-        utrNumber: utrNumber.trim() || 'NOT_SUBMITTED',
-        registrationCode: submissionId,
-        paymentScreenshotName: paymentScreenshotName || 'receipt_screenshot.png',
-        paymentScreenshotFile: currentPaymentFile,
-        paymentScreenshotData: currentPaymentData || undefined,
-        idCardFiles: currentParticipants.map(p => p.idCardFile || null),
-        userId: currentUser.id,
-      });
+    if (isSupabaseConfigured) {
+      let res;
+      try {
+        res = await supabaseRegistrationService.submitRegistrationToSupabase({
+          selectedEvent,
+          collegeDetails,
+          participants: currentParticipants,
+          teamName,
+          totalFee: totalAmount,
+          utrNumber: utrNumber.trim() || 'NOT_SUBMITTED',
+          registrationCode: submissionId,
+          paymentScreenshotName: paymentScreenshotName || 'receipt_screenshot.png',
+          paymentScreenshotFile: currentPaymentFile,
+          paymentScreenshotData: currentPaymentData || undefined,
+          idCardFiles: currentParticipants.map((p) => p.idCardFile || null),
+          userId: currentUser.id,
+        });
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : 'Network error communicating with database';
+        console.error('Supabase cloud submission exception:', errorMsg);
+        throw new Error(`Cloud database write failed: ${errorMsg}`);
+      }
 
-      if (res?.supabaseId) {
+      if (!res || !res.success || res.error) {
+        const cloudError = res?.error || 'Database registration write unconfirmed by server';
+        console.error('Registration cloud write unconfirmed:', cloudError);
+        throw new Error(cloudError);
+      }
+
+      if (res.supabaseId) {
         newSubmission.id = res.supabaseId;
       }
-      if (res?.error) {
-        console.warn('Notice from Supabase submission:', res.error);
-      } else if (res?.success) {
-        console.info('Supabase cloud submission saved successfully:', res.registrationCode);
-      }
-    } catch (err) {
-      console.warn('Supabase cloud submission exception:', err);
     }
 
+    // Append to local state ONLY after cloud write confirmation (or in offline-only mode)
     setMyRegistrations((prev) => [newSubmission, ...prev]);
     setActiveRegistration(newSubmission);
 
-    // Clear draft payment inputs
+    // Clear draft payment inputs after successful confirmation
     setUtrNumber('');
     setPaymentScreenshotName('');
     setPaymentScreenshotFile(null);

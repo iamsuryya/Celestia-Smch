@@ -163,9 +163,16 @@ export const PaymentPage: React.FC = () => {
       const submission = await submitRegistration();
       if (submission) {
         goToStep('confirmation');
+      } else {
+        setErrorMsg('Unable to record registration in official database. Please check your network and try again.');
       }
-    } catch {
-      setErrorMsg('Failed to record registration. Please check your network and try again.');
+    } catch (err: unknown) {
+      const cleanMsg = err instanceof Error && err.message 
+        ? (err.message.includes('Cloud database') || err.message.includes('Database') || err.message.includes('Failed')
+            ? err.message
+            : `Unable to save registration to database: ${err.message}`)
+        : 'Failed to record registration in official database. Please check your network connection and try submitting again.';
+      setErrorMsg(cleanMsg);
     } finally {
       setIsSubmitting(false);
     }
