@@ -285,11 +285,13 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       idCardFiles: currentParticipants.map(p => p.idCardFile || null),
       userId: currentUser.id,
     }).then(res => {
-      if (res?.registrationCode && res.registrationCode !== submissionId) {
-        // Keep code consistent
+      if (res?.error) {
+        console.error('Supabase cloud submission error:', res.error);
+      } else if (res?.success) {
+        console.info('Supabase cloud submission saved successfully:', res.registrationCode);
       }
     }).catch(err => {
-      console.warn('Supabase cloud registration dispatch:', err);
+      console.error('Supabase cloud registration dispatch exception:', err);
     });
 
     // Clear draft payment inputs

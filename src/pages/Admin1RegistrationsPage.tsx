@@ -40,7 +40,13 @@ import {
   Sliders,
   Play,
   Square,
-  KeyRound
+  KeyRound,
+  Database,
+  Cloud,
+  CloudOff,
+  Info,
+  Copy,
+  ChevronRight
 } from 'lucide-react';
 import { useRegistration } from '../context/RegistrationContext';
 import { RegistrationSubmission, ParticipantMember } from '../types/registration';
@@ -57,7 +63,7 @@ import {
   isSupabaseConfigured, 
   supabase 
 } from '../lib/supabase';
-import { supabaseRegistrationService } from '../services/supabaseRegistrationService';
+import { supabaseRegistrationService, CloudDiagnostics } from '../services/supabaseRegistrationService';
 
 interface Admin1RegistrationsPageProps {
   onExit: () => void;
@@ -116,6 +122,10 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
   const [cloudRegistrations, setCloudRegistrations] = useState<RegistrationSubmission[]>([]);
   const [loading, setLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [cloudDiagnostics, setCloudDiagnostics] = useState<CloudDiagnostics | null>(null);
+  const [isCheckingCloud, setIsCheckingCloud] = useState(false);
+  const [showCloudModal, setShowCloudModal] = useState(false);
+  const [copiedSql, setCopiedSql] = useState(false);
 
   // Search & Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -220,13 +230,19 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
   // Fetch registrations from Supabase
   const loadData = async () => {
     setLoading(true);
+    setIsCheckingCloud(true);
     try {
-      const data = await supabaseRegistrationService.fetchAdminRegistrations();
+      const [data, diag] = await Promise.all([
+        supabaseRegistrationService.fetchAdminRegistrations(),
+        supabaseRegistrationService.getCloudDiagnostics(),
+      ]);
       setCloudRegistrations(data);
+      setCloudDiagnostics(diag);
     } catch {
       // Fallback
     } finally {
       setLoading(false);
+      setIsCheckingCloud(false);
     }
   };
 
@@ -801,6 +817,103 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
           >
             Exit Console
           </button>
+        </div>
+      </div>
+
+      {/* Cloud Database Sync & Diagnostics Banner */}
+      <div className={`p-4 rounded-2xl mb-6 border transition-all ${
+        !cloudDiagnostics?.isConfigured
+          ? 'bg-amber-500/10 border-amber-500/40 text-amber-200'
+          : cloudDiagnostics.errorMessage
+          ? 'bg-rose-500/10 border-rose-500/40 text-rose-200'
+          : 'bg-[#0E163B] border-emerald-500/35 text-slate-200'
+      }`}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
+              !cloudDiagnostics?.isConfigured
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                : cloudDiagnostics.errorMessage
+                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+            }`}>
+              {!cloudDiagnostics?.isConfigured ? (
+                <CloudOff className="w-5 h-5" />
+              ) : cloudDiagnostics.errorMessage ? (
+                <AlertCircle className="w-5 h-5" />
+              ) : (
+                <Database className="w-5 h-5" />
+              )}
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-semibold text-white text-sm">
+                  {!cloudDiagnostics?.isConfigured
+                    ? 'Cloud Database: Not Active in Current Web Build'
+                    : cloudDiagnostics.errorMessage
+                    ? 'Cloud Database: Connected, but Table Error Detected'
+                    : 'Cloud Database: Live & Synchronized'}
+                </span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider ${
+                  !cloudDiagnostics?.isConfigured
+                    ? 'bg-amber-400/20 text-amber-300 border border-amber-400/30'
+                    : cloudDiagnostics.errorMessage
+                    ? 'bg-rose-400/20 text-rose-300 border border-rose-400/30'
+                    : 'bg-emerald-400/20 text-emerald-300 border border-emerald-400/30'
+                }`}>
+                  {!cloudDiagnostics?.isConfigured 
+                    ? 'Local Mode Only' 
+                    : cloudDiagnostics.errorMessage 
+                    ? 'Schema Attention Needed' 
+                    : 'Cloud Active'}
+                </span>
+              </div>
+
+              <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                {!cloudDiagnostics?.isConfigured ? (
+                  <>
+                    Vite build variables (<code className="text-[#F5E7C4] font-mono">VITE_SUPABASE_URL</code>) are missing in this deployed build. 
+                    Registrations submitted by visitors on external phones cannot reach this admin console. 
+                    <strong className="text-white ml-1">
+                      Currently displaying {myRegistrations.length} registrations saved locally in your own browser cache.
+                    </strong>
+                  </>
+                ) : cloudDiagnostics.errorMessage ? (
+                  <>
+                    Supabase Project (<code className="text-[#F5E7C4] font-mono">{cloudDiagnostics.maskedUrl || 'configured'}</code>) reachable, but database reported: 
+                    <span className="text-rose-300 font-mono text-[11px] block mt-0.5">{cloudDiagnostics.errorMessage}</span>
+                  </>
+                ) : (
+                  <>
+                    Synchronized with Supabase project (<code className="text-[#F5E7C4] font-mono">{cloudDiagnostics.maskedUrl}</code>). 
+                    Found <strong className="text-emerald-300 font-mono">{cloudRegistrations.length}</strong> cloud records 
+                    {myRegistrations.length > 0 && <span> + {myRegistrations.length} local browser test records</span>}.
+                  </>
+                )}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-end sm:self-center shrink-0 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setShowCloudModal(true)}
+              className="px-3.5 py-1.5 rounded-xl bg-[#D4AF37]/15 hover:bg-[#D4AF37]/25 text-[#E6C57D] border border-[#D4AF37]/35 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+            >
+              <Info className="w-3.5 h-3.5" />
+              <span>{!cloudDiagnostics?.isConfigured ? 'Why are registrations missing?' : 'Database Setup Guide'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={loadData}
+              disabled={isCheckingCloud}
+              className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-slate-200 border border-white/15 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isCheckingCloud ? 'animate-spin' : ''}`} />
+              <span>{isCheckingCloud ? 'Testing...' : 'Check Live'}</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -2162,6 +2275,235 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
               >
                 Delete Permanently
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* MODAL 6: SUPABASE CLOUD SETUP & TROUBLESHOOTING GUIDE */}
+      {/* ==================================================================== */}
+      {showCloudModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
+          <div className="relative w-full max-w-2xl celestial-glass rounded-2xl p-6 border border-[#D4AF37]/50 shadow-2xl space-y-5 my-8 max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-[#D4AF37]/20 border border-[#D4AF37]/50 flex items-center justify-center text-[#E6C57D]">
+                  <Database className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-cinzel text-lg font-bold text-white">Supabase Cloud Database Diagnostics</h3>
+                  <span className="text-[11px] font-mono text-[#D4AF37]">Why aren't friends' registrations showing up?</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCloudModal(false)}
+                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Current Diagnostics Status Card */}
+            <div className="p-4 rounded-xl bg-black/50 border border-white/15 space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400 font-medium">Build Supabase Status:</span>
+                <span className={`font-mono font-bold px-2 py-0.5 rounded text-[10px] ${
+                  cloudDiagnostics?.isConfigured 
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' 
+                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                }`}>
+                  {cloudDiagnostics?.isConfigured ? 'Configured in Build' : 'Missing in Build (Local Mode)'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400 font-medium">Project Endpoint:</span>
+                <span className="font-mono text-white">{cloudDiagnostics?.maskedUrl || 'None detected in frontend bundle'}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400 font-medium">Cloud Database Records:</span>
+                <span className="font-mono font-bold text-emerald-400">{cloudRegistrations.length}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400 font-medium">Current Browser Local Test Records:</span>
+                <span className="font-mono text-slate-300">{myRegistrations.length}</span>
+              </div>
+              {cloudDiagnostics?.errorMessage && (
+                <div className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 font-mono text-[11px] mt-2">
+                  <strong>Notice:</strong> {cloudDiagnostics.errorMessage}
+                </div>
+              )}
+            </div>
+
+            {/* Explanation of the Problem */}
+            <div className="space-y-3 text-xs text-slate-300 leading-relaxed">
+              <h4 className="font-cinzel text-sm font-bold text-white flex items-center gap-1.5">
+                <Info className="w-4 h-4 text-[#D4AF37]" />
+                <span>The Explanation (Why this happened)</span>
+              </h4>
+              <p>
+                <strong>1. Why you only see 3 registrations (your own):</strong> When you test registrations on this laptop/browser, the site saves them in this browser's local memory (<code className="text-[#F5E7C4] font-mono">localStorage</code>). That is why your 3 tests show up.
+              </p>
+              <p>
+                <strong>2. Why your friends' registrations didn't show up:</strong> When your friend registered on their phone, their phone generated a code, but the registration was saved in <em>their</em> phone's local cache because the hosted build on Render was missing the Supabase keys, or because the previous code sent large camera photo files that Supabase rejected.
+              </p>
+              <p>
+                <strong>3. Why Supabase showed "Success. No rows returned":</strong> When you run SQL statements like <code className="text-[#F5E7C4] font-mono">CREATE TABLE</code> or <code className="text-[#F5E7C4] font-mono">CREATE POLICY</code>, PostgreSQL does not return rows—it prints <em>"Success. No rows returned."</em> That means your SQL executed perfectly!
+              </p>
+            </div>
+
+            {/* 3 Steps to Fix */}
+            <div className="space-y-3 pt-2 border-t border-white/10 text-xs text-slate-300">
+              <h4 className="font-cinzel text-sm font-bold text-[#E6C57D] flex items-center gap-1.5">
+                <CheckCircle className="w-4 h-4 text-[#D4AF37]" />
+                <span>How to Make All Registrations Sync into Cloud Supabase</span>
+              </h4>
+
+              <div className="p-3 rounded-xl bg-black/40 border border-white/10 space-y-1.5">
+                <span className="font-bold text-white block">Step 1: Check Environment Variables on Render</span>
+                <p className="text-slate-300">
+                  Open Render Dashboard → Click your Web Service → Go to <strong>Environment</strong> tab. Ensure both variables are added:
+                </p>
+                <div className="p-2 rounded bg-black/60 font-mono text-[11px] text-[#F5E7C4] space-y-1">
+                  <div>VITE_SUPABASE_URL = https://your-project.supabase.co</div>
+                  <div>VITE_SUPABASE_ANON_KEY = eyJhbGciOi... (use the <strong>anon / public</strong> key, not secret!)</div>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-black/40 border border-[#D4AF37]/35 space-y-1.5">
+                <span className="font-bold text-[#F5E7C4] block">Step 2: Crucial — Trigger "Clear build cache & deploy"</span>
+                <p className="text-slate-300">
+                  In Vite React apps, environment variables starting with <code className="font-mono text-white">VITE_</code> are embedded into JavaScript <strong>at build time</strong>. If you added the variables after building, you must click:
+                </p>
+                <div className="p-2 rounded bg-amber-500/10 border border-amber-500/30 text-amber-200 font-medium">
+                  Render Dashboard → <strong>Manual Deploy</strong> → <strong>Clear build cache & deploy</strong>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-black/40 border border-white/10 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-white">Step 3: Run the Schema in Supabase SQL Editor</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const sql = `-- CELESTIA '26 SUPABASE DATABASE SCHEMA
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+CREATE TABLE IF NOT EXISTS public.registrations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    registration_code TEXT UNIQUE NOT NULL,
+    event_code TEXT NOT NULL,
+    event_type TEXT,
+    team_name TEXT,
+    college_name TEXT,
+    college_city TEXT,
+    college_state TEXT,
+    college_contact_person TEXT,
+    college_contact_mobile TEXT,
+    college_contact_email TEXT,
+    is_college_delegation BOOLEAN DEFAULT false,
+    participant_count INTEGER DEFAULT 1,
+    fee_per_unit NUMERIC DEFAULT 0,
+    fee_type TEXT DEFAULT 'per_team',
+    total_fee NUMERIC DEFAULT 0,
+    registration_status TEXT DEFAULT 'Submitted',
+    admin_notes TEXT,
+    verified_at TIMESTAMPTZ,
+    rules_accepted BOOLEAN DEFAULT true,
+    rules_version TEXT DEFAULT 'v1.0-celestia26',
+    rules_accepted_at TIMESTAMPTZ DEFAULT now(),
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS admin_notes TEXT;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS public.participants (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    registration_id UUID REFERENCES public.registrations(id) ON DELETE CASCADE,
+    full_name TEXT NOT NULL,
+    gender TEXT,
+    age INTEGER DEFAULT 20,
+    mobile TEXT,
+    email TEXT,
+    role TEXT,
+    id_card_storage_path TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.payment_submissions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    registration_id UUID REFERENCES public.registrations(id) ON DELETE CASCADE,
+    utr_number TEXT,
+    amount_paid NUMERIC DEFAULT 0,
+    payment_screenshot_path TEXT,
+    payment_status TEXT DEFAULT 'Pending',
+    verified_at TIMESTAMPTZ,
+    rejection_reason TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE public.payment_submissions ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
+ALTER TABLE public.payment_submissions ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
+
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;
+
+ALTER TABLE public.registrations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.participants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.payment_submissions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow public insert to registrations" ON public.registrations;
+CREATE POLICY "Allow public insert to registrations" ON public.registrations FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public insert to participants" ON public.participants;
+CREATE POLICY "Allow public insert to participants" ON public.participants FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public insert to payment_submissions" ON public.payment_submissions;
+CREATE POLICY "Allow public insert to payment_submissions" ON public.payment_submissions FOR ALL USING (true) WITH CHECK (true);`;
+                      navigator.clipboard.writeText(sql);
+                      setCopiedSql(true);
+                      showToast('SQL Schema copied to clipboard!');
+                      setTimeout(() => setCopiedSql(false), 3000);
+                    }}
+                    className="px-2.5 py-1 rounded bg-[#D4AF37]/20 text-[#F5E7C4] hover:bg-[#D4AF37]/30 border border-[#D4AF37]/40 text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                  >
+                    {copiedSql ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedSql ? 'Copied!' : 'Copy SQL Schema'}</span>
+                  </button>
+                </div>
+                <p className="text-slate-300">
+                  Open your Supabase Dashboard → <strong>SQL Editor</strong> → click <strong>New Query</strong> → paste the copied SQL and click <strong>RUN</strong>.
+                </p>
+              </div>
+            </div>
+
+            {/* Footer Actions */}
+            <div className="flex items-center justify-between pt-3 border-t border-white/10">
+              <span className="text-[11px] text-slate-400 font-mono">
+                Last checked: {cloudDiagnostics?.lastChecked || 'Just now'}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await loadData();
+                    showToast('Live Cloud status refreshed');
+                  }}
+                  className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs text-white cursor-pointer"
+                >
+                  Retest Cloud Now
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowCloudModal(false)}
+                  className="px-5 py-2 rounded-xl bg-[#D4AF37] hover:brightness-110 text-xs font-bold text-black cursor-pointer"
+                >
+                  Close Guide
+                </button>
+              </div>
             </div>
           </div>
         </div>

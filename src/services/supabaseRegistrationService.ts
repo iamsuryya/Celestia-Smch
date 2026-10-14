@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, getSupabaseConfigStatus } from '../lib/supabase';
 import { 
   RegistrationSubmission, 
   ParticipantMember, 
@@ -27,13 +27,74 @@ export interface VerificationResult {
   message: string;
 }
 
+export interface CloudDiagnostics {
+  isConfigured: boolean;
+  hasUrl: boolean;
+  hasAnonKey: boolean;
+  maskedUrl: string | null;
+  isConnected: boolean;
+  tableExists: boolean;
+  rowCount: number;
+  errorMessage: string | null;
+  lastChecked: string;
+}
+
 /**
  * Service providing production database operations for Celestia'26 registrations,
  * participants, payment proofs, and administrative verification.
  */
 export const supabaseRegistrationService = {
   /**
-   * Uploads an ID card file to the private 'id-cards' storage bucket
+   * Diagnostic check to verify live cloud connectivity and row counts
+   */
+  async getCloudDiagnostics(): Promise<CloudDiagnostics> {
+    const configStatus = getSupabaseConfigStatus();
+    const result: CloudDiagnostics = {
+      isConfigured: configStatus.isConfigured,
+      hasUrl: configStatus.hasUrl,
+      hasAnonKey: configStatus.hasAnonKey,
+      maskedUrl: configStatus.maskedUrl,
+      isConnected: false,
+      tableExists: false,
+      rowCount: 0,
+      errorMessage: null,
+      lastChecked: new Date().toLocaleTimeString(),
+    };
+
+    if (!supabase) {
+      result.errorMessage = configStatus.hasUrl && configStatus.hasAnonKey 
+        ? 'Supabase client failed to initialize' 
+        : 'VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY is missing in this build';
+      return result;
+    }
+
+    try {
+      // Test basic connection and read count from registrations table
+      const { data, count, error } = await supabase
+        .from('registrations')
+        .select('id', { count: 'exact', head: false })
+        .limit(1);
+
+      if (error) {
+        result.isConnected = true;
+        result.tableExists = false;
+        result.errorMessage = `Supabase Error: ${error.message} (Hint: ${error.hint || error.details || 'Check RLS policy or run supabase_schema.sql'})`;
+        return result;
+      }
+
+      result.isConnected = true;
+      result.tableExists = true;
+      result.rowCount = count ?? (data?.length || 0);
+      return result;
+    } catch (err: unknown) {
+      result.isConnected = false;
+      result.errorMessage = err instanceof Error ? err.message : 'Network / Connection error to Supabase';
+      return result;
+    }
+  },
+
+  /**
+   * Uploads an ID card file to the 'id-cards' storage bucket
    */
   async uploadIdCard(registrationCode: string, participantIndex: number, file: File): Promise<string | null> {
     if (!supabase) return null;
@@ -61,7 +122,7 @@ export const supabaseRegistrationService = {
   },
 
   /**
-   * Uploads a payment screenshot to the private 'payment-proofs' storage bucket
+   * Uploads a payment screenshot to the 'payment-proofs' storage bucket
    */
   async uploadPaymentScreenshot(registrationCode: string, file: File): Promise<string | null> {
     if (!supabase) return null;
@@ -96,7 +157,7 @@ export const supabaseRegistrationService = {
     try {
       const { data, error } = await supabase.storage
         .from(bucket)
-        .createSignedUrl(storagePath, 300); // 5 minutes validity
+        .createSignedUrl(storagePath, 600); // 10 minutes validity
 
       if (error || !data?.signedUrl) {
         return null;
@@ -129,11 +190,10 @@ export const supabaseRegistrationService = {
 
   /**
    * Submits a full registration to Supabase:
-   * 1. Uploads files to private storage
-   * 2. Inserts registration record
-   * 3. Inserts participant roster entries (no roll numbers)
+   * 1. Uploads files to storage if configured
+   * 2. Inserts registration record (guaranteed safe payload without huge base64 drops)
+   * 3. Inserts participant roster entries
    * 4. Inserts payment submission entry
-   * 5. Records terms & rules acceptance
    */
   async submitRegistrationToSupabase(payload: RegistrationPayload): Promise<{
     success: boolean;
@@ -141,9 +201,10 @@ export const supabaseRegistrationService = {
     supabaseId?: string;
     error?: string;
   }> {
-    const registrationCode = payload.registrationCode || generateRegistrationCode(payload.selectedEvent.id);
+    const registrationCode = payload.registrationCode || generateRegistrationCode(payload.selectedEvent?.id || 'event');
 
     if (!isSupabaseConfigured || !supabase) {
+      console.info('Supabase not configured in this build; registration stored in local offline storage.');
       return {
         success: true,
         registrationCode,
@@ -151,7 +212,7 @@ export const supabaseRegistrationService = {
     }
 
     try {
-      // 1. Upload payment receipt if a raw file is provided
+      // 1. Upload payment receipt to storage if a raw file is provided
       let receiptPath: string | null = null;
       if (payload.paymentScreenshotFile) {
         receiptPath = await this.uploadPaymentScreenshot(registrationCode, payload.paymentScreenshotFile);
@@ -177,7 +238,7 @@ export const supabaseRegistrationService = {
         const { data: eventData } = await supabase
           .from('events')
           .select('id')
-          .eq('code', payload.selectedEvent.code)
+          .eq('code', payload.selectedEvent?.code)
           .maybeSingle();
         if (eventData?.id) {
           eventDbId = eventData.id;
@@ -186,23 +247,23 @@ export const supabaseRegistrationService = {
         // Table might not exist yet or offline
       }
 
-      // 3. Insert into registrations table
+      // 3. Prepare sanitized registration record
       const regInsertData: Record<string, unknown> = {
         registration_code: registrationCode,
-        event_code: payload.selectedEvent.code,
-        event_type: payload.selectedEvent.type,
-        team_name: payload.teamName || (payload.selectedEvent.type === 'Solo' ? payload.selectedEvent.title : `${payload.participants[0]?.fullName || 'Collegiate'}'s Team`),
-        college_name: payload.collegeDetails.collegeName,
-        college_city: payload.collegeDetails.city,
-        college_state: payload.collegeDetails.state,
-        college_contact_person: payload.collegeDetails.contactPerson,
-        college_contact_mobile: payload.collegeDetails.contactMobile,
-        college_contact_email: payload.collegeDetails.contactEmail,
-        is_college_delegation: payload.collegeDetails.isCollegeDelegation,
-        participant_count: payload.participants.length,
-        fee_per_unit: payload.selectedEvent.feeAmount,
-        fee_type: payload.selectedEvent.feeType,
-        total_fee: payload.totalFee,
+        event_code: payload.selectedEvent?.code || 'EVENT',
+        event_type: payload.selectedEvent?.type || 'Solo',
+        team_name: payload.teamName || (payload.selectedEvent?.type === 'Solo' ? (payload.selectedEvent?.title || 'Solo Entry') : `${payload.participants?.[0]?.fullName || 'Collegiate'}'s Team`),
+        college_name: payload.collegeDetails?.collegeName || 'N/A',
+        college_city: payload.collegeDetails?.city || '',
+        college_state: payload.collegeDetails?.state || '',
+        college_contact_person: payload.collegeDetails?.contactPerson || '',
+        college_contact_mobile: payload.collegeDetails?.contactMobile || '',
+        college_contact_email: payload.collegeDetails?.contactEmail || '',
+        is_college_delegation: Boolean(payload.collegeDetails?.isCollegeDelegation),
+        participant_count: payload.participants?.length || 1,
+        fee_per_unit: Number(payload.selectedEvent?.feeAmount) || 0,
+        fee_type: payload.selectedEvent?.feeType || 'per_team',
+        total_fee: Number(payload.totalFee) || 0,
         registration_status: 'Submitted',
         rules_accepted: true,
         rules_version: 'v1.0-celestia26',
@@ -221,58 +282,84 @@ export const supabaseRegistrationService = {
           });
       regInsertData.id = registrationId;
 
+      // Execute insert into registrations
       const { error: regError } = await supabase
         .from('registrations')
         .insert([regInsertData]);
 
       if (regError) {
-        console.warn('Supabase registrations table insert error:', regError.message);
-        // Return success with local code so frontend continues smoothly
+        console.error('Supabase registrations table insert error:', regError.message, regError.details || '');
         return {
-          success: true,
+          success: false,
           registrationCode,
           error: regError.message,
         };
       }
 
-      // 4. Insert participant roster records if table exists
-      if (registrationId && payload.participants.length > 0) {
-        const participantRows = payload.participants.map((m, idx) => ({
-          registration_id: registrationId,
-          full_name: m.fullName,
-          gender: m.gender,
-          age: parseInt(m.age, 10) || 20,
-          mobile: m.mobile,
-          email: m.email,
-          role: m.role || (idx === 0 ? 'Primary Contact / Team Captain' : 'Team Member'),
-          id_card_storage_path: uploadedIdCardPaths[idx] || m.idCardFileData || null,
-        }));
+      // 4. Insert participant roster records
+      if (registrationId && payload.participants && payload.participants.length > 0) {
+        try {
+          const participantRows = payload.participants.map((m, idx) => {
+            // CRITICAL: Never send huge base64 strings (> 4000 chars) into database column
+            let idCardStorage = uploadedIdCardPaths[idx];
+            if (!idCardStorage && m.idCardFileData && m.idCardFileData.length < 4000) {
+              idCardStorage = m.idCardFileData;
+            } else if (!idCardStorage && m.idCardFileName) {
+              idCardStorage = `file:${m.idCardFileName}`;
+            }
 
-        const { error: partError } = await supabase
-          .from('participants')
-          .insert(participantRows);
+            return {
+              registration_id: registrationId,
+              full_name: m.fullName || 'Participant',
+              gender: m.gender || 'Other',
+              age: parseInt(m.age, 10) || 20,
+              mobile: m.mobile || '',
+              email: m.email || '',
+              role: m.role || (idx === 0 ? 'Primary Contact / Team Captain' : 'Team Member'),
+              id_card_storage_path: idCardStorage || null,
+            };
+          });
 
-        if (partError) {
-          console.warn('Participant roster insert notice:', partError.message);
+          const { error: partError } = await supabase
+            .from('participants')
+            .insert(participantRows);
+
+          if (partError) {
+            console.warn('Participant roster insert notice:', partError.message);
+          }
+        } catch (pErr) {
+          console.warn('Participants insert non-fatal error:', pErr);
         }
       }
 
       // 5. Insert payment submission record
       if (registrationId) {
-        const paymentData = {
-          registration_id: registrationId,
-          utr_number: payload.utrNumber,
-          amount_paid: payload.totalFee,
-          payment_screenshot_path: receiptPath || payload.paymentScreenshotData || payload.paymentScreenshotName || null,
-          payment_status: 'Submitted',
-        };
+        try {
+          // CRITICAL: Never put large multi-megabyte base64 screenshot data in database column (causes 413 Payload Too Large)
+          let paymentProof = receiptPath;
+          if (!paymentProof && payload.paymentScreenshotData && payload.paymentScreenshotData.length < 4000) {
+            paymentProof = payload.paymentScreenshotData;
+          } else if (!paymentProof && payload.paymentScreenshotName) {
+            paymentProof = `proof:${payload.paymentScreenshotName}`;
+          }
 
-        const { error: payError } = await supabase
-          .from('payment_submissions')
-          .insert([paymentData]);
+          const paymentData = {
+            registration_id: registrationId,
+            utr_number: payload.utrNumber || 'NOT_SUBMITTED',
+            amount_paid: Number(payload.totalFee) || 0,
+            payment_screenshot_path: paymentProof || null,
+            payment_status: 'Submitted',
+          };
 
-        if (payError) {
-          console.warn('Payment submissions insert notice:', payError.message);
+          const { error: payError } = await supabase
+            .from('payment_submissions')
+            .insert([paymentData]);
+
+          if (payError) {
+            console.warn('Payment submissions insert notice:', payError.message);
+          }
+        } catch (payErr) {
+          console.warn('Payment insert non-fatal error:', payErr);
         }
       }
 
@@ -283,9 +370,9 @@ export const supabaseRegistrationService = {
       };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Database error';
-      console.warn('Supabase registration submission fallback:', msg);
+      console.error('Supabase registration submission exception:', msg);
       return {
-        success: true,
+        success: false,
         registrationCode,
         error: msg,
       };
@@ -293,11 +380,12 @@ export const supabaseRegistrationService = {
   },
 
   /**
-   * Fetches all registrations for the Admin Console
+   * Fetches all registrations for the Admin Console with automatic resilient fallback
    */
   async fetchAdminRegistrations(): Promise<RegistrationSubmission[]> {
     if (!supabase) return [];
     try {
+      // 1. First attempt complete joined query
       const { data, error } = await supabase
         .from('registrations')
         .select(`
@@ -339,71 +427,120 @@ export const supabaseRegistrationService = {
         `)
         .order('created_at', { ascending: false });
 
-      if (error || !data) {
+      if (!error && data && data.length > 0) {
+        return this.mapSupabaseRowsToSubmissions(data);
+      }
+
+      // 2. If joined query failed or returned error, try fallback flat query on registrations
+      if (error) {
+        console.warn('Joined fetchAdminRegistrations failed, attempting flat fallback:', error.message);
+      }
+
+      const { data: flatData, error: flatError } = await supabase
+        .from('registrations')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (flatError || !flatData) {
+        console.warn('Flat fetchAdminRegistrations also failed:', flatError?.message);
         return [];
       }
 
-      // Map to RegistrationSubmission format
-      return data.map((row: any) => {
-        const payment = Array.isArray(row.payment_submissions) ? row.payment_submissions[0] : row.payment_submissions;
-        const roster = Array.isArray(row.participants) ? row.participants : [];
+      // Fetch payments separately
+      let paymentsByRegId: Record<string, any> = {};
+      try {
+        const regIds = flatData.map((r: any) => r.id).filter(Boolean);
+        if (regIds.length > 0) {
+          const { data: payRows } = await supabase
+            .from('payment_submissions')
+            .select('*')
+            .in('registration_id', regIds);
 
-        return {
-          id: row.registration_code || row.id,
-          userId: 'cloud',
-          eventId: row.event_code?.toLowerCase() || '',
-          eventTitle: row.event_code || 'Fest Event',
-          eventCode: row.event_code || '',
-          eventCategory: 'Cultural',
-          eventType: row.event_type || 'Solo',
-          venue: 'Main Stage',
-          dateStr: 'November 3-5, 2026',
-          duration: 'Standard',
-          college: {
-            collegeName: row.college_name || 'N/A',
-            city: row.college_city || '',
-            state: row.college_state || '',
-            contactPerson: row.college_contact_person || '',
-            contactMobile: row.college_contact_mobile || '',
-            contactEmail: row.college_contact_email || '',
-            isCollegeDelegation: Boolean(row.is_college_delegation),
-          },
-          teamName: row.team_name,
-          participants: roster.map((p: any) => ({
-            fullName: p.full_name,
-            gender: p.gender,
-            age: String(p.age || 20),
-            mobile: p.mobile,
-            email: p.email,
-            role: p.role,
-            idCardStoragePath: p.id_card_storage_path || undefined,
-            idCardFileData: p.id_card_storage_path?.startsWith('data:') ? p.id_card_storage_path : undefined,
-            idCardFileName: p.id_card_storage_path 
-              ? (p.id_card_storage_path.startsWith('data:') ? 'Student_ID_Proof.jpg' : p.id_card_storage_path.split('/').pop() || 'Uploaded ID Proof') 
-              : undefined,
-          })),
-          feePerUnit: Number(row.fee_per_unit) || 0,
-          feeType: row.fee_type || 'per_head',
-          totalAmount: Number(row.total_fee) || 0,
-          utrNumber: payment?.utr_number || 'N/A',
-          paymentScreenshotName: payment?.payment_screenshot_path 
-            ? (payment.payment_screenshot_path.startsWith('data:') ? 'Payment_Screenshot_Slip.png' : payment.payment_screenshot_path.split('/').pop() || 'Payment Screenshot') 
-            : undefined,
-          paymentScreenshotPath: payment?.payment_screenshot_path || undefined,
-          paymentScreenshotData: payment?.payment_screenshot_path?.startsWith('data:') ? payment.payment_screenshot_path : undefined,
-          paymentConfirmed: payment?.payment_status === 'Verified',
-          paymentStatus: (payment?.payment_status as any) || 'Submitted',
-          registrationStatus: (row.registration_status as any) || 'Submitted',
-          createdAt: new Date(row.created_at).toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-          }),
-        };
-      });
-    } catch {
+          if (payRows) {
+            payRows.forEach((p: any) => {
+              paymentsByRegId[p.registration_id] = p;
+            });
+          }
+        }
+      } catch {
+        // Non-fatal
+      }
+
+      // Combine flat data
+      const mergedData = flatData.map((row: any) => ({
+        ...row,
+        payment_submissions: paymentsByRegId[row.id] ? [paymentsByRegId[row.id]] : [],
+        participants: [],
+      }));
+
+      return this.mapSupabaseRowsToSubmissions(mergedData);
+    } catch (err) {
+      console.warn('fetchAdminRegistrations exception:', err);
       return [];
     }
+  },
+
+  /**
+   * Helper to map raw database rows to strongly typed RegistrationSubmission objects
+   */
+  mapSupabaseRowsToSubmissions(data: any[]): RegistrationSubmission[] {
+    return data.map((row: any) => {
+      const payment = Array.isArray(row.payment_submissions) ? row.payment_submissions[0] : row.payment_submissions;
+      const roster = Array.isArray(row.participants) ? row.participants : [];
+
+      return {
+        id: row.registration_code || row.id,
+        userId: 'cloud',
+        eventId: row.event_code?.toLowerCase() || '',
+        eventTitle: row.event_code || 'Fest Event',
+        eventCode: row.event_code || '',
+        eventCategory: 'Cultural',
+        eventType: row.event_type || 'Solo',
+        venue: 'Main Stage',
+        dateStr: 'November 3-5, 2026',
+        duration: 'Standard',
+        college: {
+          collegeName: row.college_name || 'N/A',
+          city: row.college_city || '',
+          state: row.college_state || '',
+          contactPerson: row.college_contact_person || '',
+          contactMobile: row.college_contact_mobile || '',
+          contactEmail: row.college_contact_email || '',
+          isCollegeDelegation: Boolean(row.is_college_delegation),
+        },
+        teamName: row.team_name,
+        participants: roster.map((p: any) => ({
+          fullName: p.full_name,
+          gender: p.gender,
+          age: String(p.age || 20),
+          mobile: p.mobile,
+          email: p.email,
+          role: p.role,
+          idCardStoragePath: p.id_card_storage_path || undefined,
+          idCardFileData: p.id_card_storage_path?.startsWith('data:') ? p.id_card_storage_path : undefined,
+          idCardFileName: p.id_card_storage_path 
+            ? (p.id_card_storage_path.startsWith('data:') ? 'Student_ID_Proof.jpg' : p.id_card_storage_path.split('/').pop() || 'Uploaded ID Proof') 
+            : undefined,
+        })),
+        feePerUnit: Number(row.fee_per_unit) || 0,
+        feeType: row.fee_type || 'per_head',
+        totalAmount: Number(row.total_fee) || 0,
+        utrNumber: payment?.utr_number || 'N/A',
+        paymentScreenshotName: payment?.payment_screenshot_path 
+          ? (payment.payment_screenshot_path.startsWith('data:') ? 'Payment_Screenshot_Slip.png' : payment.payment_screenshot_path.split('/').pop() || 'Payment Screenshot') 
+          : undefined,
+        paymentScreenshotPath: payment?.payment_screenshot_path || undefined,
+        paymentScreenshotData: payment?.payment_screenshot_path?.startsWith('data:') ? payment.payment_screenshot_path : undefined,
+        paymentConfirmed: payment?.payment_status === 'Verified',
+        paymentStatus: (payment?.payment_status as any) || 'Submitted',
+        registrationStatus: (row.registration_status as any) || 'Submitted',
+        createdAt: new Date(row.created_at).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        }),
+      };
+    });
   },
 
   /**
@@ -440,31 +577,43 @@ export const supabaseRegistrationService = {
         regStatus = 'Rejected';
       } else if (action === 'hold' || action === 'not_complete') {
         payStatus = 'Pending';
-        regStatus = 'Draft'; // On hold / registration not complete
+        regStatus = 'Draft';
       } else if (action === 'reset_pending') {
         payStatus = 'Submitted';
         regStatus = 'Submitted';
       }
 
       // Update payment
-      await supabase
-        .from('payment_submissions')
-        .update({
-          payment_status: payStatus,
-          verified_at: (action === 'approve' || action === 'verify') ? new Date().toISOString() : null,
-          rejection_reason: notes || null,
-        })
-        .eq('registration_id', reg.id);
+      try {
+        await supabase
+          .from('payment_submissions')
+          .update({
+            payment_status: payStatus,
+            verified_at: (action === 'approve' || action === 'verify') ? new Date().toISOString() : null,
+            rejection_reason: notes || null,
+          })
+          .eq('registration_id', reg.id);
+      } catch {
+        // Non-fatal if payment table has schema difference
+      }
 
       // Update registration
-      await supabase
-        .from('registrations')
-        .update({
-          registration_status: regStatus,
-          admin_notes: notes || (action === 'hold' || action === 'not_complete' ? 'Flagged as Not Complete by Admin' : null),
-          verified_at: (action === 'approve' || action === 'verify') ? new Date().toISOString() : null,
-        })
-        .eq('id', reg.id);
+      try {
+        await supabase
+          .from('registrations')
+          .update({
+            registration_status: regStatus,
+            admin_notes: notes || (action === 'hold' || action === 'not_complete' ? 'Flagged as Not Complete by Admin' : null),
+            verified_at: (action === 'approve' || action === 'verify') ? new Date().toISOString() : null,
+          })
+          .eq('id', reg.id);
+      } catch {
+        // Fallback update without custom columns
+        await supabase
+          .from('registrations')
+          .update({ registration_status: regStatus })
+          .eq('id', reg.id);
+      }
 
       const actionText = 
         (action === 'approve' || action === 'verify') ? 'Verified' :
@@ -481,7 +630,6 @@ export const supabaseRegistrationService = {
    * Deletes a registration record and cleans local storage safely without affecting other entries
    */
   async deleteRegistration(registrationCode: string): Promise<VerificationResult> {
-    // 1. Clean from localStorage celestia26_registrations
     try {
       const saved = localStorage.getItem('celestia26_registrations');
       if (saved) {
@@ -500,7 +648,6 @@ export const supabaseRegistrationService = {
     }
 
     try {
-      // Find by registration_code OR id
       const { data: reg, error: findError } = await supabase
         .from('registrations')
         .select('id, registration_code')
@@ -508,13 +655,16 @@ export const supabaseRegistrationService = {
         .maybeSingle();
 
       if (findError || !reg) {
-        // Already absent from Supabase, local cleanup was completed
         return { success: true, message: `Registration ${registrationCode} deleted` };
       }
 
-      // Delete child participants & payments
-      await supabase.from('participants').delete().eq('registration_id', reg.id);
-      await supabase.from('payments').delete().eq('registration_id', reg.id);
+      // Delete child records safely
+      try {
+        await supabase.from('participants').delete().eq('registration_id', reg.id);
+        await supabase.from('payment_submissions').delete().eq('registration_id', reg.id);
+      } catch {
+        // Non-fatal
+      }
 
       const { error: delError } = await supabase
         .from('registrations')
