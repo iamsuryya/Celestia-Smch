@@ -136,7 +136,9 @@ export const PaymentPage: React.FC = () => {
     setPaymentScreenshotData('');
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!isHost) {
@@ -156,9 +158,16 @@ export const PaymentPage: React.FC = () => {
     }
 
     setErrorMsg('');
-    const submission = submitRegistration();
-    if (submission) {
-      goToStep('confirmation');
+    setIsSubmitting(true);
+    try {
+      const submission = await submitRegistration();
+      if (submission) {
+        goToStep('confirmation');
+      }
+    } catch {
+      setErrorMsg('Failed to record registration. Please check your network and try again.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -307,7 +316,7 @@ export const PaymentPage: React.FC = () => {
               <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex items-start gap-2.5">
                 <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                 <span className="leading-relaxed font-medium">
-                  Only students from srinivasan medical college choose this option , others using this and not paying the amount may lead to disqualification from the event.
+                  Only students from Srinivasan Medical College should choose this option. Others using this without authorization and not paying the registration fee will face immediate disqualification from the event.
                 </span>
               </div>
 
@@ -339,10 +348,20 @@ export const PaymentPage: React.FC = () => {
 
                 <button
                   type="submit"
-                  className="py-3 px-6 text-xs font-bold tracking-wider uppercase text-[#070B1B] bg-gradient-to-r from-[#F5E7C4] via-[#E6C57D] to-[#D4AF37] hover:brightness-110 active:scale-95 rounded-lg transition-all shadow-md shadow-[#D4AF37]/25 flex items-center gap-2 cursor-pointer"
+                  disabled={isSubmitting}
+                  className="py-3 px-6 text-xs font-bold tracking-wider uppercase text-[#070B1B] bg-gradient-to-r from-[#F5E7C4] via-[#E6C57D] to-[#D4AF37] hover:brightness-110 active:scale-95 rounded-lg transition-all shadow-md shadow-[#D4AF37]/25 flex items-center gap-2 cursor-pointer disabled:opacity-60"
                 >
-                  <span>Submit Host Registration (₹0)</span>
-                  <ArrowRight className="w-4 h-4" />
+                  {isSubmitting ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin text-[#070B1B]" />
+                      <span>Recording Host Registration...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Submit Host Registration (₹0)</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
                 </button>
               </div>
             </form>
@@ -555,10 +574,20 @@ export const PaymentPage: React.FC = () => {
 
                 <button
                   type="submit"
-                  className="py-3 px-6 text-xs font-bold tracking-wider uppercase text-[#070B1B] bg-gradient-to-r from-[#F5E7C4] via-[#E6C57D] to-[#D4AF37] hover:brightness-110 active:scale-95 rounded-lg transition-all shadow-md shadow-[#D4AF37]/25 flex items-center gap-2 cursor-pointer"
+                  disabled={isSubmitting}
+                  className="py-3 px-6 text-xs font-bold tracking-wider uppercase text-[#070B1B] bg-gradient-to-r from-[#F5E7C4] via-[#E6C57D] to-[#D4AF37] hover:brightness-110 active:scale-95 rounded-lg transition-all shadow-md shadow-[#D4AF37]/25 flex items-center gap-2 cursor-pointer disabled:opacity-60"
                 >
-                  <span>Submit Registration</span>
-                  <ArrowRight className="w-4 h-4" />
+                  {isSubmitting ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin text-[#070B1B]" />
+                      <span>Recording Registration to Database...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Submit Registration</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
                 </button>
               </div>
             </form>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Menu, X, Sparkles, UserCheck, LogOut } from 'lucide-react';
 
-export type NavigationPage = 'home' | 'events' | 'guests' | 'schedule' | 'accommodation' | 'results' | 'about' | 'contact' | 'admin' | 'admin1';
+export type NavigationPage = 'home' | 'events' | 'guests' | 'schedule' | 'accommodation' | 'results' | 'about' | 'contact' | 'admin' | 'admin1' | 'incharges';
 
 interface NavbarProps {
   currentPage: NavigationPage;

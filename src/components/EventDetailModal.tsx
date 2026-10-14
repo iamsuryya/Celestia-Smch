@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
-import { X, Award, Clock, MapPin, Users, AlertCircle, CheckCircle2, Calendar, Sparkles } from 'lucide-react';
-import { EventItem, FESTIVAL_METADATA } from '../data/festivalData';
+import { X, Award, Clock, MapPin, Users, AlertCircle, CheckCircle2, Calendar, Sparkles, Phone } from 'lucide-react';
+import { EventItem, FESTIVAL_METADATA, getEventDeadline } from '../data/festivalData';
 import { isEventRegistrationOpen } from '../utils/registrationStatus';
 import { getEventImage } from '../utils/eventImages';
 
@@ -168,7 +168,7 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 <span className="font-cinzel text-xl font-bold text-[#F5E7C4]">{event.registrationFee}</span>
               </div>
               <div className="text-xs text-slate-400">
-                Deadline: <strong className="text-slate-200">{FESTIVAL_METADATA.registrationDeadlineFormatted}</strong>
+                Registration Deadline: <strong className="text-emerald-300 font-semibold">{getEventDeadline(event.id)} (11:59 PM)</strong>
               </div>
             </div>
           </section>
@@ -268,6 +268,57 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
               ) : (
                 <div className="text-xs text-slate-400 italic">
                   None specified in the official event sheet.
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Section 9: Event In-Charges & Contact */}
+          <section className="space-y-2">
+            <h3 className="font-cinzel text-xs font-bold uppercase tracking-widest text-[#D4AF37] flex items-center gap-1.5">
+              <span>09. Event In-Charges & Coordinators</span>
+            </h3>
+            <div className="p-4 rounded-xl bg-[#090E25] border border-white/5 space-y-3">
+              {event.incharges && event.incharges.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {event.incharges.map((inc, idx) => {
+                    const cleanPhone = inc.phone.replace(/\D/g, '');
+                    return (
+                      <div key={idx} className="p-3.5 rounded-xl bg-[#070B1D] border border-white/10 hover:border-[#D4AF37]/40 transition-colors flex items-center justify-between gap-2.5">
+                        <div className="min-w-0 flex-1">
+                          <span className="font-bold text-white text-xs sm:text-sm block truncate">{inc.name}</span>
+                          <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-mono">{inc.role || 'Event In-Charge'}</span>
+                        </div>
+                        <a
+                          href={`tel:${cleanPhone}`}
+                          className="px-2.5 py-1.5 rounded-lg bg-[#D4AF37]/15 hover:bg-[#D4AF37] text-[#F5E7C4] hover:text-black border border-[#D4AF37]/30 transition-all text-xs font-bold font-mono flex items-center gap-1 shrink-0 cursor-pointer"
+                          title={`Call ${inc.name} at ${inc.phone}`}
+                        >
+                          <Phone className="w-3.5 h-3.5 text-[#D4AF37] group-hover:text-black" />
+                          <span>{inc.phone}</span>
+                        </a>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs text-slate-300">
+                    For inquiries or rule clarifications regarding <strong className="text-white">{event.title}</strong>, contact central event coordination:
+                  </p>
+                  <div className="p-3 rounded-xl bg-[#070B1D] border border-white/10 flex items-center justify-between gap-2">
+                    <div>
+                      <span className="font-bold text-white text-xs block">Celestia Central Helpdesk</span>
+                      <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-mono">Central Coordination</span>
+                    </div>
+                    <a
+                      href="tel:8075970766"
+                      className="px-3 py-1.5 rounded-lg bg-[#D4AF37]/15 hover:bg-[#D4AF37] text-[#F5E7C4] hover:text-black border border-[#D4AF37]/30 transition-all text-xs font-bold font-mono flex items-center gap-1.5 shrink-0 cursor-pointer"
+                    >
+                      <Phone className="w-3.5 h-3.5" />
+                      <span>8075970766</span>
+                    </a>
+                  </div>
                 </div>
               )}
             </div>

@@ -4,6 +4,12 @@ export interface EventPrizes {
   totalFormatted?: string;
 }
 
+export interface EventIncharge {
+  name: string;
+  phone: string;
+  role?: string;
+}
+
 export interface EventItem {
   id: string;
   code: string;
@@ -31,6 +37,7 @@ export interface EventItem {
   rules: string[];
   judgingCriteria: string[] | null; // null if "None specified"
   featured: boolean;
+  incharges?: EventIncharge[];
 }
 
 export interface CategoryInfo {
@@ -54,8 +61,10 @@ export const FESTIVAL_METADATA = {
   targetDateISO: "2026-11-03T09:00:00",
   
   // Configurable registration deadline setting (informational notice, registrations remain open until admin stops)
-  registrationDeadlineFormatted: "November 1, 2026",
-  registrationDeadlineISO: "2026-11-01T23:59:59",
+  registrationDeadlineFormatted: "October 28, 2026 (Oct 1 for Cineverse & Mememania)",
+  registrationDeadlineISO: "2026-10-28T23:59:59",
+  standardDeadlineFormatted: "October 28, 2026",
+  mediaDeadlineFormatted: "October 1, 2026",
   isRegistrationOpen: true,
 
   defaultVenue: "Main Stage",
@@ -64,12 +73,33 @@ export const FESTIVAL_METADATA = {
   totalEvents: 14,
   address: "Srinivasan Medical College and Hospital, NH-45 Trichy-Chennai Highway, Samayapuram, Tiruchirappalli, Tamil Nadu 621112",
   officialEmail: "celestiasmch@gmail.com",
-  inquiryContact: "+91 9080813899 / +91 9150272527",
+  inquiryContact: "+91 8075970766",
   
   // Official Payment Details
   paymentUpiIdPlaceholder: "ppqr01.aaotlx@iob",
   paymentBeneficiaryName: "Srinivasan Medical College",
 };
+
+/**
+ * Returns event-specific registration deadline.
+ * - Cineverse (Movie Recreation Reel) and Mememania (Meme Competition): October 1, 2026
+ * - All other 12 festival events: October 28, 2026
+ */
+export function getEventDeadline(eventIdOrCode?: string): string {
+  if (!eventIdOrCode) return 'October 28, 2026';
+  const clean = eventIdOrCode.toLowerCase().trim();
+  if (
+    clean === 'cineverse' || 
+    clean === 'md02' || 
+    clean === 'mememania' || 
+    clean === 'md01' ||
+    clean.includes('reel') ||
+    clean.includes('meme')
+  ) {
+    return 'October 1, 2026';
+  }
+  return 'October 28, 2026';
+}
 
 export const CATEGORIES: CategoryInfo[] = [
   {
@@ -161,6 +191,11 @@ export const EVENTS_DATA: EventItem[] = [
       'Stage presence',
       'Song selection and presentation',
     ],
+    incharges: [
+      { name: 'Mahalakshmi S', phone: '8148149106', role: 'Event In-Charge' },
+      { name: 'Aishwarya K', phone: '7826078945', role: 'Event In-Charge' },
+      { name: 'Shri Praveen', phone: '9600388545', role: 'Event In-Charge' },
+    ],
     featured: true,
   },
   {
@@ -202,6 +237,11 @@ export const EVENTS_DATA: EventItem[] = [
       'Presentation',
       'Creativity and innovation',
       'Impact',
+    ],
+    incharges: [
+      { name: 'Kaviya V S', phone: '9150272527', role: 'Event In-Charge' },
+      { name: 'Arul', phone: '6380313600', role: 'Event In-Charge' },
+      { name: 'Azar', phone: '9080628634', role: 'Event In-Charge' },
     ],
     featured: true,
   },
@@ -247,6 +287,11 @@ export const EVENTS_DATA: EventItem[] = [
       'Stage coverage',
       'Overall appeal',
     ],
+    incharges: [
+      { name: 'Souujanya', phone: '9342094776', role: 'Event In-Charge' },
+      { name: 'Ramya', phone: '9566817877', role: 'Event In-Charge' },
+      { name: 'Reshma', phone: '6369860627', role: 'Event In-Charge' },
+    ],
     featured: true,
   },
   {
@@ -285,6 +330,10 @@ export const EVENTS_DATA: EventItem[] = [
       'Edited reference/performance video must be submitted in MP4 format before the deadline.',
     ],
     judgingCriteria: null,
+    incharges: [
+      { name: 'Varshini', phone: '6380730291', role: 'Event In-Charge' },
+      { name: 'Jackson', phone: '6382707302', role: 'Event In-Charge' },
+    ],
     featured: true,
   },
   {
@@ -295,8 +344,8 @@ export const EVENTS_DATA: EventItem[] = [
     categoryDisplay: 'Mock IPL Auction',
     type: 'Team',
     gender: 'Open',
-    participants: 'Exactly 2',
-    minParticipants: 2,
+    participants: '1–2 (Solo or Duo)',
+    minParticipants: 1,
     maxParticipants: 2,
     feeAmount: 300,
     feeType: 'per_team',
@@ -312,8 +361,8 @@ export const EVENTS_DATA: EventItem[] = [
       totalFormatted: '₹8,000',
     },
     rules: [
-      'Exactly 2 participants per team.',
-      'Preliminary General Knowledge round.',
+      '1 to 2 participants per team (Single participant entry is also allowed; maximum 2 participants per team).',
+      'Prelims round questions will be based strictly and exclusively on IPL.',
       '30-mark MCQ round.',
       '20-mark pen-and-paper round.',
       'Top 10 teams qualify for the auction.',
@@ -332,6 +381,10 @@ export const EVENTS_DATA: EventItem[] = [
       'Combination',
       'Auction strategy',
       'Home-condition advantage',
+    ],
+    incharges: [
+      { name: 'Surya Narayan P', phone: '8075970766', role: 'Event In-Charge' },
+      { name: 'Rajamurugar VV', phone: '6379279332', role: 'Event In-Charge' },
     ],
     featured: true,
   },
@@ -377,6 +430,11 @@ export const EVENTS_DATA: EventItem[] = [
       'Props',
       'Discipline/effect',
     ],
+    incharges: [
+      { name: 'Amlesh S', phone: '9080813899', role: 'Event In-Charge' },
+      { name: 'Aathayan', phone: '6374035070', role: 'Event In-Charge' },
+      { name: 'Gayathri Devi', phone: '8148205647', role: 'Event In-Charge' },
+    ],
     featured: true,
   },
   {
@@ -384,36 +442,42 @@ export const EVENTS_DATA: EventItem[] = [
     code: 'COSMIC-SWITCH',
     title: 'Cosmic Switch',
     category: 'entertainment',
-    categoryDisplay: 'Adaptunes',
-    type: 'Team',
+    categoryDisplay: 'Adaptunes (Solo)',
+    type: 'Solo',
     gender: 'Open',
-    participants: null,
+    participants: '1',
     minParticipants: 1,
-    maxParticipants: null, // No specific limit
-    feeAmount: 300,
-    feeType: 'per_team',
+    maxParticipants: 1,
+    feeAmount: 250,
+    feeType: 'per_head',
     allowsOnSpotRegistration: false,
     maxEntriesPerCollege: null,
     maxTotalCapacity: null,
-    registrationFee: '₹300 per team',
+    registrationFee: '₹250 per head',
     duration: '3–5 minutes',
     venue: 'Main Stage',
-    prizes: null,
+    prizes: {
+      winner: '₹6,000',
+      runnerUp: '₹3,000',
+      totalFormatted: '₹9,000',
+    },
     rules: [
-      'No participant limit from a college.',
+      'Individual solo adaptunes competition.',
       'Priority is based on registration order.',
       'Random music in any language will be played continuously.',
-      'Participants must dance according to the music.',
-      'Props will be provided.',
+      'Participants must adapt and dance according to the changing tracks on the spot.',
+      "Judges' decision will be final and binding.",
     ],
     judgingCriteria: [
-      'Coordination',
-      'Execution',
-      'Presentation',
-      'Style',
-      'Expressions',
-      'Costumes',
-      'Discipline/effect',
+      'Adaptability and quick response',
+      'Execution and rhythm',
+      'Presentation and style',
+      'Expressions and stage presence',
+      'Energy and overall impact',
+    ],
+    incharges: [
+      { name: 'Jayaguru S', phone: '6381975169', role: 'Event In-Charge' },
+      { name: 'Vicheathra V', phone: '8778811810', role: 'Event In-Charge' },
     ],
     featured: false,
   },
@@ -434,7 +498,7 @@ export const EVENTS_DATA: EventItem[] = [
     maxEntriesPerCollege: 2,
     maxTotalCapacity: null,
     registrationFee: '₹400 per team',
-    duration: '6–8 minutes',
+    duration: '3–5 minutes',
     venue: 'Main Stage',
     prizes: {
       winner: '₹8,000',
@@ -460,6 +524,10 @@ export const EVENTS_DATA: EventItem[] = [
       'Costumes',
       'Props',
       'Discipline',
+    ],
+    incharges: [
+      { name: 'Abi. S', phone: '9384375191', role: 'Event In-Charge' },
+      { name: 'Swetha', phone: '9361350690', role: 'Event In-Charge' },
     ],
     featured: false,
   },
@@ -507,6 +575,11 @@ export const EVENTS_DATA: EventItem[] = [
       'Props',
       'Discipline/effect',
     ],
+    incharges: [
+      { name: 'Nithyasri', phone: '7016600195', role: 'Event In-Charge' },
+      { name: 'Krushna Ghaandh', phone: '8072298956', role: 'Event In-Charge' },
+      { name: 'Kamali', phone: '7904560950', role: 'Event In-Charge' },
+    ],
     featured: true,
   },
   {
@@ -550,6 +623,10 @@ export const EVENTS_DATA: EventItem[] = [
       'Stage presence',
       'Coordination',
       'Time management',
+    ],
+    incharges: [
+      { name: 'Souujanya', phone: '9342094776', role: 'Event In-Charge' },
+      { name: 'Srivarshini', phone: '6380730291', role: 'Event In-Charge' },
     ],
     featured: false,
   },
@@ -598,6 +675,10 @@ export const EVENTS_DATA: EventItem[] = [
       'Coordination',
       'Time management',
     ],
+    incharges: [
+      { name: 'Lavanya S', phone: '6374468392', role: 'Event In-Charge' },
+      { name: 'Lekha J', phone: '7010132432', role: 'Event In-Charge' },
+    ],
     featured: true,
   },
   {
@@ -642,6 +723,11 @@ export const EVENTS_DATA: EventItem[] = [
       'Crowd attractiveness',
       'Overall impact',
     ],
+    incharges: [
+      { name: 'Hariram', phone: '9500692230', role: 'Event In-Charge' },
+      { name: 'Kanagadhaarini', phone: '6381228064', role: 'Event In-Charge' },
+      { name: 'Pramod', phone: '7200192485', role: 'Event In-Charge' },
+    ],
     featured: false,
   },
   {
@@ -679,7 +765,7 @@ export const EVENTS_DATA: EventItem[] = [
       'Memes should be original, humorous and must not offend any person or group.',
       'Memes will be posted on our Instagram handle: celestia__26.',
       'Any form of plagiarism, presence of watermarks, use of AI-generated content without prior disclosure, or violation of the given rules will result in immediate disqualification.',
-      'Submission Guidelines: Last date of submission: 1st November, 2026.',
+      'Submission Guidelines: Last date of submission: 1st October, 2026.',
       'File format: JPEG / PNG.',
       'Aspect ratio: 1:1 or 4:5.',
       'Resolution: Minimum 1080 × 1080 px.',
@@ -692,6 +778,11 @@ export const EVENTS_DATA: EventItem[] = [
       'Originality',
       'Entertainment value',
       'Overall impression',
+    ],
+    incharges: [
+      { name: 'Sharmila', phone: '9994048706', role: 'Event In-Charge' },
+      { name: 'Aravind', phone: '9363638688', role: 'Event In-Charge' },
+      { name: 'Uma', phone: '8438821975', role: 'Event In-Charge' },
     ],
     featured: true,
   },
@@ -731,7 +822,7 @@ export const EVENTS_DATA: EventItem[] = [
       'Only one entry per participant is permitted.',
       'Cross-college teams are not allowed.',
       'Reels will be posted on our Instagram handle: celestia__26.',
-      'Submission Guidelines: Last date of submission: 1st November, 2026.',
+      'Submission Guidelines: Last date of submission: 1st October, 2026.',
       'File format: Video, background ratio: 9:16 (Top: Original video, Bottom: Recreated video, Time limit: 60 seconds).',
       'Resolution: Minimum 1080 × 1080 px.',
       'File name format: CINEVERSE_NAME_College.',
@@ -743,6 +834,11 @@ export const EVENTS_DATA: EventItem[] = [
       'Originality',
       'Entertainment value',
       'Overall impression',
+    ],
+    incharges: [
+      { name: 'Sharmila', phone: '9994048706', role: 'Event In-Charge' },
+      { name: 'Aravind', phone: '9363638688', role: 'Event In-Charge' },
+      { name: 'Uma', phone: '8438821975', role: 'Event In-Charge' },
     ],
     featured: true,
   },

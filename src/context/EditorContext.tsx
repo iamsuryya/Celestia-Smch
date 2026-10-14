@@ -262,9 +262,10 @@ export const EditorProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const closeLoginModal = () => setLoginModalOpen(false);
 
   const loginEditor = (passkey: string): boolean => {
-    // Standard passes: celestia2026, admin, edit, celestia
-    const normalized = passkey.trim().toLowerCase();
-    if (normalized === 'celestia2026' || normalized === 'admin' || normalized === 'editor' || normalized === 'edit') {
+    // Accepts official admin password or standard editor keys
+    const raw = passkey.trim();
+    const normalized = raw.toLowerCase();
+    if (raw === '24032004psss' || normalized === 'celestia2026' || normalized === 'admin' || normalized === 'editor' || normalized === 'edit') {
       setIsEditorLoggedIn(true);
       setIsEditModeActive(true);
       localStorage.setItem(STORAGE_KEY_AUTH, 'true');

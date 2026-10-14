@@ -81,9 +81,9 @@ export const AccountForm: React.FC = () => {
       // Simulated local login
       const loggedAccount = {
         id: currentUser?.id || `usr_${Date.now()}`,
-        fullName: fullName.trim() || 'Collegiate Delegate',
+        fullName: fullName.trim(),
         email: email.trim(),
-        mobile: mobile.trim() || '9876543210',
+        mobile: mobile.trim(),
         createdAt: new Date().toISOString(),
       };
       loginUser(loggedAccount);
@@ -317,32 +317,32 @@ export const AccountForm: React.FC = () => {
           <div className="relative w-full max-w-md p-6 bg-[#090E25] border border-[#D4AF37]/35 rounded-2xl shadow-2xl">
             <h3 className="font-cinzel text-xl font-bold text-white mb-2">Reset Account Password</h3>
             <p className="text-xs text-slate-300 mb-4">
-              Enter your registered delegate email. A password recovery link will be sent.
+              Enter your registered username or email address to receive password recovery guidance.
             </p>
 
             {!forgotSuccess ? (
               <form onSubmit={handleForgotPasswordSubmit} className="space-y-4">
                 <input
-                  type="email"
+                  type="text"
                   required
                   value={forgotEmail}
                   onChange={(e) => setForgotEmail(e.target.value)}
-                  placeholder="delegate@institution.edu.in"
-                  className="w-full px-3 py-2 bg-[#050714] border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:border-[#D4AF37]"
+                  placeholder="Username or registered email"
+                  className="w-full px-3.5 py-2.5 bg-[#050714] border border-white/15 rounded-xl text-sm text-white placeholder-slate-400 focus:outline-none focus:border-[#D4AF37]"
                 />
                 <div className="flex justify-end gap-2 pt-2">
                   <button
                     type="button"
                     onClick={() => { setShowForgotModal(false); setForgotSuccess(false); }}
-                    className="px-3 py-1.5 text-xs text-slate-400 hover:text-white"
+                    className="px-3 py-1.5 text-xs text-slate-400 hover:text-white cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-1.5 text-xs font-bold text-[#070B1B] bg-gradient-to-r from-[#F5E7C4] to-[#D4AF37] rounded-md"
+                    className="px-4 py-1.5 text-xs font-bold text-[#070B1B] bg-gradient-to-r from-[#F5E7C4] to-[#D4AF37] rounded-md hover:brightness-110 transition-all cursor-pointer"
                   >
-                    Send Reset Link
+                    Send Guidance
                   </button>
                 </div>
               </form>
@@ -351,15 +351,20 @@ export const AccountForm: React.FC = () => {
                 <div className="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-400 mx-auto flex items-center justify-center">
                   <Check className="w-5 h-5" />
                 </div>
-                <p className="text-xs text-slate-300">
-                  Password reset placeholder sent to <strong className="text-white">{forgotEmail}</strong>. Please check your inbox.
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Password recovery guidance has been generated for <strong className="text-white">{forgotEmail}</strong>.
                 </p>
+                <div className="p-3 rounded-xl bg-[#050714] border border-[#D4AF37]/30 text-xs text-slate-200 space-y-1 text-left">
+                  <p className="font-semibold text-[#D4AF37]">Direct Support Contacts:</p>
+                  <p>Email: <a href="mailto:celestiasmch@gmail.com" className="text-white hover:underline font-mono">celestiasmch@gmail.com</a></p>
+                  <p>Phone / WhatsApp: <a href="tel:8075970766" className="text-white hover:underline font-mono">+91 8075970766</a></p>
+                </div>
                 <button
                   type="button"
                   onClick={() => { setShowForgotModal(false); setForgotSuccess(false); }}
-                  className="px-4 py-1.5 text-xs font-semibold text-[#070B1B] bg-[#E6C57D] rounded-md"
+                  className="px-4 py-1.5 text-xs font-semibold text-[#070B1B] bg-[#E6C57D] rounded-md hover:bg-[#d4af37] cursor-pointer"
                 >
-                  Close
+                  Done
                 </button>
               </div>
             )}

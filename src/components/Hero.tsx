@@ -17,10 +17,17 @@ export const Hero: React.FC<HeroProps> = ({ onExploreEvents, onOpenRegister }) =
           <span className="truncate">{FESTIVAL_METADATA.collegeName}, Trichy</span>
         </div>
 
-        {/* Edition Subtitle / Tagline */}
-        <p className="text-[11px] sm:text-xs md:text-sm font-semibold tracking-[0.25em] sm:tracking-[0.3em] uppercase text-[#B8C0D9] mb-3 max-w-full">
-          ANNUAL INTERCOLLEGIATE CULTURAL FESTIVAL · {FESTIVAL_METADATA.romanNumeral}
-        </p>
+        {/* Subtitle Above CELESTIA'26 */}
+        <div className="text-center mb-4">
+          <div className="text-[#E6C57D] font-extrabold uppercase tracking-[0.25em] text-center leading-tight drop-shadow-md">
+            <span className="block text-base sm:text-xl md:text-2xl font-black">Inter</span>
+            <span className="block text-base sm:text-xl md:text-2xl font-black">Collegiate</span>
+            <span className="block text-xs sm:text-sm md:text-base font-bold text-[#F5E7C4] tracking-[0.3em] mt-1">Event</span>
+          </div>
+          <p className="text-[10px] sm:text-xs font-medium tracking-[0.2em] text-[#B8C0D9] uppercase mt-1">
+            ANNUAL CULTURAL FESTIVAL · {FESTIVAL_METADATA.romanNumeral}
+          </p>
+        </div>
 
         {/* Grand Title */}
         <h1 className="font-cinzel text-4xl xs:text-5xl sm:text-7xl md:text-8xl lg:text-9xl font-black tracking-tight leading-none mb-4 text-white drop-shadow-2xl max-w-full break-words">

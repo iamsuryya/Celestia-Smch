@@ -132,7 +132,7 @@ export const ParticipantForm: React.FC = () => {
       {
         fullName: '',
         gender: 'Male',
-        age: '20',
+        age: '',
         mobile: '',
         email: '',
         role: isDuo ? 'Participant 2' : `Team Member #${prev.length + 1}`,
@@ -287,7 +287,7 @@ export const ParticipantForm: React.FC = () => {
   const leader = participants[0] || {
     fullName: '',
     gender: 'Male',
-    age: '20',
+    age: '',
     mobile: '',
     email: '',
     role: isSolo ? 'Solo Performer' : 'Team Captain',

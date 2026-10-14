@@ -15,15 +15,19 @@ import { EventGuestsPage } from './pages/EventGuestsPage';
 import { AccommodationPage } from './pages/AccommodationPage';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import { Admin1RegistrationsPage } from './pages/Admin1RegistrationsPage';
+import { InchargesPortalPage } from './pages/InchargesPortalPage';
 import { AboutPage } from './pages/AboutPage';
 import { ContactPage } from './pages/ContactPage';
 import { EventItem, CategoryInfo } from './data/festivalData';
 
 function AppContent() {
   const [currentPage, setCurrentPage] = useState<NavigationPage>(() => {
-    // Support direct navigation to /admin, /admin1 or hash variations
+    // Support direct navigation to /admin, /admin1, /incharges or hash variations
     const path = window.location.pathname.toLowerCase();
     const hash = window.location.hash.toLowerCase();
+    if (path === '/incharges' || hash === '#/incharges' || hash === '#incharges') {
+      return 'incharges';
+    }
     if (path === '/admin1' || hash === '#/admin1' || hash === '#admin1') {
       return 'admin1';
     }
@@ -43,12 +47,15 @@ function AppContent() {
 
   const { currentUser, startNewRegistration, goToStep, logoutUser } = useRegistration();
 
-  // Listen to popstate / hashchange to allow direct route /admin and /admin1 typing
+  // Listen to popstate / hashchange to allow direct route /admin, /admin1, /incharges typing
   React.useEffect(() => {
     const handleUrlChange = () => {
       const path = window.location.pathname.toLowerCase();
       const hash = window.location.hash.toLowerCase();
-      if (path === '/admin1' || hash === '#/admin1' || hash === '#admin1') {
+      if (path === '/incharges' || hash === '#/incharges' || hash === '#incharges') {
+        setCurrentPage('incharges');
+        setIsRegisteringView(false);
+      } else if (path === '/admin1' || hash === '#/admin1' || hash === '#admin1') {
         setCurrentPage('admin1');
         setIsRegisteringView(false);
       } else if (path === '/admin' || hash === '#/admin' || hash === '#admin') {
@@ -72,6 +79,8 @@ function AppContent() {
       window.history.pushState(null, '', '#/admin');
     } else if (page === 'admin1') {
       window.history.pushState(null, '', '#/admin1');
+    } else if (page === 'incharges') {
+      window.history.pushState(null, '', '#/incharges');
     } else if (page === 'home') {
       window.history.pushState(null, '', window.location.pathname);
     } else {
@@ -177,6 +186,13 @@ function AppContent() {
             />
           )}
 
+          {currentPage === 'incharges' && (
+            <InchargesPortalPage
+              onExit={() => handleNavigate('home')}
+              onNavigateToAdmin={() => handleNavigate('admin1')}
+            />
+          )}
+
           {currentPage === 'about' && <AboutPage />}
 
           {currentPage === 'contact' && (
@@ -195,8 +211,8 @@ function AppContent() {
         onRegister={(ev) => handleOpenRegister(ev)}
       />
 
-      {/* Footer (shown on main website views, hidden when in admin, admin1 or registering) */}
-      {!isRegisteringView && currentPage !== 'admin' && currentPage !== 'admin1' && (
+      {/* Footer (shown on main website views, hidden when in admin, admin1, incharges or registering) */}
+      {!isRegisteringView && currentPage !== 'admin' && currentPage !== 'admin1' && currentPage !== 'incharges' && (
         <Footer
           onNavigate={handleNavigate}
           onOpenRegister={() => handleOpenRegister()}

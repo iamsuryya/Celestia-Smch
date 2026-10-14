@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Search, Sparkles, X, Users, MapPin, Check, ArrowLeft, ArrowRight, Clock, Award, AlertCircle } from 'lucide-react';
-import { EVENTS_DATA, CATEGORIES, EventItem } from '../../data/festivalData';
+import { EVENTS_DATA, CATEGORIES, EventItem, getEventDeadline } from '../../data/festivalData';
 import { useRegistration } from '../../context/RegistrationContext';
 import { isEventRegistrationOpen } from '../../utils/registrationStatus';
 
@@ -195,6 +195,10 @@ export const EventSelector: React.FC = () => {
                   <div className="flex justify-between">
                     <span className="text-slate-400">Registration Fee:</span>
                     <span className="font-bold text-[#F5E7C4]">{evt.registrationFee}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Deadline:</span>
+                    <span className="font-semibold text-emerald-400">{getEventDeadline(evt.id)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Participant Limit:</span>

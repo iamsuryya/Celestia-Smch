@@ -1,21 +1,46 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-// Environment variables for Vite client apps
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
-const supabaseAnonKey = (
-  import.meta.env.VITE_SUPABASE_ANON_KEY || 
-  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
-)?.trim();
+// Retrieve Supabase URL with multiple fallback aliases and localStorage override
+export const resolveSupabaseUrl = (): string => {
+  if (typeof window !== 'undefined') {
+    const override = localStorage.getItem('celestia_supabase_url')?.trim();
+    if (override) return override.replace(/\/+$/, '');
+  }
+  const env = (
+    import.meta.env.VITE_SUPABASE_URL ||
+    (import.meta.env as Record<string, string | undefined>).SUPABASE_URL ||
+    (import.meta.env as Record<string, string | undefined>).VITE_SUPABASE_PROJECT_URL
+  )?.trim();
+  return (env || '').replace(/\/+$/, '');
+};
+
+// Retrieve Supabase Publishable / Anon Key with multiple fallback aliases and localStorage override
+export const resolveSupabaseAnonKey = (): string => {
+  if (typeof window !== 'undefined') {
+    const override = localStorage.getItem('celestia_supabase_anon_key')?.trim();
+    if (override) return override;
+  }
+  const env = (
+    import.meta.env.VITE_SUPABASE_ANON_KEY ||
+    import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    (import.meta.env as Record<string, string | undefined>).SUPABASE_ANON_KEY ||
+    (import.meta.env as Record<string, string | undefined>).SUPABASE_PUBLISHABLE_KEY ||
+    (import.meta.env as Record<string, string | undefined>).VITE_SUPABASE_KEY
+  )?.trim();
+  return env || '';
+};
+
+const supabaseUrl = resolveSupabaseUrl();
+const supabaseAnonKey = resolveSupabaseAnonKey();
 
 /**
- * Checks whether Supabase environment variables are properly provided.
- * Does not check connectivity, only credential format and presence.
+ * Checks whether Supabase credentials are provided and valid in format
  */
 export const isSupabaseConfigured = Boolean(
-  supabaseUrl && 
-  supabaseAnonKey && 
-  supabaseUrl.startsWith('https://') &&
-  supabaseUrl.includes('.supabase.co')
+  supabaseUrl &&
+  supabaseAnonKey &&
+  supabaseUrl.startsWith('http') &&
+  supabaseAnonKey.length >= 20
 );
 
 /**
@@ -26,25 +51,28 @@ export interface SupabaseConfigStatus {
   hasUrl: boolean;
   hasAnonKey: boolean;
   maskedUrl: string | null;
+  isLocalStorageOverride: boolean;
 }
 
 export const getSupabaseConfigStatus = (): SupabaseConfigStatus => {
+  const currentUrl = resolveSupabaseUrl();
+  const currentKey = resolveSupabaseAnonKey();
+  const isLocal = typeof window !== 'undefined' && Boolean(localStorage.getItem('celestia_supabase_url'));
+
   return {
-    isConfigured: isSupabaseConfigured,
-    hasUrl: Boolean(supabaseUrl),
-    hasAnonKey: Boolean(supabaseAnonKey),
-    maskedUrl: supabaseUrl ? supabaseUrl.replace(/^(https:\/\/[^.]+).*/, '$1.supabase.co') : null,
+    isConfigured: Boolean(currentUrl && currentKey && currentUrl.startsWith('http') && currentKey.length >= 20),
+    hasUrl: Boolean(currentUrl),
+    hasAnonKey: Boolean(currentKey),
+    maskedUrl: currentUrl ? currentUrl.replace(/^(https:\/\/[^.]+).*/, '$1.supabase.co') : null,
+    isLocalStorageOverride: isLocal,
   };
 };
 
 /**
  * Supabase client instance.
- * If credentials are missing or invalid, this is null.
- * Application logic checks `supabase` or `isSupabaseConfigured` before calling Supabase APIs,
- * falling back gracefully to offline local storage / mock state without throwing runtime errors.
  */
 export const supabase: SupabaseClient | null = isSupabaseConfigured
-  ? createClient(supabaseUrl!, supabaseAnonKey!, {
+  ? createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
@@ -52,6 +80,31 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
       },
     })
   : null;
+
+/**
+ * Update custom credentials in localStorage for instant browser connectivity
+ */
+export function setCustomSupabaseCredentials(url: string, key: string): boolean {
+  if (typeof window === 'undefined') return false;
+  const cleanUrl = url.trim().replace(/\/+$/, '');
+  const cleanKey = key.trim();
+  if (cleanUrl) {
+    localStorage.setItem('celestia_supabase_url', cleanUrl);
+  }
+  if (cleanKey) {
+    localStorage.setItem('celestia_supabase_anon_key', cleanKey);
+  }
+  return true;
+}
+
+/**
+ * Clears custom credentials from localStorage
+ */
+export function clearCustomSupabaseCredentials() {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem('celestia_supabase_url');
+  localStorage.removeItem('celestia_supabase_anon_key');
+}
 
 /**
  * Safe helper to obtain the client or throw a readable error if unconfigured.
@@ -67,7 +120,6 @@ export function getSupabase(): SupabaseClient {
 
 /**
  * Diagnostic helper to verify whether the client can communicate with Supabase.
- * Performs a lightweight auth session check (no database table required yet).
  */
 export async function testSupabaseConnection(): Promise<{
   success: boolean;
@@ -87,7 +139,7 @@ export async function testSupabaseConnection(): Promise<{
     if (error) {
       return {
         success: false,
-        message: `Auth endpoint response: ${error.message}`,
+        message: `Auth response: ${error.message}`,
         url: supabaseUrl || null,
       };
     }

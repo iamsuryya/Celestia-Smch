@@ -1,6 +1,6 @@
 import React from 'react';
 import { ArrowUpRight, Award, Users, MapPin, Clock } from 'lucide-react';
-import { EventItem } from '../data/festivalData';
+import { EventItem, getEventDeadline } from '../data/festivalData';
 import { isEventRegistrationOpen } from '../utils/registrationStatus';
 import { getEventImage } from '../utils/eventImages';
 
@@ -50,9 +50,11 @@ export const EventCard: React.FC<EventCardProps> = ({
 
       <div className="p-5 sm:p-6 pt-3 flex-1 flex flex-col justify-between">
         <div>
-          {/* Top metadata line: Event Type */}
+          {/* Top metadata line: Event Type & Deadline */}
           <div className="flex items-center justify-between text-xs text-slate-300 mb-2 pb-2 border-b border-white/10">
-            <span className="text-[11px] font-mono text-[#D4AF37] uppercase font-semibold">Celestia '26 Event</span>
+            <span className="text-[10px] sm:text-[11px] font-mono text-[#D4AF37] uppercase font-semibold">
+              Deadline: {getEventDeadline(event.id)}
+            </span>
             <div className="flex items-center gap-1 text-[#F5E7C4] bg-white/5 px-2 py-0.5 rounded border border-white/10">
               <Users className="w-3.5 h-3.5 text-[#D4AF37]" />
               <span className="font-semibold text-xs">{event.type}</span>

@@ -52,7 +52,7 @@ interface RegistrationContextType {
   setActiveRegistration: (reg: RegistrationSubmission | null) => void;
   
   // Actions
-  submitRegistration: () => RegistrationSubmission | null;
+  submitRegistration: () => Promise<RegistrationSubmission | null>;
   deleteRegistration: (id: string) => Promise<boolean>;
   startNewRegistration: (preselectedEventId?: string) => void;
   viewReceiptRegistration: RegistrationSubmission | null;
@@ -134,6 +134,73 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   }, [collegeDetails]);
 
+  // Listen for external status changes (e.g. Admin verifying registration)
+  useEffect(() => {
+    const handleStatusSync = (e?: Event) => {
+      try {
+        const saved = localStorage.getItem(REGISTRATIONS_STORAGE_KEY);
+        if (saved) {
+          const list: RegistrationSubmission[] = JSON.parse(saved);
+          setMyRegistrations(list);
+        }
+      } catch (err) {
+        console.warn('Error reading updated registrations from localStorage:', err);
+      }
+    };
+
+    window.addEventListener('celestia-registration-status-changed', handleStatusSync);
+    window.addEventListener('storage', handleStatusSync);
+    return () => {
+      window.removeEventListener('celestia-registration-status-changed', handleStatusSync);
+      window.removeEventListener('storage', handleStatusSync);
+    };
+  }, []);
+
+  // Periodic background check & live cloud status sync so user's registered event page updates as soon as admin verifies
+  useEffect(() => {
+    if (!currentUser?.email) return;
+
+    const syncCloudStatus = async () => {
+      try {
+        const cloudList = await supabaseRegistrationService.fetchAdminRegistrations();
+        if (cloudList && cloudList.length > 0) {
+          setMyRegistrations((prev) => {
+            let changed = false;
+            const updated = prev.map((localReg) => {
+              const cloudMatch = cloudList.find(
+                (c) =>
+                  c.id === localReg.id ||
+                  c.registrationCode === localReg.id ||
+                  (c.registrationCode && c.registrationCode === localReg.registrationCode)
+              );
+              if (
+                cloudMatch &&
+                (cloudMatch.paymentStatus !== localReg.paymentStatus ||
+                  cloudMatch.registrationStatus !== localReg.registrationStatus)
+              ) {
+                changed = true;
+                return {
+                  ...localReg,
+                  paymentStatus: cloudMatch.paymentStatus,
+                  registrationStatus: cloudMatch.registrationStatus,
+                  paymentConfirmed: cloudMatch.paymentStatus === 'Verified',
+                };
+              }
+              return localReg;
+            });
+            return changed ? updated : prev;
+          });
+        }
+      } catch (err) {
+        // Non-fatal background status sync error
+      }
+    };
+
+    syncCloudStatus();
+    const interval = setInterval(syncCloudStatus, 8000); // 8-second interval for fast cloud update
+    return () => clearInterval(interval);
+  }, [currentUser?.email]);
+
   // Persist registrations safely
   useEffect(() => {
     try {
@@ -170,14 +237,18 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     setSelectedEvent(event);
     setTeamName('');
     
+    // Helper to get clean user details without dummy defaults
+    const cleanName = currentUser?.fullName && currentUser.fullName !== 'Collegiate Delegate' ? currentUser.fullName : '';
+    const cleanMobile = currentUser?.mobile && currentUser.mobile !== '9876543210' ? currentUser.mobile : '';
+
     // Pre-populate with current user if solo
     if (event.type === 'Solo') {
       setParticipants([
         {
-          fullName: currentUser?.fullName || '',
+          fullName: cleanName,
           gender: 'Male',
-          age: '20',
-          mobile: currentUser?.mobile || '',
+          age: '',
+          mobile: cleanMobile,
           email: currentUser?.email || '',
           role: 'Individual Participant',
         }
@@ -186,23 +257,22 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       // Duo event: initialize with Team Captain (Participant 1); Participant 2 is optional to add
       setParticipants([
         {
-          fullName: currentUser?.fullName || '',
+          fullName: cleanName,
           gender: 'Male',
-          age: '20',
-          mobile: currentUser?.mobile || '',
+          age: '',
+          mobile: cleanMobile,
           email: currentUser?.email || '',
           role: 'Team Captain / Participant 1',
         }
       ]);
     } else {
       // Team event: initialize with only the Team Captain (1 member)
-      // Additional team members are optional and added on-demand via "+ Add Team Member"
       setParticipants([
         {
-          fullName: currentUser?.fullName || '',
+          fullName: cleanName,
           gender: 'Male',
-          age: '20',
-          mobile: currentUser?.mobile || '',
+          age: '',
+          mobile: cleanMobile,
           email: currentUser?.email || '',
           role: 'Team Captain / Primary Contact',
         }
@@ -222,7 +292,7 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     return event.feeAmount;
   };
 
-  const submitRegistration = (): RegistrationSubmission | null => {
+  const submitRegistration = async (): Promise<RegistrationSubmission | null> => {
     if (!selectedEvent || !collegeDetails || !currentUser) return null;
 
     const submissionId = generateRegistrationCode(selectedEvent.id);
@@ -267,32 +337,37 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     const currentPaymentData = paymentScreenshotData;
     const currentParticipants = [...participants];
 
-    setMyRegistrations((prev) => [newSubmission, ...prev]);
-    setActiveRegistration(newSubmission);
-    
-    // Asynchronously dispatch to Supabase
-    supabaseRegistrationService.submitRegistrationToSupabase({
-      selectedEvent,
-      collegeDetails,
-      participants: currentParticipants,
-      teamName,
-      totalFee: totalAmount,
-      utrNumber: utrNumber.trim() || 'NOT_SUBMITTED',
-      registrationCode: submissionId,
-      paymentScreenshotName: paymentScreenshotName || 'receipt_screenshot.png',
-      paymentScreenshotFile: currentPaymentFile,
-      paymentScreenshotData: currentPaymentData || undefined,
-      idCardFiles: currentParticipants.map(p => p.idCardFile || null),
-      userId: currentUser.id,
-    }).then(res => {
+    // Dispatch and await Supabase cloud record insertion
+    try {
+      const res = await supabaseRegistrationService.submitRegistrationToSupabase({
+        selectedEvent,
+        collegeDetails,
+        participants: currentParticipants,
+        teamName,
+        totalFee: totalAmount,
+        utrNumber: utrNumber.trim() || 'NOT_SUBMITTED',
+        registrationCode: submissionId,
+        paymentScreenshotName: paymentScreenshotName || 'receipt_screenshot.png',
+        paymentScreenshotFile: currentPaymentFile,
+        paymentScreenshotData: currentPaymentData || undefined,
+        idCardFiles: currentParticipants.map(p => p.idCardFile || null),
+        userId: currentUser.id,
+      });
+
+      if (res?.supabaseId) {
+        newSubmission.id = res.supabaseId;
+      }
       if (res?.error) {
-        console.error('Supabase cloud submission error:', res.error);
+        console.warn('Notice from Supabase submission:', res.error);
       } else if (res?.success) {
         console.info('Supabase cloud submission saved successfully:', res.registrationCode);
       }
-    }).catch(err => {
-      console.error('Supabase cloud registration dispatch exception:', err);
-    });
+    } catch (err) {
+      console.warn('Supabase cloud submission exception:', err);
+    }
+
+    setMyRegistrations((prev) => [newSubmission, ...prev]);
+    setActiveRegistration(newSubmission);
 
     // Clear draft payment inputs
     setUtrNumber('');

@@ -12,7 +12,8 @@ import {
   Lock, 
   HelpCircle,
   FileCheck,
-  MousePointerClick
+  MousePointerClick,
+  ShieldCheck
 } from 'lucide-react';
 import { useInlineEditor } from '../context/EditorContext';
 
@@ -44,7 +45,7 @@ export const InlineEditorToolbar: React.FC = () => {
       setErrorMsg('');
       setPasskey('');
     } else {
-      setErrorMsg('Invalid passkey. Use: admin or celestia2026 or edit');
+      setErrorMsg('Invalid authorization key. Please enter an authorized administrator passkey.');
     }
   };
 
@@ -234,7 +235,7 @@ export const InlineEditorToolbar: React.FC = () => {
                     type="password"
                     value={passkey}
                     onChange={(e) => setPasskey(e.target.value)}
-                    placeholder="Enter passkey (e.g. admin or celestia2026)"
+                    placeholder="Enter security passkey"
                     className="w-full bg-[#050714] border border-[#D4AF37]/30 focus:border-[#D4AF37] rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-[#D4AF37]"
                     autoFocus
                   />
@@ -242,8 +243,9 @@ export const InlineEditorToolbar: React.FC = () => {
                 {errorMsg && (
                   <p className="text-xs text-rose-400 mt-1.5">{errorMsg}</p>
                 )}
-                <p className="text-[11px] text-slate-400 mt-1.5">
-                  Preset passkeys: <code className="text-[#E6C57D] font-mono">celestia2026</code>, <code className="text-[#E6C57D] font-mono">admin</code>, or <code className="text-[#E6C57D] font-mono">edit</code>
+                <p className="text-[11px] text-slate-400 mt-1.5 flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5 text-[#D4AF37]" />
+                  <span>Authorized Celestia'26 content editing personnel only</span>
                 </p>
               </div>
 

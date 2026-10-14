@@ -46,7 +46,8 @@ import {
   CloudOff,
   Info,
   Copy,
-  ChevronRight
+  ChevronRight,
+  LogOut
 } from 'lucide-react';
 import { useRegistration } from '../context/RegistrationContext';
 import { RegistrationSubmission, ParticipantMember } from '../types/registration';
@@ -61,9 +62,21 @@ import {
 } from '../utils/registrationStatus';
 import { 
   isSupabaseConfigured, 
-  supabase 
+  supabase,
+  setCustomSupabaseCredentials,
+  clearCustomSupabaseCredentials 
 } from '../lib/supabase';
 import { supabaseRegistrationService, CloudDiagnostics } from '../services/supabaseRegistrationService';
+import { 
+  authenticateProfile, 
+  persistAuthRole, 
+  clearAuthSession, 
+  getCurrentAuthRole, 
+  UserRole,
+  AUTH_PROFILES,
+  requestPasswordReset
+} from '../lib/authProfiles';
+import { InchargesPortalPage } from './InchargesPortalPage';
 
 interface Admin1RegistrationsPageProps {
   onExit: () => void;
@@ -106,17 +119,24 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     return (
       sessionStorage.getItem('celestia_admin_auth') === 'true' || 
-      sessionStorage.getItem('celestia_admin1_auth') === 'true'
+      sessionStorage.getItem('celestia_admin1_auth') === 'true' ||
+      sessionStorage.getItem('celestia_incharges_auth') === 'true'
     );
   });
-  const [authMode, setAuthMode] = useState<'supabase_auth' | 'passkey'>(
-    isSupabaseConfigured ? 'supabase_auth' : 'passkey'
-  );
+  const [activeRole, setActiveRole] = useState<UserRole | null>(() => getCurrentAuthRole());
+  const [viewingInchargesDesk, setViewingInchargesDesk] = useState(false);
+  const [roleTab, setRoleTab] = useState<UserRole>('admin');
+  const [loginUsername, setLoginUsername] = useState('Admin');
+  const [authMode, setAuthMode] = useState<'profile_pass' | 'supabase_auth'>('profile_pass');
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [passkeyInput, setPasskeyInput] = useState('');
   const [authError, setAuthError] = useState('');
   const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotInput, setForgotInput] = useState('');
+  const [forgotResult, setForgotResult] = useState<{ success: boolean; message: string; targetEmail: string } | null>(null);
+  const [isSubmittingForgot, setIsSubmittingForgot] = useState(false);
 
   // Registrations state
   const [cloudRegistrations, setCloudRegistrations] = useState<RegistrationSubmission[]>([]);
@@ -178,6 +198,31 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
     setAllEventsRegistrationOpen(true);
     setEventRegMap(getEventRegistrationStatusMap());
     showToast('Registration REOPENED for ALL events.');
+  };
+
+  const handleSaveRegistrationSettings = () => {
+    const current = getEventRegistrationStatusMap();
+    localStorage.setItem('celestia_event_registration_status', JSON.stringify(current));
+    window.dispatchEvent(new CustomEvent('celestia-registration-status-changed'));
+    showToast('Registration settings saved and applied successfully across Celestia\'26 portal!');
+  };
+
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotInput.trim()) return;
+    setIsSubmittingForgot(true);
+    try {
+      const res = await requestPasswordReset(forgotInput.trim());
+      setForgotResult(res);
+    } catch {
+      setForgotResult({
+        success: true,
+        message: 'Password recovery request registered. Please check your inbox or contact the festival convener.',
+        targetEmail: forgotInput.trim(),
+      });
+    } finally {
+      setIsSubmittingForgot(false);
+    }
   };
 
   // Image Lightbox Viewer
@@ -349,15 +394,35 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
   const handleVerify = async (regId: string) => {
     const res = await supabaseRegistrationService.updateStatus(regId, 'verify');
     showToast(`Registration ${regId} VERIFIED successfully`);
+
+    // Update local storage instantly for immediate user page reflection
+    try {
+      const saved = localStorage.getItem('celestia26_registrations');
+      if (saved) {
+        const list: RegistrationSubmission[] = JSON.parse(saved);
+        const updated = list.map((r) =>
+          (r.id === regId || r.registrationCode === regId)
+            ? { ...r, paymentStatus: 'Verified' as const, registrationStatus: 'Confirmed', paymentConfirmed: true }
+            : r
+        );
+        localStorage.setItem('celestia26_registrations', JSON.stringify(updated));
+      }
+    } catch (e) {
+      console.warn('Could not update localStorage on verify:', e);
+    }
+
+    // Dispatch global event so user dashboard updates without refresh
+    window.dispatchEvent(new CustomEvent('celestia-registration-status-changed', { detail: { regId, status: 'Verified' } }));
+
     loadData();
     setCloudRegistrations((prev) =>
       prev.map((r) =>
-        r.id === regId
+        (r.id === regId || r.registrationCode === regId)
           ? { ...r, paymentStatus: 'Verified', registrationStatus: 'Confirmed', paymentConfirmed: true }
           : r
       )
     );
-    if (inspectRegistration && inspectRegistration.id === regId) {
+    if (inspectRegistration && (inspectRegistration.id === regId || inspectRegistration.registrationCode === regId)) {
       setInspectRegistration((prev) => prev ? { ...prev, paymentStatus: 'Verified', registrationStatus: 'Confirmed', paymentConfirmed: true } : null);
     }
   };
@@ -590,10 +655,44 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
     showToast(`Exported ${allRegistrations.length} registrations to CSV`);
   };
 
+  const handleLogout = () => {
+    clearAuthSession();
+    setIsAuthenticated(false);
+    setActiveRole(null);
+    setViewingInchargesDesk(false);
+    setPasskeyInput('');
+    setAdminPassword('');
+    showToast('Logged out of Admin Desk');
+  };
+
   // Auth Handler
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
+
+    // Check credentials against configured official profiles
+    const enteredUser = (loginUsername || adminEmail).trim();
+    const enteredPass = (passkeyInput || adminPassword).trim();
+
+    const authResult = authenticateProfile(enteredUser, enteredPass);
+    if (authResult.authenticated && authResult.role) {
+      persistAuthRole(authResult.role);
+      setActiveRole(authResult.role);
+      setIsAuthenticated(true);
+
+      if (authResult.role === 'incharges') {
+        showToast('Logged in as Event Incharges');
+        setViewingInchargesDesk(true);
+      } else if (authResult.role === 'result') {
+        showToast('Logged in as Result Update Desk');
+        if (onNavigateToTabulation) {
+          onNavigateToTabulation();
+        }
+      } else {
+        showToast('Admin 1 Operations Desk Unlocked');
+      }
+      return;
+    }
 
     if (authMode === 'supabase_auth') {
       if (!adminEmail.trim() || !adminPassword) {
@@ -610,30 +709,18 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
         if (error) throw error;
         if (data.session) {
           setIsAuthenticated(true);
-          sessionStorage.setItem('celestia_admin1_auth', 'true');
-          sessionStorage.setItem('celestia_admin_auth', 'true');
+          persistAuthRole('admin');
+          setActiveRole('admin');
           showToast(`Logged in as Admin: ${data.user?.email}`);
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Login failed';
-        setAuthError(`Auth error: ${msg}. You may also use Passkey Bypass.`);
+        setAuthError(`Supabase Auth error: ${msg}. You may also log in with your Admin profile password.`);
       } finally {
         setIsSubmittingAuth(false);
       }
     } else {
-      if (
-        passkeyInput.trim() === 'celestia2026' ||
-        passkeyInput.trim() === 'admin' ||
-        passkeyInput.trim() === 'CELESTIA2026ADMIN' ||
-        passkeyInput.trim() === 'admin1'
-      ) {
-        setIsAuthenticated(true);
-        sessionStorage.setItem('celestia_admin1_auth', 'true');
-        sessionStorage.setItem('celestia_admin_auth', 'true');
-        showToast('Admin 1 Operations Desk Unlocked');
-      } else {
-        setAuthError('Invalid Security Passkey.');
-      }
+      setAuthError(authResult.error || 'Invalid credentials. Only authorized Admin, Result, or Incharges profiles are permitted.');
     }
   };
 
@@ -647,82 +734,86 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
               <ShieldCheck className="w-8 h-8" />
             </div>
             <span className="text-[11px] font-mono tracking-widest uppercase text-[#D4AF37] block font-semibold mb-1">
-              REGISTRATION OPERATIONS DESK (/admin1)
+              AUTHORIZED OPERATIONS DESK
             </span>
             <h2 className="font-cinzel text-2xl font-bold text-white tracking-wide">
-              ADMIN-1 Portal
+              Celestia'26 Portals
             </h2>
             <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">
-              Verify payments, review uploaded student ID cards & payment receipts, approve/reject/hold submissions, and export data.
+              Select your profile to authenticate. Incharges see approved registrations; Admin manages registrations & payments; Result updates tabulation.
             </p>
           </div>
 
-          {/* Mode Selector */}
+          {/* Profile Selector Tabs */}
           <div className="flex rounded-xl bg-black/40 p-1 mb-4 border border-white/10 text-xs">
             <button
               type="button"
-              onClick={() => { setAuthMode('supabase_auth'); setAuthError(''); }}
-              className={`flex-1 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
-                authMode === 'supabase_auth' ? 'bg-[#D4AF37] text-black font-bold' : 'text-slate-400 hover:text-white'
+              onClick={() => {
+                setRoleTab('admin');
+                setLoginUsername('Admin');
+                setAuthError('');
+              }}
+              className={`flex-1 py-1.5 rounded-lg font-medium transition-colors cursor-pointer text-center ${
+                roleTab === 'admin' ? 'bg-[#D4AF37] text-black font-bold' : 'text-slate-400 hover:text-white'
               }`}
             >
-              Supabase Auth
+              Admin Desk
             </button>
             <button
               type="button"
-              onClick={() => { setAuthMode('passkey'); setAuthError(''); }}
-              className={`flex-1 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
-                authMode === 'passkey' ? 'bg-[#D4AF37] text-black font-bold' : 'text-slate-400 hover:text-white'
+              onClick={() => {
+                setRoleTab('result');
+                setLoginUsername('Result');
+                setAuthError('');
+              }}
+              className={`flex-1 py-1.5 rounded-lg font-medium transition-colors cursor-pointer text-center ${
+                roleTab === 'result' ? 'bg-[#D4AF37] text-black font-bold' : 'text-slate-400 hover:text-white'
               }`}
             >
-              Passkey Bypass
+              Result
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setRoleTab('incharges');
+                setLoginUsername('Incharges');
+                setAuthError('');
+              }}
+              className={`flex-1 py-1.5 rounded-lg font-medium transition-colors cursor-pointer text-center ${
+                roleTab === 'incharges' ? 'bg-emerald-400 text-black font-bold' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Incharges
             </button>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-4">
-            {authMode === 'supabase_auth' ? (
-              <>
-                <div>
-                  <label className="block text-xs font-mono uppercase text-slate-300 mb-1.5">
-                    Admin Email
-                  </label>
-                  <input
-                    type="email"
-                    value={adminEmail}
-                    onChange={(e) => setAdminEmail(e.target.value)}
-                    placeholder="admin@celestia.edu"
-                    className="w-full px-4 py-2.5 rounded-xl bg-[#070B1C]/90 border border-white/15 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-[#D4AF37]"
-                    autoFocus
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-mono uppercase text-slate-300 mb-1.5">
-                    Password
-                  </label>
-                  <input
-                    type="password"
-                    value={adminPassword}
-                    onChange={(e) => setAdminPassword(e.target.value)}
-                    placeholder="••••••••••••"
-                    className="w-full px-4 py-2.5 rounded-xl bg-[#070B1C]/90 border border-white/15 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-[#D4AF37]"
-                  />
-                </div>
-              </>
-            ) : (
-              <div>
-                <label className="block text-xs font-mono uppercase text-slate-300 mb-1.5">
-                  Security Passkey
-                </label>
-                <input
-                  type="password"
-                  value={passkeyInput}
-                  onChange={(e) => setPasskeyInput(e.target.value)}
-                  placeholder="Enter passkey (celestia2026)..."
-                  className="w-full px-4 py-2.5 rounded-xl bg-[#070B1C]/90 border border-white/15 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-[#D4AF37]"
-                  autoFocus
-                />
-              </div>
-            )}
+            <div>
+              <label className="block text-xs font-mono uppercase text-slate-300 mb-1.5">
+                Profile / Username
+              </label>
+              <input
+                type="text"
+                value={loginUsername}
+                onChange={(e) => setLoginUsername(e.target.value)}
+                placeholder="Username (Admin / Result / Incharges)"
+                className="w-full px-4 py-2.5 rounded-xl bg-[#070B1C]/90 border border-white/15 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-[#D4AF37]"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-mono uppercase text-slate-300 mb-1.5">
+                Security Password
+              </label>
+              <input
+                type="password"
+                value={passkeyInput}
+                onChange={(e) => setPasskeyInput(e.target.value)}
+                placeholder="••••••••••••"
+                className="w-full px-4 py-2.5 rounded-xl bg-[#070B1C]/90 border border-white/15 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-[#D4AF37]"
+                autoFocus
+              />
+            </div>
 
             {authError && (
               <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-xs flex items-center gap-2">
@@ -734,26 +825,22 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
             <button
               type="submit"
               disabled={isSubmittingAuth}
-              className="w-full py-3 px-4 rounded-xl font-bold text-xs uppercase tracking-wider text-[#050714] bg-gradient-to-r from-[#F5E7C4] via-[#D4AF37] to-[#B38F26] hover:brightness-110 transition-all cursor-pointer shadow-lg shadow-[#D4AF37]/20 disabled:opacity-50"
+              className={`w-full py-3 px-4 rounded-xl font-bold text-xs uppercase tracking-wider text-[#050714] transition-all cursor-pointer shadow-lg disabled:opacity-50 ${
+                roleTab === 'incharges'
+                  ? 'bg-gradient-to-r from-emerald-300 via-emerald-400 to-[#D4AF37] hover:brightness-110 shadow-emerald-500/20'
+                  : 'bg-gradient-to-r from-[#F5E7C4] via-[#D4AF37] to-[#B38F26] hover:brightness-110 shadow-[#D4AF37]/20'
+              }`}
             >
-              {isSubmittingAuth ? 'Authenticating...' : 'Enter Admin 1 Console'}
+              {isSubmittingAuth ? 'Authenticating...' : `Enter ${AUTH_PROFILES[roleTab].badge}`}
             </button>
           </form>
 
-          {/* Quick Demo Assist */}
+          {/* Secure Portal Info Notice (No passwords displayed) */}
           <div className="mt-5 pt-4 border-t border-white/10 text-center">
-            <button
-              type="button"
-              onClick={() => {
-                setPasskeyInput('celestia2026');
-                setIsAuthenticated(true);
-                sessionStorage.setItem('celestia_admin1_auth', 'true');
-                showToast('Unlocked via demo passkey: celestia2026');
-              }}
-              className="text-xs font-mono text-[#D4AF37] hover:underline cursor-pointer bg-[#D4AF37]/10 px-3 py-1.5 rounded-lg border border-[#D4AF37]/25"
-            >
-              Quick Passkey Unlock (celestia2026)
-            </button>
+            <span className="text-[11px] text-slate-400 font-mono flex items-center justify-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-[#D4AF37]" />
+              <span>Protected Festival Operations Console</span>
+            </span>
           </div>
 
           <div className="mt-4 text-center">
@@ -766,6 +853,35 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
             </button>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  // If user is logged in as Event Incharge or Admin is previewing Incharges Desk
+  if (activeRole === 'incharges' || viewingInchargesDesk) {
+    return (
+      <div>
+        {activeRole === 'admin' && (
+          <div className="bg-[#101736] border-b border-[#D4AF37]/30 px-4 py-2.5 flex items-center justify-between text-xs max-w-7xl mx-auto">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-[#F5E7C4] font-medium font-mono">
+                Admin Preview: Event Incharges Desk (Viewing Approved Only)
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setViewingInchargesDesk(false)}
+              className="px-3 py-1 bg-[#D4AF37] hover:bg-[#E6C57D] text-black font-bold rounded-lg text-xs transition-colors cursor-pointer"
+            >
+              Back to Full Admin 1 Operations Desk
+            </button>
+          </div>
+        )}
+        <InchargesPortalPage
+          onExit={onExit}
+          onNavigateToAdmin={() => setViewingInchargesDesk(false)}
+        />
       </div>
     );
   }
@@ -799,6 +915,16 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setViewingInchargesDesk(true)}
+            className="px-3.5 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/35 text-xs font-semibold text-emerald-300 transition-colors flex items-center gap-1.5 cursor-pointer"
+            title="Preview Incharges Approved Registrations Portal"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Incharges Approved Desk</span>
+          </button>
+
           {onNavigateToTabulation && (
             <button
               type="button"
@@ -809,6 +935,16 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
               <ExternalLink className="w-3.5 h-3.5 text-[#D4AF37]" />
             </button>
           )}
+
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="px-3 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/35 text-xs font-medium text-rose-300 hover:text-white transition-colors flex items-center gap-1.5 cursor-pointer"
+            title="Log out of Admin 1"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Logout</span>
+          </button>
 
           <button
             type="button"

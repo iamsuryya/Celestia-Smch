@@ -19,9 +19,15 @@ export const CollegeForm: React.FC = () => {
     (isHostCollege ? 'Srinivasan Medical College and Hospital, Trichy' : '')
   );
   const [city, setCity] = useState(collegeDetails?.city || (isHostCollege ? 'Trichy' : ''));
-  const [state, setState] = useState(collegeDetails?.state || 'Tamil Nadu');
-  const [contactPerson, setContactPerson] = useState(collegeDetails?.contactPerson || currentUser?.fullName || '');
-  const [contactMobile, setContactMobile] = useState(collegeDetails?.contactMobile || currentUser?.mobile || '');
+  const [state, setState] = useState(collegeDetails?.state || (isHostCollege ? 'Tamil Nadu' : ''));
+  const [contactPerson, setContactPerson] = useState(
+    collegeDetails?.contactPerson || 
+    (currentUser?.fullName && currentUser.fullName !== 'Collegiate Delegate' ? currentUser.fullName : '')
+  );
+  const [contactMobile, setContactMobile] = useState(
+    collegeDetails?.contactMobile || 
+    (currentUser?.mobile && currentUser.mobile !== '9876543210' ? currentUser.mobile : '')
+  );
   const [contactEmail, setContactEmail] = useState(collegeDetails?.contactEmail || currentUser?.email || '');
   const [isCollegeDelegation, setIsCollegeDelegation] = useState(collegeDetails?.isCollegeDelegation ?? true);
 
@@ -213,7 +219,7 @@ export const CollegeForm: React.FC = () => {
                 <div className="p-3 rounded-lg bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs flex items-start gap-2.5">
                   <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                   <p className="text-[11px] text-rose-100 leading-relaxed font-medium">
-                    Only students from srinivasan medical college choose this option , others using this and not pauing the amount may lead to disquakification from the event
+                    Only students from Srinivasan Medical College should choose this option. Others using this without authorization and not paying the registration fee will face immediate disqualification from the event.
                   </p>
                 </div>
 

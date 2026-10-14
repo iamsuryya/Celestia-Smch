@@ -103,16 +103,33 @@ function guestPersistencePlugin(): Plugin {
 }
 
 export default defineConfig(() => {
-  const envUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-  const envKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY;
+  const envUrl = (
+    process.env.VITE_SUPABASE_URL ||
+    process.env.SUPABASE_URL ||
+    process.env.VITE_SUPABASE_PROJECT_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL
+  )?.trim()?.replace(/\/+$/, '');
+
+  const envKey = (
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_PUBLISHABLE_KEY ||
+    process.env.VITE_SUPABASE_KEY ||
+    process.env.SUPABASE_KEY ||
+    process.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  )?.trim();
 
   const defines: Record<string, string> = {};
   if (envUrl) {
     defines['import.meta.env.VITE_SUPABASE_URL'] = JSON.stringify(envUrl);
+    defines['import.meta.env.SUPABASE_URL'] = JSON.stringify(envUrl);
   }
   if (envKey) {
     defines['import.meta.env.VITE_SUPABASE_ANON_KEY'] = JSON.stringify(envKey);
     defines['import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY'] = JSON.stringify(envKey);
+    defines['import.meta.env.SUPABASE_ANON_KEY'] = JSON.stringify(envKey);
   }
 
   return {

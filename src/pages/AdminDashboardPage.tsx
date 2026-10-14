@@ -34,6 +34,14 @@ import {
   supabase
 } from '../lib/supabase';
 import { supabaseRegistrationService } from '../services/supabaseRegistrationService';
+import { 
+  authenticateProfile, 
+  persistAuthRole, 
+  clearAuthSession, 
+  getCurrentAuthRole, 
+  UserRole,
+  AUTH_PROFILES 
+} from '../lib/authProfiles';
 
 interface AdminDashboardPageProps {
   onNavigateToPublicResults: () => void;
@@ -64,9 +72,15 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
   // Authentication State
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return sessionStorage.getItem('celestia_admin_auth') === 'true';
+    return (
+      sessionStorage.getItem('celestia_admin_auth') === 'true' ||
+      sessionStorage.getItem('celestia_admin1_auth') === 'true'
+    );
   });
-  const [authMode, setAuthMode] = useState<'supabase_auth' | 'passkey'>(isSupabaseConfigured ? 'supabase_auth' : 'passkey');
+  const [activeRole, setActiveRole] = useState<UserRole | null>(() => getCurrentAuthRole());
+  const [roleTab, setRoleTab] = useState<UserRole>('result');
+  const [loginUsername, setLoginUsername] = useState('Result');
+  const [authMode, setAuthMode] = useState<'profile_pass' | 'supabase_auth'>('profile_pass');
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [passkeyInput, setPasskeyInput] = useState('');
@@ -149,6 +163,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
   // Toast feedback
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotInput, setForgotInput] = useState('');
+  const [forgotResult, setForgotResult] = useState<{ success: boolean; message: string; targetEmail: string } | null>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -160,6 +177,29 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
+
+    const enteredUser = (loginUsername || adminEmail).trim();
+    const enteredPass = (passkeyInput || adminPassword).trim();
+
+    const authResult = authenticateProfile(enteredUser, enteredPass);
+    if (authResult.authenticated && authResult.role) {
+      persistAuthRole(authResult.role);
+      setActiveRole(authResult.role);
+      setIsAuthenticated(true);
+
+      if (authResult.role === 'incharges') {
+        showToast('Incharges profile: Forwarding to Incharges Portal');
+        if (onNavigateToAdmin1) {
+          onNavigateToAdmin1();
+        }
+      } else if (authResult.role === 'result') {
+        setActiveTab('results');
+        showToast('Result Update Desk Unlocked');
+      } else {
+        showToast('Central Admin Adjudication Unlocked');
+      }
+      return;
+    }
 
     if (authMode === 'supabase_auth') {
       if (!adminEmail.trim() || !adminPassword) {
@@ -182,46 +222,62 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
         if (data.session) {
           setIsAuthenticated(true);
-          sessionStorage.setItem('celestia_admin_auth', 'true');
+          persistAuthRole('admin');
+          setActiveRole('admin');
           showToast(`Authenticated as ${data.user?.email || 'Admin'}`);
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Authentication failed';
-        setAuthError(`Supabase Auth error: ${msg}. You may also switch to Passkey mode below.`);
+        setAuthError(`Supabase Auth error: ${msg}. You may also log in with your Profile password.`);
       } finally {
         setIsSubmittingAuth(false);
       }
     } else {
-      if (passkeyInput.trim() === 'celestia2026' || passkeyInput.trim() === 'admin' || passkeyInput.trim() === 'CELESTIA2026ADMIN') {
-        setIsAuthenticated(true);
-        sessionStorage.setItem('celestia_admin_auth', 'true');
-        setAuthError('');
-        showToast('Admin Tabulation Console Unlocked');
-      } else {
-        setAuthError('Invalid Security Passkey. Please verify credentials.');
-      }
+      setAuthError(authResult.error || 'Invalid credentials. Only authorized Admin or Result profiles are permitted.');
     }
   };
 
   const handleVerifyRegistration = async (regId: string, status: 'Verified' | 'Rejected') => {
     const res = await supabaseRegistrationService.updatePaymentVerification(regId, status);
-    if (res.success) {
-      showToast(res.message);
-      loadCloudRegistrations();
-    } else {
-      showToast(`Local update: Registration marked as ${status}`);
-      setCloudRegistrations((prev) =>
-        prev.map((r) =>
-          r.id === regId
+    showToast(res.success ? res.message : `Marked as ${status}`);
+
+    // Update local storage instantly
+    try {
+      const saved = localStorage.getItem('celestia26_registrations');
+      if (saved) {
+        const list: RegistrationSubmission[] = JSON.parse(saved);
+        const updated = list.map((r) =>
+          (r.id === regId || r.registrationCode === regId)
             ? {
                 ...r,
                 paymentStatus: status,
                 registrationStatus: status === 'Verified' ? 'Confirmed' : 'Rejected',
+                paymentConfirmed: status === 'Verified',
               }
             : r
-        )
-      );
+        );
+        localStorage.setItem('celestia26_registrations', JSON.stringify(updated));
+      }
+    } catch (e) {
+      console.warn('Could not update localStorage:', e);
     }
+
+    // Dispatch global event for instant UI sync
+    window.dispatchEvent(new CustomEvent('celestia-registration-status-changed', { detail: { regId, status } }));
+
+    loadCloudRegistrations();
+    setCloudRegistrations((prev) =>
+      prev.map((r) =>
+        (r.id === regId || r.registrationCode === regId)
+          ? {
+              ...r,
+              paymentStatus: status,
+              registrationStatus: status === 'Verified' ? 'Confirmed' : 'Rejected',
+              paymentConfirmed: status === 'Verified',
+            }
+          : r
+      )
+    );
   };
 
   const [deleteConfirmReg, setDeleteConfirmReg] = useState<RegistrationSubmission | null>(null);
@@ -238,12 +294,14 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
   const handleLogout = async () => {
     setIsAuthenticated(false);
-    sessionStorage.removeItem('celestia_admin_auth');
+    clearAuthSession();
+    setActiveRole(null);
     setPasskeyInput('');
     setAdminPassword('');
     if (supabase) {
       await supabase.auth.signOut().catch(() => {});
     }
+    showToast('Logged out of Tabulation Console');
   };
 
   // Supabase Connection Diagnostic State
@@ -368,85 +426,91 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               <Lock className="w-7 h-7" />
             </div>
             <span className="text-[11px] font-mono tracking-widest uppercase text-[#D4AF37] block font-semibold mb-1">
-              ADMIN CONTROL ROUTE (/admin)
+              RESULTS & TABULATION ROUTE (/admin)
             </span>
             <h2 className="font-cinzel text-2xl font-bold text-white tracking-wide">
-              Celestia'26 Adjudication
+              Adjudication Console
             </h2>
             <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">
-              Protected interface for festival tabulation, result publication, and registration audits.
+              Official portal for judges and tabulators to certify winners, runners-up, scores, and manage festival announcements.
             </p>
-            <div className="mt-3 p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-[11px] text-emerald-200/90 leading-normal text-left">
-              <strong>Production Supabase Security:</strong> Use your registered administrator credentials. Row Level Security enforces that only active administrators in <code>admin_users</code> can access registration data and verify payments.
-            </div>
           </div>
 
-          {/* Mode Selector */}
+          {/* Profile Selector Tabs */}
           <div className="flex rounded-xl bg-black/40 p-1 mb-4 border border-white/10 text-xs">
             <button
               type="button"
-              onClick={() => { setAuthMode('supabase_auth'); setAuthError(''); }}
-              className={`flex-1 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
-                authMode === 'supabase_auth' ? 'bg-[#D4AF37] text-black font-bold' : 'text-slate-400 hover:text-white'
+              onClick={() => {
+                setRoleTab('result');
+                setLoginUsername('Result');
+                setAuthError('');
+              }}
+              className={`flex-1 py-1.5 rounded-lg font-medium transition-colors cursor-pointer text-center ${
+                roleTab === 'result' ? 'bg-[#D4AF37] text-black font-bold' : 'text-slate-400 hover:text-white'
               }`}
             >
-              Supabase Auth
+              Result Desk
             </button>
             <button
               type="button"
-              onClick={() => { setAuthMode('passkey'); setAuthError(''); }}
-              className={`flex-1 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
-                authMode === 'passkey' ? 'bg-[#D4AF37] text-black font-bold' : 'text-slate-400 hover:text-white'
+              onClick={() => {
+                setRoleTab('admin');
+                setLoginUsername('Admin');
+                setAuthError('');
+              }}
+              className={`flex-1 py-1.5 rounded-lg font-medium transition-colors cursor-pointer text-center ${
+                roleTab === 'admin' ? 'bg-[#D4AF37] text-black font-bold' : 'text-slate-400 hover:text-white'
               }`}
             >
-              Passkey Bypass
+              Admin Desk
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setRoleTab('incharges');
+                setLoginUsername('Incharges');
+                setAuthError('');
+              }}
+              className={`flex-1 py-1.5 rounded-lg font-medium transition-colors cursor-pointer text-center ${
+                roleTab === 'incharges' ? 'bg-emerald-400 text-black font-bold' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Incharges
             </button>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-4">
-            {authMode === 'supabase_auth' ? (
-              <>
-                <div>
-                  <label className="block text-xs font-mono uppercase text-slate-300 mb-1.5">
-                    Admin Email
-                  </label>
-                  <input
-                    type="email"
-                    value={adminEmail}
-                    onChange={(e) => setAdminEmail(e.target.value)}
-                    placeholder="admin@celestia.edu"
-                    className="w-full px-4 py-2.5 rounded-xl bg-[#070B1C]/90 border border-white/15 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37]"
-                    autoFocus
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-mono uppercase text-slate-300 mb-1.5">
-                    Password
-                  </label>
-                  <input
-                    type="password"
-                    value={adminPassword}
-                    onChange={(e) => setAdminPassword(e.target.value)}
-                    placeholder="••••••••••••"
-                    className="w-full px-4 py-2.5 rounded-xl bg-[#070B1C]/90 border border-white/15 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37]"
-                  />
-                </div>
-              </>
-            ) : (
-              <div>
-                <label className="block text-xs font-mono uppercase text-slate-300 mb-1.5">
-                  Security Passkey
-                </label>
-                <input
-                  type="password"
-                  value={passkeyInput}
-                  onChange={(e) => setPasskeyInput(e.target.value)}
-                  placeholder="Enter passkey (celestia2026)..."
-                  className="w-full px-4 py-2.5 rounded-xl bg-[#070B1C]/90 border border-white/15 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37]"
-                  autoFocus
-                />
-              </div>
-            )}
+            <div>
+              <label className="block text-xs font-mono uppercase text-slate-300 mb-1.5">
+                Profile / Username
+              </label>
+              <input
+                type="text"
+                value={loginUsername}
+                onChange={(e) => setLoginUsername(e.target.value)}
+                placeholder="Username (Result / Admin / Incharges)"
+                className="w-full px-4 py-2.5 rounded-xl bg-[#070B1C]/90 border border-white/15 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-[#D4AF37]"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-mono uppercase text-slate-300 mb-1.5 flex items-center justify-between">
+                <span>Security Password</span>
+                <span className="text-[10px] text-slate-400 lowercase font-mono">
+                  {roleTab === 'result' && 'Results Desk'}
+                  {roleTab === 'admin' && 'Admin Console'}
+                  {roleTab === 'incharges' && 'Incharges Portal'}
+                </span>
+              </label>
+              <input
+                type="password"
+                value={passkeyInput}
+                onChange={(e) => setPasskeyInput(e.target.value)}
+                placeholder="Enter authorized password"
+                className="w-full px-4 py-2.5 rounded-xl bg-[#070B1C]/90 border border-white/15 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-[#D4AF37]"
+                autoFocus
+              />
+            </div>
 
             {authError && (
               <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-xs flex items-center gap-2">
@@ -458,29 +522,22 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             <button
               type="submit"
               disabled={isSubmittingAuth}
-              className="w-full py-3 px-4 rounded-xl font-bold text-xs uppercase tracking-wider text-[#050714] bg-gradient-to-r from-[#F5E7C4] via-[#D4AF37] to-[#B38F26] hover:brightness-110 transition-all cursor-pointer shadow-lg shadow-[#D4AF37]/20 disabled:opacity-50"
+              className={`w-full py-3 px-4 rounded-xl font-bold text-xs uppercase tracking-wider text-[#050714] transition-all cursor-pointer shadow-lg disabled:opacity-50 ${
+                roleTab === 'incharges'
+                  ? 'bg-gradient-to-r from-emerald-300 via-emerald-400 to-[#D4AF37] hover:brightness-110 shadow-emerald-500/20'
+                  : 'bg-gradient-to-r from-[#F5E7C4] via-[#D4AF37] to-[#B38F26] hover:brightness-110 shadow-[#D4AF37]/20'
+              }`}
             >
-              {isSubmittingAuth ? 'Authenticating...' : 'Authenticate & Enter Console'}
+              {isSubmittingAuth ? 'Authenticating...' : `Enter ${AUTH_PROFILES[roleTab].badge}`}
             </button>
           </form>
 
-          {/* Quick Demo Assist */}
-          <div className="mt-6 pt-5 border-t border-white/10 text-center">
-            <p className="text-[11px] text-slate-300 mb-2">
-              Instant evaluation shortcut:
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                setPasskeyInput('celestia2026');
-                setIsAuthenticated(true);
-                sessionStorage.setItem('celestia_admin_auth', 'true');
-                showToast('Authenticated via demo passkey: celestia2026');
-              }}
-              className="text-xs font-mono text-[#D4AF37] hover:underline cursor-pointer bg-[#D4AF37]/10 px-3 py-1.5 rounded-lg border border-[#D4AF37]/25"
-            >
-              Quick Unlock (Passkey: celestia2026)
-            </button>
+          {/* Secure Console Notice */}
+          <div className="mt-5 pt-4 border-t border-white/10 text-center">
+            <span className="text-[11px] text-slate-400 font-mono flex items-center justify-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-[#D4AF37]" />
+              <span>Official Celestia'26 Operations Console</span>
+            </span>
           </div>
 
           <div className="mt-4 text-center">
