@@ -25,13 +25,13 @@ function AppContent() {
     // Support direct navigation to /admin, /admin1, /incharges or hash variations
     const path = window.location.pathname.toLowerCase();
     const hash = window.location.hash.toLowerCase();
-    if (path === '/incharges' || hash === '#/incharges' || hash === '#incharges') {
+    if (path.includes('incharges') || hash.includes('incharges')) {
       return 'incharges';
     }
-    if (path === '/admin1' || hash === '#/admin1' || hash === '#admin1') {
+    if (path.includes('admin1') || hash.includes('admin1') || path.includes('celestiasmch') || hash.includes('celestiasmch')) {
       return 'admin1';
     }
-    if (path === '/admin' || hash === '#/admin' || hash === '#admin') {
+    if (path.includes('admin') || hash.includes('admin')) {
       return 'admin';
     }
     if (path === '/schedule' || hash === '#/schedule' || hash === '#schedule') return 'schedule';
@@ -52,13 +52,13 @@ function AppContent() {
     const handleUrlChange = () => {
       const path = window.location.pathname.toLowerCase();
       const hash = window.location.hash.toLowerCase();
-      if (path === '/incharges' || hash === '#/incharges' || hash === '#incharges') {
+      if (path.includes('incharges') || hash.includes('incharges')) {
         setCurrentPage('incharges');
         setIsRegisteringView(false);
-      } else if (path === '/admin1' || hash === '#/admin1' || hash === '#admin1') {
+      } else if (path.includes('admin1') || hash.includes('admin1') || path.includes('celestiasmch') || hash.includes('celestiasmch')) {
         setCurrentPage('admin1');
         setIsRegisteringView(false);
-      } else if (path === '/admin' || hash === '#/admin' || hash === '#admin') {
+      } else if (path.includes('admin') || hash.includes('admin')) {
         setCurrentPage('admin');
         setIsRegisteringView(false);
       }

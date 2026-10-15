@@ -19,19 +19,43 @@ export const CollegeForm: React.FC = () => {
     (isHostCollege ? 'Srinivasan Medical College and Hospital, Trichy' : '')
   );
   const [city, setCity] = useState(collegeDetails?.city || (isHostCollege ? 'Trichy' : ''));
-  const [state, setState] = useState(collegeDetails?.state || (isHostCollege ? 'Tamil Nadu' : ''));
+  const [state, setState] = useState(collegeDetails?.state || 'Tamil Nadu');
   const [contactPerson, setContactPerson] = useState(
-    collegeDetails?.contactPerson || 
-    (currentUser?.fullName && currentUser.fullName !== 'Collegiate Delegate' ? currentUser.fullName : '')
+    collegeDetails?.contactPerson || currentUser?.fullName || ''
   );
   const [contactMobile, setContactMobile] = useState(
-    collegeDetails?.contactMobile || 
-    (currentUser?.mobile && currentUser.mobile !== '9876543210' ? currentUser.mobile : '')
+    collegeDetails?.contactMobile || currentUser?.mobile || ''
   );
-  const [contactEmail, setContactEmail] = useState(collegeDetails?.contactEmail || currentUser?.email || '');
+  const [contactEmail, setContactEmail] = useState(
+    collegeDetails?.contactEmail || currentUser?.email || ''
+  );
   const [isCollegeDelegation, setIsCollegeDelegation] = useState(collegeDetails?.isCollegeDelegation ?? true);
 
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
+
+  // Re-sync fields if collegeDetails or currentUser updates from context
+  React.useEffect(() => {
+    if (collegeDetails) {
+      if (collegeDetails.collegeName) setCollegeName(collegeDetails.collegeName);
+      if (collegeDetails.city) setCity(collegeDetails.city);
+      if (collegeDetails.state) setState(collegeDetails.state);
+      if (collegeDetails.contactPerson) setContactPerson(collegeDetails.contactPerson);
+      if (collegeDetails.contactMobile) setContactMobile(collegeDetails.contactMobile);
+      if (collegeDetails.contactEmail) setContactEmail(collegeDetails.contactEmail);
+      if (typeof collegeDetails.isHostCollege === 'boolean') setIsHostCollege(collegeDetails.isHostCollege);
+      if (typeof collegeDetails.isCollegeDelegation === 'boolean') setIsCollegeDelegation(collegeDetails.isCollegeDelegation);
+    } else if (currentUser) {
+      if (currentUser.fullName && currentUser.fullName !== 'Collegiate Delegate' && !contactPerson) {
+        setContactPerson(currentUser.fullName);
+      }
+      if (currentUser.mobile && currentUser.mobile !== '9876543210' && !contactMobile) {
+        setContactMobile(currentUser.mobile);
+      }
+      if (currentUser.email && !contactEmail) {
+        setContactEmail(currentUser.email);
+      }
+    }
+  }, [collegeDetails, currentUser]);
 
   const handleHostCollegeToggle = (checked: boolean) => {
     setIsHostCollege(checked);
@@ -57,10 +81,10 @@ export const CollegeForm: React.FC = () => {
   const validate = () => {
     const errs: { [key: string]: string } = {};
     if (!collegeName.trim() || collegeName.trim().length < 3) {
-      errs.collegeName = 'Please enter your institution or college name.';
+      errs.collegeName = 'Please enter your institution or college name (at least 3 characters).';
     }
     if (!city.trim()) {
-      errs.city = 'Please enter your campus city.';
+      errs.city = 'Please enter your campus city/location.';
     }
     if (!state.trim()) {
       errs.state = 'Please specify your state.';
@@ -376,6 +400,11 @@ export const CollegeForm: React.FC = () => {
                 <option value="Maharashtra">Maharashtra</option>
                 <option value="Other States">Other Indian State</option>
               </select>
+              {errors.state && (
+                <p className="text-[11px] text-rose-400 mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" /> {errors.state}
+                </p>
+              )}
             </div>
           </div>
 

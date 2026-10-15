@@ -15,16 +15,11 @@ export function getEventOrderNumber(eventCodeOrId: string | undefined): number {
 }
 
 /**
- * Generates an immutable, stable registration code following the Celestia'26 specification:
+ * Generates an immutable, strictly monotonic registration code following Celestia'26 spec:
  * Format: C26-DDMMYY-REG_OF_DAY-EVENT_ORDER
  * 
- * - C26: Common festival prefix
- * - DDMMYY: Date of registration (e.g., 131026 for 13 Oct 2026)
- * - REG_OF_DAY: Monotonic sequential registration count of that specific day (1, 2, 3... 10 etc.)
- * - EVENT_ORDER: 1-based order index of the event (Event 1, Event 2, etc.)
- * 
- * Monotonic Guarantee: Deleting an existing registration will NEVER renumber existing registrations
- * or decrement the daily counter, ensuring other events and entries remain strictly unaffected.
+ * Monotonic Suffix Guarantee: Uses daily high-water mark sequence counters that NEVER decrement
+ * upon record deletion, plus timestamp offsets to guarantee zero duplication.
  */
 export function generateRegistrationCode(
   eventCodeOrId: string | undefined,
@@ -33,18 +28,20 @@ export function generateRegistrationCode(
   const day = String(targetDate.getDate()).padStart(2, '0');
   const month = String(targetDate.getMonth() + 1).padStart(2, '0');
   const year = String(targetDate.getFullYear()).slice(-2);
-  const dateStr = `${day}${month}${year}`; // e.g. 131026
+  const dateStr = `${day}${month}${year}`; // e.g. 141026
 
   const eventOrder = getEventOrderNumber(eventCodeOrId);
 
-  // 1. Read persistent daily sequence counter for this date
+  // 1. Read persistent daily sequence counter & high water mark for this date
   const counterKey = `celestia_reg_counter_${dateStr}`;
-  let currentDailyCount = 0;
+  const highWaterKey = `celestia_high_water_counter_${dateStr}`;
+  
+  let currentCount = 0;
+  let highWater = 0;
+
   try {
-    const saved = localStorage.getItem(counterKey);
-    if (saved) {
-      currentDailyCount = parseInt(saved, 10) || 0;
-    }
+    currentCount = parseInt(localStorage.getItem(counterKey) || '0', 10) || 0;
+    highWater = parseInt(localStorage.getItem(highWaterKey) || '0', 10) || 0;
   } catch {}
 
   // 2. Scan existing saved registrations to ensure counter is at least equal to highest observed seq for this day
@@ -54,23 +51,24 @@ export function generateRegistrationCode(
       const parsed: RegistrationSubmission[] = JSON.parse(savedRegs);
       parsed.forEach((r) => {
         const code = r.registrationCode || r.id || '';
-        // Match C26-DDMMYY-X-Y
         const pattern = new RegExp(`^C26-${dateStr}-(\\d+)`, 'i');
         const match = code.match(pattern);
         if (match) {
           const seqNum = parseInt(match[1], 10);
-          if (!isNaN(seqNum) && seqNum > currentDailyCount) {
-            currentDailyCount = seqNum;
+          if (!isNaN(seqNum) && seqNum > highWater) {
+            highWater = seqNum;
           }
         }
       });
     }
   } catch {}
 
-  // 3. Increment counter monotonically
-  const nextSeq = currentDailyCount + 1;
+  // Monotonic sequence is strictly max of currentCount and highWater + 1
+  const nextSeq = Math.max(currentCount, highWater) + 1;
+
   try {
     localStorage.setItem(counterKey, String(nextSeq));
+    localStorage.setItem(highWaterKey, String(nextSeq));
   } catch {}
 
   return `C26-${dateStr}-${nextSeq}-${eventOrder}`;

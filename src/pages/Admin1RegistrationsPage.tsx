@@ -6,6 +6,7 @@ import {
   Eye, 
   Edit3, 
   CheckCircle, 
+  CheckCircle2,
   AlertCircle, 
   Clock, 
   PauseCircle, 
@@ -47,7 +48,8 @@ import {
   Info,
   Copy,
   ChevronRight,
-  LogOut
+  LogOut,
+  Layers
 } from 'lucide-react';
 import { useRegistration } from '../context/RegistrationContext';
 import { RegistrationSubmission, ParticipantMember } from '../types/registration';
@@ -77,6 +79,7 @@ import {
   requestPasswordReset
 } from '../lib/authProfiles';
 import { InchargesPortalPage } from './InchargesPortalPage';
+import { testDataGenerator, TestGeneratorResult, TestPurgeResult } from '../services/testDataGenerator';
 
 interface Admin1RegistrationsPageProps {
   onExit: () => void;
@@ -147,6 +150,48 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
   const [showCloudModal, setShowCloudModal] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
 
+  // Test Generator Suite State
+  const [showTestGeneratorModal, setShowTestGeneratorModal] = useState(false);
+  const [isGeneratingTest, setIsGeneratingTest] = useState(false);
+  const [testGenResult, setTestGenResult] = useState<TestGeneratorResult | null>(null);
+  const [isPurgingTest, setIsPurgingTest] = useState(false);
+  const [testPurgeResult, setTestPurgeResult] = useState<TestPurgeResult | null>(null);
+
+  const handleGenerate25TestRecords = async () => {
+    setIsGeneratingTest(true);
+    setTestGenResult(null);
+    try {
+      const res = await testDataGenerator.generate25TestRegistrations();
+      setTestGenResult(res);
+      showToast(`Generated ${res.successCount} test registrations successfully!`);
+      await loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Generator failed';
+      showToast(`Test generation error: ${msg}`);
+    } finally {
+      setIsGeneratingTest(false);
+    }
+  };
+
+  const handlePurgeTestRecords = async () => {
+    if (!window.confirm('Are you sure you want to delete all 25 test records? This operation removes only test entries with registration codes matching TEST-REG-2026-*.')) {
+      return;
+    }
+    setIsPurgingTest(true);
+    setTestPurgeResult(null);
+    try {
+      const res = await testDataGenerator.purgeTestRegistrations();
+      setTestPurgeResult(res);
+      showToast(res.message);
+      await loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Purge failed';
+      showToast(`Purge error: ${msg}`);
+    } finally {
+      setIsPurgingTest(false);
+    }
+  };
+
   // Search & Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'VERIFIED' | 'REJECTED' | 'NOT_COMPLETE'>('ALL');
@@ -160,6 +205,11 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
   const [incompleteModalRegistration, setIncompleteModalRegistration] = useState<RegistrationSubmission | null>(null);
   const [incompleteReasonInput, setIncompleteReasonInput] = useState('Missing required student credentials or incomplete fee remittance');
   const [deleteConfirmRegistration, setDeleteConfirmRegistration] = useState<RegistrationSubmission | null>(null);
+
+  // Multi-selection & Bulk operations state (Main Admin Only)
+  const [selectedRegIds, setSelectedRegIds] = useState<string[]>([]);
+  const [showEventClassificationModal, setShowEventClassificationModal] = useState<boolean>(false);
+  const [bulkDeleteConfirmModal, setBulkDeleteConfirmModal] = useState<boolean>(false);
 
   // Event Registration On/Off Controls
   const [showRegistrationControls, setShowRegistrationControls] = useState<boolean>(false);
@@ -567,9 +617,9 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
     );
   };
 
-  // Export full registered data as CSV
-  const handleExportCSV = () => {
-    if (allRegistrations.length === 0) {
+  // Reusable CSV Generator for any list of registrations
+  const exportCSVForList = (list: RegistrationSubmission[], filename: string) => {
+    if (list.length === 0) {
       showToast('No registration data available to export.');
       return;
     }
@@ -604,7 +654,7 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
       'All Participants Roster'
     ];
 
-    const rows = allRegistrations.map((r) => {
+    const rows = list.map((r) => {
       const deskStatus = getDeskStatus(r);
       const idCardsCount = r.participants.filter(p => Boolean(p.idCardFileData || p.idCardStoragePath || p.idCardFileName)).length;
       const hasPaymentProof = Boolean(r.paymentScreenshotData || r.paymentScreenshotPath || r.paymentScreenshotName);
@@ -648,11 +698,232 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Celestia26_Admin1_Full_Registrations_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', filename);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  // Export full registered data as CSV
+  const handleExportCSV = () => {
+    exportCSVForList(allRegistrations, `Celestia26_Admin1_Full_Registrations_${new Date().toISOString().slice(0, 10)}.csv`);
     showToast(`Exported ${allRegistrations.length} registrations to CSV`);
+  };
+
+  // Export ONLY Selected items as CSV
+  const handleExportSelectedCSV = () => {
+    if (selectedRegIds.length === 0) {
+      showToast('Select at least one registration using checkboxes first');
+      return;
+    }
+    const selectedList = allRegistrations.filter((r) => selectedRegIds.includes(r.id));
+    exportCSVForList(selectedList, `Celestia26_Selected_${selectedList.length}_Registrations.csv`);
+    showToast(`Exported ${selectedList.length} selected registrations to CSV`);
+  };
+
+  // Export Single Event Roster as CSV
+  const handleExportSingleEventCSV = (eventCode: string) => {
+    const eventRegs = allRegistrations.filter((r) => r.eventCode === eventCode);
+    if (eventRegs.length === 0) {
+      showToast(`No registrations found for event code ${eventCode}`);
+      return;
+    }
+    exportCSVForList(eventRegs, `Celestia26_EventRoster_${eventCode}.csv`);
+    showToast(`Exported ${eventRegs.length} entries for event ${eventCode}`);
+  };
+
+  // Export Event-Wise Classified Master CSV
+  const handleExportClassifiedByEventsCSV = () => {
+    if (allRegistrations.length === 0) {
+      showToast('No registration data available to classify.');
+      return;
+    }
+
+    const headers = [
+      'Event Code',
+      'Event Title',
+      'Event Category',
+      'Registration ID',
+      'Desk Status',
+      'College Name',
+      'City',
+      'State',
+      'Team Name',
+      'Primary Captain Name',
+      'Captain Mobile',
+      'Captain Email',
+      'Total Participants',
+      'Full Participant Roster',
+      'Fee Amount (INR)',
+      'UTR Reference Number',
+      'Submission Date'
+    ];
+
+    const rows: string[] = [];
+
+    EVENTS_DATA.forEach((ev) => {
+      const regs = allRegistrations.filter((r) => r.eventCode === ev.code);
+      if (regs.length > 0) {
+        regs.forEach((r) => {
+          const deskStatus = getDeskStatus(r);
+          const rosterSummary = r.participants
+            .map((p, i) => `#${i + 1} ${p.fullName} [${p.role || 'Member'}, ${p.gender}, Age ${p.age}, Ph: ${p.mobile}]`)
+            .join(' | ');
+
+          rows.push([
+            `"${ev.code}"`,
+            `"${ev.title}"`,
+            `"${ev.category}"`,
+            `"${r.id}"`,
+            `"${deskStatus}"`,
+            `"${r.college?.collegeName || ''}"`,
+            `"${r.college?.city || ''}"`,
+            `"${r.college?.state || ''}"`,
+            `"${r.teamName || ''}"`,
+            `"${r.participants[0]?.fullName || ''}"`,
+            `"${r.participants[0]?.mobile || ''}"`,
+            `"${r.participants[0]?.email || ''}"`,
+            r.participants.length.toString(),
+            `"${rosterSummary.replace(/"/g, '""')}"`,
+            r.totalAmount.toString(),
+            `"${r.utrNumber || ''}"`,
+            `"${r.createdAt}"`
+          ].join(','));
+        });
+      }
+    });
+
+    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `Celestia26_Event_Wise_Classified_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast('Exported Event-Wise Classified Master CSV!');
+  };
+
+  // Download Single Registration Complete Text Dossier Report
+  const handleExportSingleRegistration = (reg: RegistrationSubmission) => {
+    const deskStatus = getDeskStatus(reg);
+    let content = `=========================================================================\n`;
+    content += `CELESTIA '26 - OFFICIAL REGISTRATION DOSSIER REPORT\n`;
+    content += `Srinivasan Medical College & Hospital Intercollegiate Cultural Fest\n`;
+    content += `=========================================================================\n\n`;
+    content += `REGISTRATION ID: ${reg.id}\n`;
+    content += `REGISTRATION CODE: ${reg.registrationCode || reg.id}\n`;
+    content += `DESK STATUS: ${deskStatus}\n`;
+    content += `SUBMISSION DATE: ${reg.createdAt}\n\n`;
+    
+    content += `--- 1. EVENT & COMPETITION DETAILS ---\n`;
+    content += `Event Code: ${reg.eventCode}\n`;
+    content += `Event Title: ${reg.eventTitle}\n`;
+    content += `Event Type: ${reg.eventType}\n`;
+    content += `Event Category: ${reg.eventCategory}\n`;
+    content += `Venue: ${reg.venue}\n`;
+    if (reg.teamName) content += `Registered Team Name: ${reg.teamName}\n`;
+    content += `\n`;
+
+    content += `--- 2. COLLEGE & DELEGATION DETAILS ---\n`;
+    content += `College Name: ${reg.college?.collegeName || 'N/A'}\n`;
+    content += `Location: ${reg.college?.city || ''}, ${reg.college?.state || ''}\n`;
+    content += `Representative / HOD: ${reg.college?.contactPerson || 'N/A'}\n`;
+    content += `Representative Mobile: ${reg.college?.contactMobile || 'N/A'}\n`;
+    content += `Representative Email: ${reg.college?.contactEmail || 'N/A'}\n`;
+    content += `Delegation Status: ${reg.college?.isCollegeDelegation ? 'Official College Delegation' : 'Individual Entry'}\n`;
+    if (reg.college?.isHostCollege) {
+      content += `SMCH Host Student Reg No: ${reg.college.hostRegisterNumber || 'N/A'}\n`;
+      content += `SMCH Batch: ${reg.college.hostBatch || 'N/A'}\n`;
+    }
+    content += `\n`;
+
+    content += `--- 3. PAYMENT REMITTANCE & FINANCIALS ---\n`;
+    content += `Total Fee Amount: ₹${reg.totalAmount}\n`;
+    content += `Fee Structure: ₹${reg.feePerUnit} (${reg.feeType})\n`;
+    content += `UTR / Transaction ID: ${reg.utrNumber || 'N/A'}\n`;
+    content += `Payment Confirmed: ${reg.paymentConfirmed ? 'YES' : 'NO'}\n`;
+    content += `Payment Screenshot Proof Attached: ${reg.paymentScreenshotData || reg.paymentScreenshotPath ? 'YES' : 'NO'}\n`;
+    content += `\n`;
+
+    content += `--- 4. PARTICIPANT ROSTER (${reg.participants.length} MEMBERS) ---\n`;
+    reg.participants.forEach((p, idx) => {
+      content += `${idx + 1}. Full Name: ${p.fullName}\n`;
+      content += `   Role: ${p.role || (idx === 0 ? 'Team Captain / Primary Contact' : 'Team Member')}\n`;
+      content += `   Gender: ${p.gender} | Age: ${p.age}\n`;
+      content += `   Mobile: ${p.mobile || 'N/A'} | Email: ${p.email || 'N/A'}\n`;
+      content += `   ID Card File Uploaded: ${p.idCardFileData || p.idCardStoragePath ? 'YES' : 'NO'}\n\n`;
+    });
+
+    content += `=========================================================================\n`;
+    content += `Generated on ${new Date().toLocaleString()} from Celestia '26 Admin Desk\n`;
+
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Celestia26_Dossier_${reg.id}_${reg.eventCode}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showToast(`Dossier text report for ${reg.id} downloaded!`);
+  };
+
+  // Selection Toggle Handlers
+  const isAllSelected = useMemo(() => {
+    return filteredRegistrations.length > 0 && filteredRegistrations.every((r) => selectedRegIds.includes(r.id));
+  }, [filteredRegistrations, selectedRegIds]);
+
+  const handleToggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedRegIds([]);
+    } else {
+      setSelectedRegIds(filteredRegistrations.map((r) => r.id));
+    }
+  };
+
+  const handleToggleSelectRow = (id: string) => {
+    setSelectedRegIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  // Bulk Verify Selected Entries
+  const handleBulkVerify = async () => {
+    if (selectedRegIds.length === 0) return;
+    setLoading(true);
+    let count = 0;
+    for (const id of selectedRegIds) {
+      try {
+        await supabaseRegistrationService.updateStatus(id, 'verify');
+        count++;
+      } catch (e) {
+        console.error(`Error verifying ${id}:`, e);
+      }
+    }
+    showToast(`Successfully VERIFIED ${count} selected registrations!`);
+    setSelectedRegIds([]);
+    await loadData();
+  };
+
+  // Bulk Delete Selected Entries
+  const handleBulkDelete = async () => {
+    if (selectedRegIds.length === 0) return;
+    setLoading(true);
+    let count = 0;
+    for (const id of selectedRegIds) {
+      try {
+        await supabaseRegistrationService.deleteRegistration(id);
+        count++;
+      } catch (e) {
+        console.error(`Error deleting ${id}:`, e);
+      }
+    }
+    showToast(`Successfully DELETED ${count} selected registrations!`);
+    setSelectedRegIds([]);
+    setBulkDeleteConfirmModal(false);
+    await loadData();
   };
 
   const handleLogout = () => {
@@ -915,6 +1186,16 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setShowTestGeneratorModal(true)}
+            className="px-3.5 py-2 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/35 text-xs font-semibold text-purple-300 transition-colors flex items-center gap-1.5 cursor-pointer"
+            title="Open 25 Fictional Test Registration Generator"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+            <span>Test Suite (25 Records)</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setViewingInchargesDesk(true)}
@@ -1191,6 +1472,17 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
             )}
           </button>
 
+          {/* Classify By Events Button */}
+          <button
+            type="button"
+            onClick={() => setShowEventClassificationModal(true)}
+            className="px-3.5 py-2 rounded-xl font-bold text-xs uppercase tracking-wider text-purple-200 bg-purple-900/40 hover:bg-purple-800/60 border border-purple-500/40 transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
+            title="Classify and view registrations grouped by event"
+          >
+            <Layers className="w-3.5 h-3.5 text-purple-400" />
+            <span>Classify By Events</span>
+          </button>
+
           {/* Download CSV */}
           <button
             type="button"
@@ -1198,7 +1490,7 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
             className="px-3.5 py-2 rounded-xl font-bold text-xs uppercase tracking-wider text-[#050714] bg-gradient-to-r from-[#F5E7C4] via-[#D4AF37] to-[#B38F26] hover:brightness-110 transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-[#D4AF37]/20"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Download All Data (CSV)</span>
+            <span>Download All (CSV)</span>
           </button>
         </div>
       </div>
@@ -1344,6 +1636,15 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-white/10 bg-black/50 text-[11px] font-mono uppercase tracking-wider text-[#D4AF37]">
+                  <th className="py-3.5 px-3 text-center w-12">
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      onChange={handleToggleSelectAll}
+                      className="rounded accent-[#D4AF37] cursor-pointer w-4 h-4"
+                      title="Select / Deselect all visible rows"
+                    />
+                  </th>
                   <th className="py-3.5 px-3">Reg ID & Event</th>
                   <th className="py-3.5 px-3">Primary Captain</th>
                   <th className="py-3.5 px-3">College & City</th>
@@ -1355,7 +1656,8 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {filteredRegistrations.map((reg) => {
+                {filteredRegistrations.map((reg, index) => {
+                  const isSelected = selectedRegIds.includes(reg.id);
                   const deskStatus = getDeskStatus(reg);
                   const isPending = deskStatus === 'PENDING';
                   const isVerified = deskStatus === 'VERIFIED';
@@ -1372,7 +1674,19 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                   ).length;
 
                   return (
-                    <tr key={reg.id} className="hover:bg-white/[0.02] transition-colors">
+                    <tr key={reg.id} className={`hover:bg-white/[0.03] transition-colors ${isSelected ? 'bg-[#D4AF37]/10' : ''}`}>
+                      {/* Checkbox & Serial Number */}
+                      <td className="py-3 px-3 text-center font-mono">
+                        <div className="flex flex-col items-center justify-center gap-1">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleSelectRow(reg.id)}
+                            className="rounded accent-[#D4AF37] cursor-pointer w-4 h-4"
+                          />
+                          <span className="text-[10px] text-slate-400 font-bold">#{index + 1}</span>
+                        </div>
+                      </td>
                       {/* 1. Reg ID & Event */}
                       <td className="py-3 px-3 font-mono">
                         <div className="font-bold text-white text-xs">{reg.id}</div>
@@ -1620,6 +1934,56 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
         </div>
       )}
 
+      {/* FLOATING STICKY ACTION BAR FOR SELECTED ROWS (MAIN ADMIN ONLY) */}
+      {selectedRegIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-11/12 max-w-2xl bg-[#090E26]/95 backdrop-blur-lg border-2 border-[#D4AF37] p-3.5 sm:p-4 rounded-2xl shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-3 text-xs animate-fade-in">
+          <div className="flex items-center gap-2">
+            <span className="w-6 h-6 rounded-full bg-[#D4AF37] text-black font-bold flex items-center justify-center text-xs">
+              {selectedRegIds.length}
+            </span>
+            <span className="text-white font-semibold">Registrations Selected</span>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={handleExportSelectedCSV}
+              className="px-3 py-1.5 rounded-lg bg-[#D4AF37] hover:brightness-110 text-black font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Download Selected (CSV)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleBulkVerify}
+              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all flex items-center gap-1 cursor-pointer shadow-sm"
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>Verify Selected</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setBulkDeleteConfirmModal(true)}
+              className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition-all flex items-center gap-1 cursor-pointer shadow-sm"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete Selected</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSelectedRegIds([])}
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors cursor-pointer"
+              title="Clear selection"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ==================================================================== */}
       {/* MODAL 1: CHECK ALL COLUMNS / DOSSIER (EVERY SINGLE DETAIL VISIBLE) */}
       {/* ==================================================================== */}
@@ -1654,6 +2018,15 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
               </div>
 
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleExportSingleRegistration(inspectRegistration)}
+                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#F5E7C4] via-[#D4AF37] to-[#B38F26] text-[#050714] text-xs font-bold transition-all hover:brightness-110 flex items-center gap-1.5 cursor-pointer shadow-md"
+                  title="Download complete single registration report"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download Single Report</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setInspectRegistration(null)}
@@ -2054,13 +2427,23 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
               <span className="text-xs text-slate-400 font-mono">
                 Registrant ID: {inspectRegistration.id}
               </span>
-              <button
-                type="button"
-                onClick={() => setInspectRegistration(null)}
-                className="px-5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-colors cursor-pointer"
-              >
-                Close Dossier
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleExportSingleRegistration(inspectRegistration)}
+                  className="px-4 py-2 rounded-xl bg-[#D4AF37] hover:brightness-110 text-xs font-bold text-black transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download Single Report</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInspectRegistration(null)}
+                  className="px-5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-colors cursor-pointer"
+                >
+                  Close Dossier
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -2640,6 +3023,438 @@ CREATE POLICY "Allow public insert to payment_submissions" ON public.payment_sub
                   Close Guide
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 7: TEST DATA GENERATOR SUITE (25 FICTIONAL REGISTRATIONS) */}
+      {/* ==================================================================== */}
+      {showTestGeneratorModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
+          <div className="relative w-full max-w-4xl celestial-glass rounded-2xl p-6 border border-purple-500/50 shadow-2xl space-y-5 my-8 max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-purple-500/20 border border-purple-500/50 flex items-center justify-center text-purple-300">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-cinzel text-lg font-bold text-white">Test Suite — 25 Fictional Registrations Generator</h3>
+                  <span className="text-[11px] font-mono text-purple-300">Safely test Admin Panel filters, search, rosters, and payment views</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTestGeneratorModal(false)}
+                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Test Generator Specifications Card */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+              <div className="p-3.5 rounded-xl bg-black/50 border border-white/10 space-y-1">
+                <span className="text-slate-400 font-mono uppercase text-[10px] block">Dataset Size</span>
+                <span className="font-bold text-white text-sm">25 Synthetic Registrations</span>
+                <p className="text-slate-300 text-[11px]">Identified by prefix <code className="text-purple-300 font-mono">TEST-REG-2026-001</code> to <code className="text-purple-300 font-mono">025</code>.</p>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-black/50 border border-white/10 space-y-1">
+                <span className="text-slate-400 font-mono uppercase text-[10px] block">Event Coverage</span>
+                <span className="font-bold text-white text-sm">All 14 Festival Events</span>
+                <p className="text-slate-300 text-[11px]">Covers Solo, Duo, and Group events respecting max participant limits.</p>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-black/50 border border-white/10 space-y-1">
+                <span className="text-slate-400 font-mono uppercase text-[10px] block">Colleges & Remittance</span>
+                <span className="font-bold text-white text-sm">9 Medical Colleges</span>
+                <p className="text-slate-300 text-[11px]">Includes non-host college fees + SMCH Host zero-fee waiver verification.</p>
+              </div>
+            </div>
+
+            {/* Control Actions Bar */}
+            <div className="p-4 rounded-xl bg-purple-950/20 border border-purple-500/30 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div>
+                <h4 className="font-semibold text-white text-sm flex items-center gap-1.5">
+                  <Database className="w-4 h-4 text-purple-400" />
+                  <span>Execution Controls</span>
+                </h4>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Generates full registration, participant roster, and payment records without altering existing data.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleGenerate25TestRecords}
+                  disabled={isGeneratingTest || isPurgingTest}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-500 via-indigo-500 to-[#D4AF37] hover:brightness-110 text-white font-bold text-xs uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-lg disabled:opacity-50"
+                >
+                  <Play className={`w-4 h-4 ${isGeneratingTest ? 'animate-spin' : ''}`} />
+                  <span>{isGeneratingTest ? 'Generating 25 Records...' : 'Generate 25 Test Records'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handlePurgeTestRecords}
+                  disabled={isGeneratingTest || isPurgingTest}
+                  className="px-4 py-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 text-xs font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  title="Purge all 25 test records matching TEST-REG-2026- prefix"
+                >
+                  <Trash2 className="w-4 h-4 text-rose-400" />
+                  <span>{isPurgingTest ? 'Purging Test Records...' : 'Purge All 25 Test Records'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Purge Result Banner */}
+            {testPurgeResult && (
+              <div className={`p-3.5 rounded-xl border text-xs flex items-center gap-2 ${
+                testPurgeResult.success 
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' 
+                  : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+              }`}>
+                <CheckCircle className="w-4 h-4 shrink-0 text-emerald-400" />
+                <span>{testPurgeResult.message}</span>
+              </div>
+            )}
+
+            {/* Live Generation Results Table / Summary */}
+            {testGenResult && (
+              <div className="space-y-3 pt-2 border-t border-white/10">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-cinzel text-sm font-bold text-white flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <span>Generation Summary ({testGenResult.successCount} of {testGenResult.totalAttempted} Records Created)</span>
+                  </h4>
+                  <span className="font-mono text-xs text-purple-300">
+                    Failures: {testGenResult.failureCount}
+                  </span>
+                </div>
+
+                {testGenResult.errors.length > 0 && (
+                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs space-y-1">
+                    <strong>Insert Errors Encountered:</strong>
+                    <ul className="list-disc list-inside font-mono text-[11px] space-y-0.5">
+                      {testGenResult.errors.map((err, eIdx) => (
+                        <li key={eIdx}>{err}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <div className="overflow-x-auto rounded-xl border border-white/10 bg-black/40 max-h-60 overflow-y-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-[#0A0F2B] text-slate-300 font-mono text-[11px] uppercase tracking-wider sticky top-0 border-b border-white/10">
+                      <tr>
+                        <th className="py-2.5 px-3">Code</th>
+                        <th className="py-2.5 px-3">Event Title</th>
+                        <th className="py-2.5 px-3">College</th>
+                        <th className="py-2.5 px-3">Participants</th>
+                        <th className="py-2.5 px-3">Fee (INR)</th>
+                        <th className="py-2.5 px-3">UTR Reference</th>
+                        <th className="py-2.5 px-3">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5 font-mono text-[11px]">
+                      {testGenResult.records.map((r, rIdx) => (
+                        <tr key={rIdx} className="hover:bg-white/5 transition-colors">
+                          <td className="py-2 px-3 font-bold text-purple-300">{r.code}</td>
+                          <td className="py-2 px-3 text-white">{r.eventTitle}</td>
+                          <td className="py-2 px-3 text-slate-300 truncate max-w-[160px]" title={r.collegeName}>{r.collegeName}</td>
+                          <td className="py-2 px-3 text-slate-300">{r.participantCount} member(s)</td>
+                          <td className="py-2 px-3 text-emerald-300">{r.isHost ? '₹0 (SMCH Waiver)' : `₹${r.totalFee}`}</td>
+                          <td className="py-2 px-3 text-amber-300">{r.utrNumber}</td>
+                          <td className="py-2 px-3">
+                            <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                              {r.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-between pt-3 border-t border-white/10 text-xs">
+              <span className="text-slate-400 font-mono">
+                Records appear instantly in Admin Desk list below.
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowTestGeneratorModal(false)}
+                className="px-5 py-2 rounded-xl bg-[#D4AF37] hover:brightness-110 text-xs font-bold text-black cursor-pointer"
+              >
+                Close Suite
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 8: EVENT CLASSIFICATION DESK & ROSTER MANAGER (MAIN ADMIN ONLY) */}
+      {/* ==================================================================== */}
+      {showEventClassificationModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
+          <div className="relative w-full max-w-5xl celestial-glass rounded-2xl p-6 border border-purple-500/50 shadow-2xl space-y-6 my-8 max-h-[92vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-white/10">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/50 flex items-center justify-center text-purple-300 shrink-0">
+                  <Layers className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-cinzel text-lg sm:text-xl font-bold text-white">
+                    Event-Wise Classification Desk & Rosters
+                  </h3>
+                  <span className="text-xs text-purple-300 font-mono">
+                    Registrations categorized under all {EVENTS_DATA.length} festival events
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleExportClassifiedByEventsCSV}
+                  className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-purple-500 via-indigo-500 to-[#D4AF37] hover:brightness-110 text-white font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-md"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Export All Classified CSV</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowEventClassificationModal(false)}
+                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Event Summary Overview Bar */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div className="p-3 rounded-xl bg-black/50 border border-white/10">
+                <span className="text-[10px] uppercase font-mono text-slate-400 block">Total Festival Events</span>
+                <span className="font-cinzel text-lg font-bold text-white mt-0.5 block">{EVENTS_DATA.length} Events</span>
+              </div>
+              <div className="p-3 rounded-xl bg-black/50 border border-purple-500/30">
+                <span className="text-[10px] uppercase font-mono text-purple-300 block">Total Event Submissions</span>
+                <span className="font-cinzel text-lg font-bold text-purple-200 mt-0.5 block">{allRegistrations.length} Registrations</span>
+              </div>
+              <div className="p-3 rounded-xl bg-black/50 border border-emerald-500/30">
+                <span className="text-[10px] uppercase font-mono text-emerald-300 block">Total Festival Participants</span>
+                <span className="font-cinzel text-lg font-bold text-emerald-200 mt-0.5 block">
+                  {allRegistrations.reduce((acc, r) => acc + (r.participants?.length || 1), 0)} Students
+                </span>
+              </div>
+              <div className="p-3 rounded-xl bg-black/50 border border-[#D4AF37]/30">
+                <span className="text-[10px] uppercase font-mono text-[#D4AF37] block">Verified Registrations</span>
+                <span className="font-cinzel text-lg font-bold text-[#F5E7C4] mt-0.5 block">
+                  {allRegistrations.filter(r => getDeskStatus(r) === 'VERIFIED').length} Cleared
+                </span>
+              </div>
+            </div>
+
+            {/* Event Classification Cards List */}
+            <div className="space-y-4">
+              {EVENTS_DATA.map((ev, idx) => {
+                const eventRegs = allRegistrations.filter((r) => r.eventCode === ev.code);
+                const participantCount = eventRegs.reduce((sum, r) => sum + r.participants.length, 0);
+                const verifiedCount = eventRegs.filter((r) => getDeskStatus(r) === 'VERIFIED').length;
+                const pendingCount = eventRegs.filter((r) => getDeskStatus(r) === 'PENDING').length;
+
+                return (
+                  <div 
+                    key={ev.id} 
+                    className={`p-4 rounded-2xl border transition-all ${
+                      eventRegs.length > 0 
+                        ? 'bg-[#070B1E] border-purple-500/40 hover:border-purple-400' 
+                        : 'bg-black/30 border-white/10 opacity-75'
+                    }`}
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded font-mono text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                            #{idx + 1} {ev.code}
+                          </span>
+                          <span className="text-xs font-semibold text-white">{ev.title}</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-slate-300 font-mono">
+                            {ev.type}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-1">
+                          Category: <strong className="text-slate-200">{ev.category}</strong> · Fee: <strong className="text-emerald-400">{ev.registrationFee}</strong> · Venue: <strong className="text-slate-200">{ev.venue}</strong>
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                        <div className="text-right mr-2 font-mono text-xs">
+                          <span className="font-bold text-white block">{eventRegs.length} Regs ({participantCount} Students)</span>
+                          <span className="text-[10px] text-emerald-400">{verifiedCount} Verified · {pendingCount} Pending</span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleExportSingleEventCSV(ev.code)}
+                          disabled={eventRegs.length === 0}
+                          className="px-3 py-1.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-40"
+                          title={`Export CSV for ${ev.code}`}
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Download Roster</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Registrations List under this event */}
+                    {eventRegs.length === 0 ? (
+                      <p className="text-xs text-slate-500 italic pt-3">
+                        No registrations submitted for {ev.title} yet.
+                      </p>
+                    ) : (
+                      <div className="mt-3 overflow-x-auto rounded-xl border border-white/10 bg-black/40">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-black/60 text-slate-400 font-mono text-[10px] uppercase tracking-wider">
+                            <tr>
+                              <th className="py-2 px-3">#</th>
+                              <th className="py-2 px-3">Reg Code</th>
+                              <th className="py-2 px-3">Primary Captain</th>
+                              <th className="py-2 px-3">College</th>
+                              <th className="py-2 px-3">Roster Members</th>
+                              <th className="py-2 px-3">UTR</th>
+                              <th className="py-2 px-3 text-center">Status</th>
+                              <th className="py-2 px-3 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-white/5 font-mono text-[11px]">
+                            {eventRegs.map((r, rIdx) => {
+                              const deskStatus = getDeskStatus(r);
+                              return (
+                                <tr key={r.id} className="hover:bg-white/5 transition-colors">
+                                  <td className="py-2 px-3 font-bold text-slate-400">#{rIdx + 1}</td>
+                                  <td className="py-2 px-3 font-bold text-[#D4AF37]">{r.id}</td>
+                                  <td className="py-2 px-3 text-white font-sans font-semibold">
+                                    {r.participants[0]?.fullName}
+                                    <span className="block text-[10px] text-slate-400 font-mono">{r.participants[0]?.mobile}</span>
+                                  </td>
+                                  <td className="py-2 px-3 text-slate-300 font-sans truncate max-w-[140px]" title={r.college?.collegeName}>
+                                    {r.college?.collegeName}
+                                  </td>
+                                  <td className="py-2 px-3 text-slate-300 font-sans">
+                                    <strong>{r.participants.length}</strong> ({r.participants.map(p => p.fullName).join(', ')})
+                                  </td>
+                                  <td className="py-2 px-3 text-amber-300">{r.utrNumber || 'N/A'}</td>
+                                  <td className="py-2 px-3 text-center">
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                      deskStatus === 'VERIFIED' ? 'bg-emerald-500/20 text-emerald-300' :
+                                      deskStatus === 'REJECTED' ? 'bg-rose-500/20 text-rose-300' :
+                                      'bg-amber-500/20 text-amber-300'
+                                    }`}>
+                                      {deskStatus}
+                                    </span>
+                                  </td>
+                                  <td className="py-2 px-3 text-right font-sans">
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => setInspectRegistration(r)}
+                                        className="p-1 rounded bg-[#D4AF37]/15 hover:bg-[#D4AF37]/30 text-[#E6C57D] cursor-pointer"
+                                        title="View Dossier"
+                                      >
+                                        <Eye className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleExportSingleRegistration(r)}
+                                        className="p-1 rounded bg-white/10 hover:bg-white/20 text-slate-300 cursor-pointer"
+                                        title="Download Single Report"
+                                      >
+                                        <Download className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setDeleteConfirmRegistration(r)}
+                                        className="p-1 rounded bg-rose-500/10 hover:bg-rose-500/25 text-rose-400 cursor-pointer"
+                                        title="Delete Entry"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between pt-3 border-t border-white/10">
+              <span className="text-xs text-slate-400 font-mono">
+                Classified Event View · Celestia '26 Admin Operations
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowEventClassificationModal(false)}
+                className="px-5 py-2 rounded-xl bg-[#D4AF37] hover:brightness-110 text-xs font-bold text-black cursor-pointer"
+              >
+                Close Event Classification
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 9: BULK DELETE CONFIRMATION (MAIN ADMIN ONLY) */}
+      {/* ==================================================================== */}
+      {bulkDeleteConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-sm">
+          <div className="relative w-full max-w-md celestial-glass rounded-2xl p-6 border border-rose-500/50 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-cinzel text-base font-bold text-white">Confirm Bulk Deletion</h3>
+                <span className="text-xs text-rose-400 font-mono font-bold">{selectedRegIds.length} Registrations Selected</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Are you sure you want to permanently delete <strong>{selectedRegIds.length}</strong> selected registration entries? This will remove all their participant lists, payment proofs, and database records.
+              <span className="text-amber-300 font-medium block mt-2">
+                * Note: Remaining registrations will be continuously renumbered (#1, #2, #3...) without gaps or errors.
+              </span>
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setBulkDeleteConfirmModal(false)}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs text-slate-300 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleBulkDelete}
+                className="px-4 py-2 rounded-xl font-bold text-xs uppercase text-white bg-rose-600 hover:bg-rose-500 transition-colors cursor-pointer"
+              >
+                Permanently Delete Selected
+              </button>
             </div>
           </div>
         </div>

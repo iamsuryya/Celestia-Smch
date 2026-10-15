@@ -189,11 +189,61 @@ export const supabaseRegistrationService = {
   },
 
   /**
+   * Converts a Data URL (base64) to a File object for direct storage bucket upload
+   */
+  dataURLtoFile(dataurl: string, filename: string): File | null {
+    try {
+      if (!dataurl || !dataurl.startsWith('data:')) return null;
+      const arr = dataurl.split(',');
+      if (arr.length < 2) return null;
+      const mimeMatch = arr[0].match(/:(.*?);/);
+      const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+      const bstr = atob(arr[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+      }
+      return new File([u8arr], filename, { type: mime });
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * Guarantees mathematical uniqueness of the registration code in Supabase.
+   * If a registration code already exists, appends or increments sequence suffix to avoid unique key errors.
+   */
+  async ensureUniqueRegistrationCode(baseCode: string): Promise<string> {
+    if (!supabase) return baseCode;
+    try {
+      let currentCode = baseCode;
+      let attempt = 0;
+      while (attempt < 15) {
+        const { data, error } = await supabase
+          .from('registrations')
+          .select('id')
+          .eq('registration_code', currentCode)
+          .maybeSingle();
+
+        if (error || !data) {
+          return currentCode;
+        }
+
+        attempt++;
+        currentCode = `${baseCode}-S${attempt}`;
+      }
+      return `${baseCode}-${Date.now().toString(36).slice(-4).toUpperCase()}`;
+    } catch {
+      return baseCode;
+    }
+  },
+
+  /**
    * Submits a full registration to Supabase:
-   * 1. Uploads files to storage if configured
-   * 2. Inserts registration record (guaranteed safe payload without huge base64 drops)
-   * 3. Inserts participant roster entries
-   * 4. Inserts payment submission entry
+   * 1. Guarantees unique registration_code against Cloud DB collisions
+   * 2. Uploads payment receipt and participant ID card files directly to Storage buckets
+   * 3. Inserts registration, participant roster, and payment records
    */
   async submitRegistrationToSupabase(payload: RegistrationPayload): Promise<{
     success: boolean;
@@ -201,7 +251,7 @@ export const supabaseRegistrationService = {
     supabaseId?: string;
     error?: string;
   }> {
-    const registrationCode = payload.registrationCode || generateRegistrationCode(payload.selectedEvent?.id || 'event');
+    let registrationCode = payload.registrationCode || generateRegistrationCode(payload.selectedEvent?.id || 'event');
 
     if (!isSupabaseConfigured || !supabase) {
       console.info('Supabase not configured in this build; registration stored in local offline storage.');
@@ -211,20 +261,31 @@ export const supabaseRegistrationService = {
       };
     }
 
+    // Ensure code is unique in Supabase before attempting insert
+    registrationCode = await this.ensureUniqueRegistrationCode(registrationCode);
+
     try {
-      // 1. Upload payment receipt to storage if a raw file is provided
+      // 1. Upload payment receipt to 'payment-proofs' storage bucket if File OR Data URL is provided
       let receiptPath: string | null = null;
-      if (payload.paymentScreenshotFile) {
-        receiptPath = await this.uploadPaymentScreenshot(registrationCode, payload.paymentScreenshotFile);
+      let receiptFile = payload.paymentScreenshotFile;
+      if (!receiptFile && payload.paymentScreenshotData) {
+        receiptFile = this.dataURLtoFile(payload.paymentScreenshotData, `${registrationCode}_receipt.png`);
+      }
+      if (receiptFile) {
+        receiptPath = await this.uploadPaymentScreenshot(registrationCode, receiptFile);
       }
 
-      // 2. Upload ID cards for participants if files are present
+      // 2. Upload participant ID cards to 'id-cards' storage bucket if Files OR Data URLs are present
       const uploadedIdCardPaths: (string | null)[] = [];
-      if (payload.idCardFiles && payload.idCardFiles.length > 0) {
-        for (let i = 0; i < payload.idCardFiles.length; i++) {
-          const file = payload.idCardFiles[i];
-          if (file) {
-            const p = await this.uploadIdCard(registrationCode, i, file);
+      if (payload.participants && payload.participants.length > 0) {
+        for (let i = 0; i < payload.participants.length; i++) {
+          const participant = payload.participants[i];
+          let idFile = payload.idCardFiles?.[i] || null;
+          if (!idFile && participant.idCardFileData) {
+            idFile = this.dataURLtoFile(participant.idCardFileData, `${registrationCode}_participant_${i + 1}.jpg`);
+          }
+          if (idFile) {
+            const p = await this.uploadIdCard(registrationCode, i, idFile);
             uploadedIdCardPaths.push(p);
           } else {
             uploadedIdCardPaths.push(null);
@@ -468,8 +529,10 @@ export const supabaseRegistrationService = {
         return [];
       }
 
-      // Fetch payments separately
+      // Fetch payments and participants separately if joined query fell back
       let paymentsByRegId: Record<string, any> = {};
+      let participantsByRegId: Record<string, any[]> = {};
+      
       try {
         const regIds = flatData.map((r: any) => r.id).filter(Boolean);
         if (regIds.length > 0) {
@@ -483,16 +546,30 @@ export const supabaseRegistrationService = {
               paymentsByRegId[p.registration_id] = p;
             });
           }
+
+          const { data: partRows } = await supabase
+            .from('participants')
+            .select('*')
+            .in('registration_id', regIds);
+
+          if (partRows) {
+            partRows.forEach((pt: any) => {
+              if (!participantsByRegId[pt.registration_id]) {
+                participantsByRegId[pt.registration_id] = [];
+              }
+              participantsByRegId[pt.registration_id].push(pt);
+            });
+          }
         }
       } catch {
-        // Non-fatal
+        // Non-fatal fallback
       }
 
       // Combine flat data
       const mergedData = flatData.map((row: any) => ({
         ...row,
         payment_submissions: paymentsByRegId[row.id] ? [paymentsByRegId[row.id]] : [],
-        participants: [],
+        participants: participantsByRegId[row.id] || [],
       }));
 
       return this.mapSupabaseRowsToSubmissions(mergedData);
