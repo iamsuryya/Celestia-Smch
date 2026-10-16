@@ -61,9 +61,18 @@ export const PaymentPage: React.FC = () => {
   const totalFee = isHost ? 0 : calculateTotalFee(selectedEvent, participants.length);
   const upiId = FESTIVAL_METADATA.paymentUpiIdPlaceholder;
 
-  // Real-time dynamic QR code generation (only needed when fee > 0)
+  const [bankQrSrc, setBankQrSrc] = useState<string>('/payment_qr.png');
+  const [bankQrFailed, setBankQrFailed] = useState<boolean>(false);
   const [dynamicQrDataUrl, setDynamicQrDataUrl] = useState<string>('');
   const [qrGenerating, setQrGenerating] = useState<boolean>(!isHost);
+
+  const handleBankQrError = () => {
+    if (bankQrSrc === '/payment_qr.png') {
+      setBankQrSrc('/qr_code.png');
+    } else {
+      setBankQrFailed(true);
+    }
+  };
 
   useEffect(() => {
     if (isHost || totalFee === 0) {
@@ -381,14 +390,16 @@ export const PaymentPage: React.FC = () => {
             {/* QR Code and UPI ID Area */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 items-center pt-1">
               
-              {/* Dynamic Generated QR Code Box */}
+              {/* Official Bank QR Code Box */}
               <div className="flex flex-col items-center justify-center p-4 sm:p-5 rounded-xl bg-[#060919] border border-[#D4AF37]/40 text-center relative group shadow-lg">
-                <div className="w-44 h-44 sm:w-48 sm:h-48 rounded-xl bg-white p-2 border-2 border-[#D4AF37] flex flex-col items-center justify-center relative shadow-inner">
-                  {qrGenerating ? (
-                    <div className="flex flex-col items-center justify-center text-slate-700">
-                      <RefreshCw className="w-8 h-8 animate-spin text-[#D4AF37] mb-2" />
-                      <span className="text-[10px] font-mono text-slate-600">Generating QR...</span>
-                    </div>
+                <div className="w-44 h-44 sm:w-48 sm:h-48 rounded-xl bg-white p-2 border-2 border-[#D4AF37] flex flex-col items-center justify-center relative shadow-inner overflow-hidden">
+                  {!bankQrFailed ? (
+                    <img
+                      src={bankQrSrc}
+                      alt={`Scan Official Bank QR & Pay ₹${totalFee}`}
+                      onError={handleBankQrError}
+                      className="w-full h-full object-contain rounded"
+                    />
                   ) : dynamicQrDataUrl ? (
                     <img
                       src={dynamicQrDataUrl}
@@ -404,9 +415,9 @@ export const PaymentPage: React.FC = () => {
                 </div>
 
                 <div className="mt-2.5 space-y-0.5 text-center">
-                  <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[10px] text-emerald-400 font-mono font-medium">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[10px] text-emerald-400 font-mono font-medium">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>Live Event QR · ₹{totalFee}</span>
+                    <span>Official Bank Payment QR · ₹{totalFee}</span>
                   </div>
                   <span className="text-[10px] text-slate-400 block font-mono mt-1">
                     GPay · PhonePe · Paytm · BHIM · Cred
