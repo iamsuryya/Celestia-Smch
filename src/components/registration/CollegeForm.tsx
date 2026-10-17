@@ -29,7 +29,7 @@ export const CollegeForm: React.FC = () => {
   const [contactEmail, setContactEmail] = useState(
     collegeDetails?.contactEmail || currentUser?.email || ''
   );
-  const [isCollegeDelegation, setIsCollegeDelegation] = useState(collegeDetails?.isCollegeDelegation ?? true);
+  const [isCollegeDelegation, setIsCollegeDelegation] = useState(collegeDetails?.isCollegeDelegation ?? false);
 
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
@@ -167,45 +167,47 @@ export const CollegeForm: React.FC = () => {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           
-          {/* Delegation Type Question */}
-          <div className="p-4 rounded-xl bg-[#090E25] border border-white/10 space-y-2">
-            <span className="text-xs font-semibold text-[#F5E7C4] block">
-              Are you registering as a college participant/team? *
-            </span>
-            <div className="grid grid-cols-2 gap-3 pt-1">
-              <button
-                type="button"
-                onClick={() => setIsCollegeDelegation(false)}
-                className={`p-3 rounded-lg text-xs font-medium text-left border transition-all cursor-pointer ${
-                  !isCollegeDelegation
-                    ? 'bg-[#15204C] border-[#D4AF37] text-white shadow-sm'
-                    : 'bg-[#060A1D] border-white/10 text-slate-400 hover:text-white'
-                }`}
-              >
-                <div className="font-bold flex items-center justify-between">
-                  <span>Individual event</span>
-                  {!isCollegeDelegation && <CheckCircle2 className="w-3.5 h-3.5 text-[#D4AF37]" />}
-                </div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Solo participant</div>
-              </button>
+          {/* Delegation Type Question (Only for External Colleges) */}
+          {!isHostCollege && (
+            <div className="p-4 rounded-xl bg-[#090E25] border border-white/10 space-y-2">
+              <span className="text-xs font-semibold text-[#F5E7C4] block">
+                Registration Type for External College *
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setIsCollegeDelegation(false)}
+                  className={`p-3 rounded-lg text-xs font-medium text-left border transition-all cursor-pointer ${
+                    !isCollegeDelegation
+                      ? 'bg-[#15204C] border-[#D4AF37] text-white shadow-sm'
+                      : 'bg-[#060A1D] border-white/10 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <div className="font-bold flex items-center justify-between">
+                    <span>Direct College Entry</span>
+                    {!isCollegeDelegation && <CheckCircle2 className="w-3.5 h-3.5 text-[#D4AF37]" />}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">Individual participant or self-registered college team</div>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => setIsCollegeDelegation(true)}
-                className={`p-3 rounded-lg text-xs font-medium text-left border transition-all cursor-pointer ${
-                  isCollegeDelegation
-                    ? 'bg-[#15204C] border-[#D4AF37] text-white shadow-sm'
-                    : 'bg-[#060A1D] border-white/10 text-slate-400 hover:text-white'
-                }`}
-              >
-                <div className="font-bold flex items-center justify-between">
-                  <span>Team event</span>
-                  {isCollegeDelegation && <CheckCircle2 className="w-3.5 h-3.5 text-[#D4AF37]" />}
-                </div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Group / Team contingent</div>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setIsCollegeDelegation(true)}
+                  className={`p-3 rounded-lg text-xs font-medium text-left border transition-all cursor-pointer ${
+                    isCollegeDelegation
+                      ? 'bg-[#15204C] border-[#D4AF37] text-white shadow-sm'
+                      : 'bg-[#060A1D] border-white/10 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <div className="font-bold flex items-center justify-between">
+                    <span>Official College Delegation</span>
+                    {isCollegeDelegation && <CheckCircle2 className="w-3.5 h-3.5 text-[#D4AF37]" />}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">Authorized contingent sent officially by your institution / Dean</div>
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Option for SRINIVASAN MEDICAL COLLEGE TRICHY (Host College) */}
           <div className={`p-4 rounded-xl border transition-all ${

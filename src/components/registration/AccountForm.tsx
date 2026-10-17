@@ -3,7 +3,7 @@ import { User, Mail, Phone, Lock, Check, AlertCircle, ArrowRight, ArrowLeft } fr
 import { useRegistration } from '../../context/RegistrationContext';
 
 export const AccountForm: React.FC = () => {
-  const { currentUser, loginUser, goToStep } = useRegistration();
+  const { currentUser, loginUser, myRegistrations, goToStep } = useRegistration();
 
   const [mode, setMode] = useState<'signup' | 'login'>('signup');
   const [showForgotModal, setShowForgotModal] = useState(false);
@@ -21,41 +21,110 @@ export const AccountForm: React.FC = () => {
   // Validation errors
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
+  // Helper to retrieve saved accounts from localStorage
+  const getSavedAccounts = (): Array<{ id: string; fullName: string; email: string; mobile: string; password?: string }> => {
+    try {
+      const saved = localStorage.getItem('celestia26_registered_accounts');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  };
+
   const validateSignUp = () => {
     const errs: { [key: string]: string } = {};
+    const normEmail = email.trim().toLowerCase();
+    const cleanPhone = mobile.replace(/\D/g, '');
+
     if (!fullName.trim() || fullName.trim().length < 2) {
       errs.fullName = 'Please enter your full legal name.';
     }
+
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!email.trim() || !emailRegex.test(email.trim())) {
       errs.email = 'Please provide a valid email address.';
     }
-    const phoneClean = mobile.replace(/\D/g, '');
-    if (phoneClean.length < 10) {
+
+    if (cleanPhone.length < 10) {
       errs.mobile = 'Please enter a valid 10-digit mobile number.';
     }
+
     if (!password || password.length < 6) {
       errs.password = 'Password must be at least 6 characters.';
     }
+
     if (password !== confirmPassword) {
       errs.confirmPassword = 'Passwords do not match.';
     }
+
     if (!agreedTerms) {
       errs.terms = 'You must agree to the festival participation guidelines and terms.';
     }
+
+    // UNIQUE EMAIL CHECK
+    if (normEmail && !errs.email) {
+      const savedAccounts = getSavedAccounts();
+      const emailExistsInAccounts = savedAccounts.some(
+        (acc) => acc.email.trim().toLowerCase() === normEmail
+      );
+      const emailExistsInRegistrations = myRegistrations?.some((reg) => {
+        const cEmail = reg.college?.contactEmail?.trim().toLowerCase() || '';
+        const pEmail = reg.participants?.[0]?.email?.trim().toLowerCase() || '';
+        return cEmail === normEmail || pEmail === normEmail;
+      });
+
+      if (emailExistsInAccounts || emailExistsInRegistrations) {
+        errs.email = 'Email already in use. Try logging in with this mail ID.';
+      }
+    }
+
+    // UNIQUE MOBILE CHECK
+    if (cleanPhone.length >= 10 && !errs.mobile) {
+      const targetPhoneDigits = cleanPhone.slice(-10);
+      const savedAccounts = getSavedAccounts();
+      const mobileExistsInAccounts = savedAccounts.some((acc) => {
+        const p = (acc.mobile || '').replace(/\D/g, '');
+        return p.length >= 10 && p.slice(-10) === targetPhoneDigits;
+      });
+      const mobileExistsInRegistrations = myRegistrations?.some((reg) => {
+        const cMobile = (reg.college?.contactMobile || '').replace(/\D/g, '');
+        const pMobile = (reg.participants?.[0]?.mobile || '').replace(/\D/g, '');
+        return (cMobile.length >= 10 && cMobile.slice(-10) === targetPhoneDigits) ||
+               (pMobile.length >= 10 && pMobile.slice(-10) === targetPhoneDigits);
+      });
+
+      if (mobileExistsInAccounts || mobileExistsInRegistrations) {
+        errs.mobile = 'Mobile number already registered. Try logging in with this number or email.';
+      }
+    }
+
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
 
   const validateLogin = () => {
     const errs: { [key: string]: string } = {};
+    const normEmail = email.trim().toLowerCase();
+
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!email.trim() || !emailRegex.test(email.trim())) {
       errs.email = 'Please provide a valid email address.';
     }
+
     if (!password) {
       errs.password = 'Password is required.';
     }
+
+    if (!errs.email && !errs.password) {
+      const savedAccounts = getSavedAccounts();
+      const existing = savedAccounts.find(
+        (acc) => acc.email.trim().toLowerCase() === normEmail
+      );
+      if (existing && existing.password && existing.password !== password) {
+        errs.password = 'Incorrect password for this registered email ID.';
+      }
+    }
+
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -69,23 +138,48 @@ export const AccountForm: React.FC = () => {
       const newAccount = {
         id: `usr_${Date.now()}`,
         fullName: fullName.trim(),
-        email: email.trim(),
+        email: email.trim().toLowerCase(),
         mobile: mobile.trim(),
+        password: password,
         createdAt: new Date().toISOString(),
       };
+
+      // Save to registered accounts array
+      const savedAccounts = getSavedAccounts();
+      savedAccounts.push(newAccount);
+      try {
+        localStorage.setItem('celestia26_registered_accounts', JSON.stringify(savedAccounts));
+      } catch (err) {
+        console.warn('Could not save account to localStorage:', err);
+      }
+
       loginUser(newAccount);
       goToStep('college');
     } else {
       if (!validateLogin()) return;
 
-      // Simulated local login
-      const loggedAccount = {
-        id: currentUser?.id || `usr_${Date.now()}`,
-        fullName: fullName.trim(),
-        email: email.trim(),
-        mobile: mobile.trim(),
-        createdAt: new Date().toISOString(),
-      };
+      const normEmail = email.trim().toLowerCase();
+      const savedAccounts = getSavedAccounts();
+      const existing = savedAccounts.find(
+        (acc) => acc.email.trim().toLowerCase() === normEmail
+      );
+
+      const loggedAccount = existing
+        ? {
+            id: existing.id,
+            fullName: existing.fullName || fullName.trim() || 'Delegate Participant',
+            email: existing.email,
+            mobile: existing.mobile || mobile.trim(),
+            createdAt: new Date().toISOString(),
+          }
+        : {
+            id: currentUser?.id || `usr_${Date.now()}`,
+            fullName: fullName.trim() || 'Delegate Participant',
+            email: normEmail,
+            mobile: mobile.trim(),
+            createdAt: new Date().toISOString(),
+          };
+
       loginUser(loggedAccount);
       goToStep('college');
     }

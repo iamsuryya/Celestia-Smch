@@ -70,9 +70,24 @@ export const EditorProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [guestImages, setGuestImages] = useState<Record<string, string>>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_GUEST_IMAGES);
-      return saved ? JSON.parse(saved) : {};
+      const cleaned: Record<string, string> = {
+        'main-guest-1': '/images/guests/rio-raj.jpg',
+        'main-guest-2': '/images/guests/aparna-das.jpg',
+      };
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        for (const [k, v] of Object.entries(parsed)) {
+          if (typeof v === 'string' && v.trim().length > 0 && !v.endsWith('.svg')) {
+            cleaned[k] = v;
+          }
+        }
+      }
+      return cleaned;
     } catch {
-      return {};
+      return {
+        'main-guest-1': '/images/guests/rio-raj.jpg',
+        'main-guest-2': '/images/guests/aparna-das.jpg',
+      };
     }
   });
 
@@ -86,7 +101,13 @@ export const EditorProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       .then((res) => (res.ok ? res.json() : null))
       .then((serverData) => {
         if (serverData?.savedImages && Object.keys(serverData.savedImages).length > 0) {
-          setGuestImages((prev) => ({ ...serverData.savedImages, ...prev }));
+          const cleaned: Record<string, string> = {};
+          for (const [k, v] of Object.entries(serverData.savedImages)) {
+            if (typeof v === 'string' && v.trim().length > 0 && !v.endsWith('.svg')) {
+              cleaned[k] = v;
+            }
+          }
+          setGuestImages((prev) => ({ ...prev, ...cleaned }));
         }
         if (serverData?.overridesMap && Object.keys(serverData.overridesMap).length > 0) {
           setOverridesMap((prev) => ({ ...sanitizeOverridesMap(serverData.overridesMap), ...prev }));
@@ -98,19 +119,16 @@ export const EditorProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     loadAllGuestImagesFromIndexedDB()
       .then((stored) => {
         if (stored && Object.keys(stored).length > 0) {
-          setGuestImages((prev) => {
-            const merged = { ...prev, ...stored };
-            // Auto persist to server disk so every user gets permanent access
-            fetch('/api/persist-guest-data', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                guestImages: merged,
-                overridesMap,
-              }),
-            }).catch(() => {});
-            return merged;
-          });
+          const cleanedStored: Record<string, string> = {};
+          for (const [k, v] of Object.entries(stored)) {
+            // Only accept valid non-empty data URLs or non-svg URLs
+            if (typeof v === 'string' && v.trim().length > 0 && !v.endsWith('.svg')) {
+              cleanedStored[k] = v;
+            }
+          }
+          if (Object.keys(cleanedStored).length > 0) {
+            setGuestImages((prev) => ({ ...prev, ...cleanedStored }));
+          }
         }
       })
       .catch((e) => console.warn('Could not read guest photos from IndexedDB:', e));
@@ -321,7 +339,13 @@ export const EditorProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const getGuestPhoto = (guestId: string, defaultPhoto: string = ''): string => {
-    return guestImages[guestId] || defaultPhoto;
+    const custom = guestImages[guestId];
+    if (custom && typeof custom === 'string' && custom.trim().length > 0 && !custom.endsWith('.svg')) {
+      return custom;
+    }
+    if (guestId === 'main-guest-1') return '/images/guests/rio-raj.jpg';
+    if (guestId === 'main-guest-2') return '/images/guests/aparna-das.jpg';
+    return defaultPhoto;
   };
 
   const persistAllGuestsToServer = async (): Promise<boolean> => {

@@ -2,7 +2,7 @@ import React from 'react';
 import { ArrowUpRight, Award, Users, MapPin, Clock } from 'lucide-react';
 import { EventItem, getEventDeadline } from '../data/festivalData';
 import { isEventRegistrationOpen } from '../utils/registrationStatus';
-import { getEventImage } from '../utils/eventImages';
+import { getEventImage, handleEventImageError } from '../utils/eventImages';
 
 interface EventCardProps {
   event: EventItem;
@@ -33,9 +33,7 @@ export const EventCard: React.FC<EventCardProps> = ({
           alt={event.title}
           className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500 opacity-80"
           loading="lazy"
-          onError={(e) => {
-            (e.target as HTMLElement).style.display = 'none';
-          }}
+          onError={(e) => handleEventImageError(e, event)}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-[#080C1F] via-[#080C1F]/40 to-transparent" />
         <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between text-xs">

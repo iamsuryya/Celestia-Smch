@@ -1,10 +1,11 @@
 {
   "savedImages": {
-    "main-guest-1": "/images/guests/main-guest-1.svg"
+    "main-guest-1": "/images/guests/rio-raj.jpg",
+    "main-guest-2": "/images/guests/aparna-das.jpg"
   },
   "overridesMap": {
     "[Distinguished Chief Guest]": "Rio Raj",
     "role": "Actor"
   },
-  "updatedAt": "2026-10-13T01:26:49.171Z"
+  "updatedAt": "2026-10-17T07:19:15.000Z"
 }

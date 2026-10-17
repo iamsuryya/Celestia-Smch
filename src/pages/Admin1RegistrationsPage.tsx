@@ -48,6 +48,10 @@ import {
   Info,
   Copy,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  MessageCircle,
+  Building,
   LogOut,
   Layers
 } from 'lucide-react';
@@ -195,7 +199,9 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
   // Search & Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'VERIFIED' | 'REJECTED' | 'NOT_COMPLETE'>('ALL');
+  const [institutionFilter, setInstitutionFilter] = useState<'ALL' | 'DELEGATION' | 'SMCH_HOST' | 'OTHER_COLLEGE'>('ALL');
   const [eventFilter, setEventFilter] = useState<string>('ALL');
+  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'amount_desc' | 'amount_asc' | 'event' | 'college'>('newest');
 
   // Modals state
   const [inspectRegistration, setInspectRegistration] = useState<RegistrationSubmission | null>(null);
@@ -210,6 +216,46 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
   const [selectedRegIds, setSelectedRegIds] = useState<string[]>([]);
   const [showEventClassificationModal, setShowEventClassificationModal] = useState<boolean>(false);
   const [bulkDeleteConfirmModal, setBulkDeleteConfirmModal] = useState<boolean>(false);
+
+  // Inline row expansion & copy helper for organized verification
+  const [expandedRowIds, setExpandedRowIds] = useState<Record<string, boolean>>({});
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const toggleExpandRow = (regId: string) => {
+    setExpandedRowIds((prev) => ({
+      ...prev,
+      [regId]: !prev[regId],
+    }));
+  };
+
+  const handleToggleExpandAll = () => {
+    const allExpanded = filteredRegistrations.length > 0 && filteredRegistrations.every((r) => expandedRowIds[r.id]);
+    const nextMap: Record<string, boolean> = {};
+    if (!allExpanded) {
+      filteredRegistrations.forEach((r) => {
+        nextMap[r.id] = true;
+      });
+    }
+    setExpandedRowIds(nextMap);
+  };
+
+  const handleCopyText = (text: string | undefined, key: string, label: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    showToast(`${label} copied to clipboard!`);
+    setTimeout(() => setCopiedKey(null), 2200);
+  };
+
+  const getWhatsAppLink = (mobile: string | undefined, captainName: string, eventTitle: string | undefined, regCode: string) => {
+    if (!mobile) return '#';
+    const cleanNumber = mobile.replace(/\D/g, '');
+    const phoneWithCode = cleanNumber.length === 10 ? `91${cleanNumber}` : cleanNumber;
+    const message = encodeURIComponent(
+      `Hello ${captainName || 'Student'}, this is Celestia'26 Admin Desk regarding your registration (${regCode}) for ${eventTitle || 'the fest'}.`
+    );
+    return `https://wa.me/${phoneWithCode}?text=${message}`;
+  };
 
   // Event Registration On/Off Controls
   const [showRegistrationControls, setShowRegistrationControls] = useState<boolean>(false);
@@ -347,17 +393,91 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
     }
   }, [isAuthenticated]);
 
-  // Merge cloud with local state
+  // Merge cloud with local state and enforce canonical event properties matching EVENTS_DATA
   const allRegistrations: RegistrationSubmission[] = useMemo(() => {
     const map = new Map<string, RegistrationSubmission>();
-    myRegistrations.forEach((r) => map.set(r.id, r));
-    cloudRegistrations.forEach((r) => map.set(r.id, r));
+
+    const sanitizeRegistration = (r: RegistrationSubmission): RegistrationSubmission => {
+      // Find matching official event from master catalog
+      const matched = EVENTS_DATA.find((e) =>
+        e.id.toLowerCase() === r.eventId?.toLowerCase() ||
+        e.code.toLowerCase() === r.eventCode?.toLowerCase() ||
+        e.title.toLowerCase() === r.eventTitle?.toLowerCase() ||
+        (r.registrationCode && r.registrationCode.endsWith(`-${EVENTS_DATA.indexOf(e) + 1}`))
+      );
+
+      let targetEventId = r.eventId;
+      let targetEventCode = r.eventCode;
+      let targetEventTitle = r.eventTitle;
+      let targetCategory = r.eventCategory;
+      let targetType = r.eventType;
+      let targetVenue = r.venue;
+
+      if (matched) {
+        targetEventId = matched.id;
+        targetEventCode = matched.code;
+        targetEventTitle = matched.title;
+        targetCategory = matched.categoryDisplay;
+        targetType = matched.type;
+        targetVenue = matched.venue;
+      } else if (
+        r.eventTitle?.toLowerCase().includes('symphora') ||
+        r.eventId?.toLowerCase().includes('symphora')
+      ) {
+        const symphora = EVENTS_DATA.find((e) => e.id === 'symphora');
+        if (symphora) {
+          targetEventId = symphora.id;
+          targetEventCode = symphora.code;
+          targetEventTitle = symphora.title;
+          targetCategory = symphora.categoryDisplay;
+          targetType = symphora.type;
+          targetVenue = symphora.venue;
+        }
+      }
+
+      const collegeName = (r.college?.collegeName || '').trim();
+      const collegeNameLower = collegeName.toLowerCase();
+      
+      const isSmchHost = 
+        Boolean(r.isHostCollege) || 
+        Boolean(r.college?.isHostCollege) ||
+        collegeNameLower.includes('srinivasan') ||
+        (Boolean(r.college?.hostRegisterNumber) && !collegeNameLower.includes('medical') && !collegeNameLower.includes('college'));
+
+      const isOfficialDelegation = !isSmchHost && Boolean(r.college?.isCollegeDelegation);
+
+      const updatedCollege = {
+        ...r.college,
+        collegeName: collegeName || (isSmchHost ? 'Srinivasan Medical College and Hospital, Trichy' : 'Collegiate Institute'),
+        isHostCollege: isSmchHost,
+        isCollegeDelegation: isOfficialDelegation,
+        city: r.college?.city || (isSmchHost ? 'Trichy' : ''),
+        state: r.college?.state || (isSmchHost ? 'Tamil Nadu' : ''),
+        hostBatch: r.college?.hostBatch || (isSmchHost ? 'MBBS' : undefined),
+        hostRegisterNumber: r.college?.hostRegisterNumber || (isSmchHost ? 'SMCH-STUDENT' : undefined),
+      };
+
+      return {
+        ...r,
+        eventId: targetEventId,
+        eventCode: targetEventCode,
+        eventTitle: targetEventTitle,
+        eventCategory: targetCategory,
+        eventType: targetType,
+        venue: targetVenue,
+        isHostCollege: isSmchHost,
+        college: updatedCollege,
+      };
+    };
+
+    myRegistrations.forEach((r) => map.set(r.id, sanitizeRegistration(r)));
+    cloudRegistrations.forEach((r) => map.set(r.id, sanitizeRegistration(r)));
     return Array.from(map.values());
   }, [myRegistrations, cloudRegistrations]);
 
   // Filtered registrations
   const filteredRegistrations = useMemo(() => {
-    return allRegistrations.filter((r) => {
+    const list = allRegistrations.filter((r) => {
       const deskStatus = getDeskStatus(r);
 
       // Search term
@@ -390,13 +510,18 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
         }
       }
 
-      // Status filter matching user requirement:
-      // PENDING = Admin didn't do anything
-      // VERIFIED = Admin clicked verified button
-      // REJECTED = Admin clicked reject button
-      // NOT_COMPLETE = Person didn't complete registration
+      // Status filter
       if (statusFilter !== 'ALL' && deskStatus !== statusFilter) {
         return false;
+      }
+
+      // Institution filter
+      if (institutionFilter !== 'ALL') {
+        const isHost = Boolean(r.isHostCollege || r.college?.isHostCollege);
+        const isDelegation = !isHost && Boolean(r.college?.isCollegeDelegation);
+        if (institutionFilter === 'SMCH_HOST' && !isHost) return false;
+        if (institutionFilter === 'DELEGATION' && !isDelegation) return false;
+        if (institutionFilter === 'OTHER_COLLEGE' && (isHost || isDelegation)) return false;
       }
 
       // Event filter
@@ -406,7 +531,30 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
 
       return true;
     });
-  }, [allRegistrations, searchTerm, statusFilter, eventFilter]);
+
+    // Sort order
+    return list.sort((a, b) => {
+      if (sortBy === 'newest') {
+        return (new Date(b.createdAt || '').getTime() || 0) - (new Date(a.createdAt || '').getTime() || 0);
+      }
+      if (sortBy === 'oldest') {
+        return (new Date(a.createdAt || '').getTime() || 0) - (new Date(b.createdAt || '').getTime() || 0);
+      }
+      if (sortBy === 'amount_desc') {
+        return (b.totalAmount || 0) - (a.totalAmount || 0);
+      }
+      if (sortBy === 'amount_asc') {
+        return (a.totalAmount || 0) - (b.totalAmount || 0);
+      }
+      if (sortBy === 'event') {
+        return (a.eventCode || '').localeCompare(b.eventCode || '');
+      }
+      if (sortBy === 'college') {
+        return (a.college?.collegeName || '').localeCompare(b.college?.collegeName || '');
+      }
+      return 0;
+    });
+  }, [allRegistrations, searchTerm, statusFilter, institutionFilter, eventFilter, sortBy]);
 
   // Statistics
   const stats = useMemo(() => {
@@ -415,6 +563,11 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
     let rejected = 0;
     let notComplete = 0;
     let totalRevenue = 0;
+    let delegations = 0;
+    let smchHosts = 0;
+    let otherColleges = 0;
+    let totalParticipants = 0;
+    let withReceipt = 0;
 
     allRegistrations.forEach((r) => {
       const status = getDeskStatus(r);
@@ -428,6 +581,23 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
       } else {
         pending++;
       }
+
+      const isHost = Boolean(r.isHostCollege || r.college?.isHostCollege);
+      const isDelegation = !isHost && Boolean(r.college?.isCollegeDelegation);
+
+      if (isHost) {
+        smchHosts++;
+      } else if (isDelegation) {
+        delegations++;
+      } else {
+        otherColleges++;
+      }
+
+      if (r.paymentScreenshotData || r.paymentScreenshotPath) {
+        withReceipt++;
+      }
+
+      totalParticipants += r.participants?.length || 1;
     });
 
     return {
@@ -437,6 +607,11 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
       rejected,
       notComplete,
       totalRevenue,
+      delegations,
+      smchHosts,
+      otherColleges,
+      totalParticipants,
+      withReceipt,
     };
   }, [allRegistrations]);
 
@@ -543,15 +718,17 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
 
   const handleDelete = async () => {
     if (!deleteConfirmRegistration) return;
-    const regId = deleteConfirmRegistration.id;
-    const res = await supabaseRegistrationService.deleteRegistration(regId);
+    const targetReg = deleteConfirmRegistration;
+    setLoading(true);
+    const identifier = targetReg.id || targetReg.registrationCode || '';
+    const res = await supabaseRegistrationService.deleteRegistration(identifier);
     showToast(res.message);
     setDeleteConfirmRegistration(null);
-    if (inspectRegistration && inspectRegistration.id === regId) {
+    if (inspectRegistration && (inspectRegistration.id === targetReg.id || inspectRegistration.registrationCode === targetReg.registrationCode)) {
       setInspectRegistration(null);
     }
-    loadData();
-    setCloudRegistrations((prev) => prev.filter((r) => r.id !== regId));
+    await loadData();
+    setLoading(false);
   };
 
   const handleOpenEdit = (reg: RegistrationSubmission) => {
@@ -1360,44 +1537,211 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
         </div>
       </div>
 
-      {/* Statistics Bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
-        <div className="p-3.5 rounded-xl bg-[#090E26] border border-white/10">
-          <span className="text-[10px] uppercase font-mono tracking-wider text-slate-400 block">Total Records</span>
+      {/* Statistics Bar - 8 Key Metric Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 mb-6">
+        <button
+          type="button"
+          onClick={() => { setStatusFilter('ALL'); setInstitutionFilter('ALL'); }}
+          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+            statusFilter === 'ALL' && institutionFilter === 'ALL'
+              ? 'bg-[#121B3D] border-[#D4AF37] ring-1 ring-[#D4AF37]'
+              : 'bg-[#090E26] border-white/10 hover:border-white/20'
+          }`}
+        >
+          <span className="text-[10px] uppercase font-mono tracking-wider text-slate-400 block">Total Entries</span>
           <span className="font-cinzel text-xl sm:text-2xl font-bold text-white mt-1 block">{stats.total}</span>
-        </div>
+          <span className="text-[9px] text-slate-400 block truncate">{stats.totalParticipants} students</span>
+        </button>
 
-        <div className="p-3.5 rounded-xl bg-[#090E26] border border-amber-500/25">
-          <span className="text-[10px] uppercase font-mono tracking-wider text-amber-400 block">🟡 Pending</span>
+        <button
+          type="button"
+          onClick={() => { setStatusFilter('PENDING'); setInstitutionFilter('ALL'); }}
+          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+            statusFilter === 'PENDING'
+              ? 'bg-amber-500/20 border-amber-500 ring-1 ring-amber-500'
+              : 'bg-[#090E26] border-amber-500/25 hover:border-amber-500/40'
+          }`}
+        >
+          <span className="text-[10px] uppercase font-mono tracking-wider text-amber-400 block flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+            Pending Action
+          </span>
           <span className="font-cinzel text-xl sm:text-2xl font-bold text-amber-300 mt-1 block">{stats.pending}</span>
-          <span className="text-[9px] text-slate-400 block">Awaiting review</span>
-        </div>
+          <span className="text-[9px] text-amber-300/80 block truncate">Needs desk review</span>
+        </button>
 
-        <div className="p-3.5 rounded-xl bg-[#090E26] border border-emerald-500/25">
+        <button
+          type="button"
+          onClick={() => { setStatusFilter('VERIFIED'); setInstitutionFilter('ALL'); }}
+          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+            statusFilter === 'VERIFIED'
+              ? 'bg-emerald-500/20 border-emerald-500 ring-1 ring-emerald-500'
+              : 'bg-[#090E26] border-emerald-500/25 hover:border-emerald-500/40'
+          }`}
+        >
           <span className="text-[10px] uppercase font-mono tracking-wider text-emerald-400 block">🟢 Verified</span>
           <span className="font-cinzel text-xl sm:text-2xl font-bold text-emerald-300 mt-1 block">{stats.verified}</span>
-          <span className="text-[9px] text-slate-400 block">Approved by admin</span>
-        </div>
+          <span className="text-[9px] text-emerald-400/80 block truncate">Approved rosters</span>
+        </button>
 
-        <div className="p-3.5 rounded-xl bg-[#090E26] border border-rose-500/25">
+        <button
+          type="button"
+          onClick={() => { setStatusFilter('REJECTED'); setInstitutionFilter('ALL'); }}
+          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+            statusFilter === 'REJECTED'
+              ? 'bg-rose-500/20 border-rose-500 ring-1 ring-rose-500'
+              : 'bg-[#090E26] border-rose-500/25 hover:border-rose-500/40'
+          }`}
+        >
           <span className="text-[10px] uppercase font-mono tracking-wider text-rose-400 block">🔴 Rejected</span>
           <span className="font-cinzel text-xl sm:text-2xl font-bold text-rose-300 mt-1 block">{stats.rejected}</span>
-          <span className="text-[9px] text-slate-400 block">Declined by admin</span>
-        </div>
+          <span className="text-[9px] text-rose-400/80 block truncate">Declined entries</span>
+        </button>
 
-        <div className="p-3.5 rounded-xl bg-[#090E26] border border-slate-500/25">
-          <span className="text-[10px] uppercase font-mono tracking-wider text-slate-400 block">⚪ Not Complete</span>
+        <button
+          type="button"
+          onClick={() => { setStatusFilter('NOT_COMPLETE'); setInstitutionFilter('ALL'); }}
+          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+            statusFilter === 'NOT_COMPLETE'
+              ? 'bg-slate-500/20 border-slate-400 ring-1 ring-slate-400'
+              : 'bg-[#090E26] border-slate-500/25 hover:border-slate-500/40'
+          }`}
+        >
+          <span className="text-[10px] uppercase font-mono tracking-wider text-slate-400 block">⚪ Incomplete</span>
           <span className="font-cinzel text-xl sm:text-2xl font-bold text-slate-300 mt-1 block">{stats.notComplete}</span>
-          <span className="text-[9px] text-slate-400 block">Incomplete entry</span>
-        </div>
+          <span className="text-[9px] text-slate-400 block truncate">Draft / On hold</span>
+        </button>
 
-        <div className="p-3.5 rounded-xl bg-[#090E26] border border-[#D4AF37]/30">
+        <button
+          type="button"
+          onClick={() => { setStatusFilter('ALL'); setInstitutionFilter('DELEGATION'); }}
+          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+            institutionFilter === 'DELEGATION'
+              ? 'bg-purple-500/20 border-purple-500 ring-1 ring-purple-500'
+              : 'bg-[#090E26] border-purple-500/25 hover:border-purple-500/40'
+          }`}
+        >
+          <span className="text-[10px] uppercase font-mono tracking-wider text-purple-400 block">🏛️ Delegations</span>
+          <span className="font-cinzel text-xl sm:text-2xl font-bold text-purple-300 mt-1 block">{stats.delegations}</span>
+          <span className="text-[9px] text-purple-300/80 block truncate">College official</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => { setStatusFilter('ALL'); setInstitutionFilter('SMCH_HOST'); }}
+          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+            institutionFilter === 'SMCH_HOST'
+              ? 'bg-teal-500/20 border-teal-500 ring-1 ring-teal-500'
+              : 'bg-[#090E26] border-teal-500/25 hover:border-teal-500/40'
+          }`}
+        >
+          <span className="text-[10px] uppercase font-mono tracking-wider text-teal-400 block">🏥 SMCH Host</span>
+          <span className="font-cinzel text-xl sm:text-2xl font-bold text-teal-300 mt-1 block">{stats.smchHosts}</span>
+          <span className="text-[9px] text-teal-300/80 block truncate">₹0 Waiver passes</span>
+        </button>
+
+        <div className="p-3 rounded-xl bg-[#090E26] border border-[#D4AF37]/35">
           <span className="text-[10px] uppercase font-mono tracking-wider text-[#D4AF37] block">Verified Fees</span>
-          <span className="font-cinzel text-lg sm:text-xl font-bold text-[#F5E7C4] mt-1 block">
+          <span className="font-cinzel text-base sm:text-lg font-bold text-[#F5E7C4] mt-1 block">
             ₹{stats.totalRevenue.toLocaleString('en-IN')}
           </span>
-          <span className="text-[9px] text-[#E6C57D]/70 block">Cleared bank remittance</span>
+          <span className="text-[9px] text-[#E6C57D]/70 block truncate">Cleared remittance</span>
         </div>
+      </div>
+
+      {/* Quick View Segmented Category Filter Pills */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-2 mb-4 scrollbar-none">
+        <button
+          type="button"
+          onClick={() => { setStatusFilter('ALL'); setInstitutionFilter('ALL'); }}
+          className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+            statusFilter === 'ALL' && institutionFilter === 'ALL'
+              ? 'bg-white/20 text-white font-bold border border-white/30 shadow-sm'
+              : 'bg-[#090E26] text-slate-300 hover:text-white border border-white/10'
+          }`}
+        >
+          <span>All Submissions</span>
+          <span className="px-1.5 py-0.2 rounded-full bg-black/40 text-[10px] font-mono">{stats.total}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => { setStatusFilter('PENDING'); setInstitutionFilter('ALL'); }}
+          className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+            statusFilter === 'PENDING'
+              ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40 font-bold shadow-sm'
+              : 'bg-[#090E26] text-slate-300 hover:text-amber-300 border border-white/10'
+          }`}
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+          <span>🟡 Needs Action</span>
+          <span className="px-1.5 py-0.2 rounded-full bg-amber-950/60 text-amber-300 text-[10px] font-mono font-bold">{stats.pending}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => { setStatusFilter('VERIFIED'); setInstitutionFilter('ALL'); }}
+          className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+            statusFilter === 'VERIFIED'
+              ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 font-bold shadow-sm'
+              : 'bg-[#090E26] text-slate-300 hover:text-emerald-300 border border-white/10'
+          }`}
+        >
+          <span>🟢 Verified Approved</span>
+          <span className="px-1.5 py-0.2 rounded-full bg-emerald-950/60 text-emerald-300 text-[10px] font-mono font-bold">{stats.verified}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => { setStatusFilter('REJECTED'); setInstitutionFilter('ALL'); }}
+          className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+            statusFilter === 'REJECTED'
+              ? 'bg-rose-500/25 text-rose-300 border border-rose-500/40 font-bold shadow-sm'
+              : 'bg-[#090E26] text-slate-300 hover:text-rose-300 border border-white/10'
+          }`}
+        >
+          <span>🔴 Rejected</span>
+          <span className="px-1.5 py-0.2 rounded-full bg-rose-950/60 text-rose-300 text-[10px] font-mono font-bold">{stats.rejected}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => { setStatusFilter('NOT_COMPLETE'); setInstitutionFilter('ALL'); }}
+          className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+            statusFilter === 'NOT_COMPLETE'
+              ? 'bg-slate-500/25 text-slate-200 border border-slate-500/40 font-bold shadow-sm'
+              : 'bg-[#090E26] text-slate-300 hover:text-white border border-white/10'
+          }`}
+        >
+          <span>⚪ Incomplete / Draft</span>
+          <span className="px-1.5 py-0.2 rounded-full bg-black/40 text-slate-300 text-[10px] font-mono">{stats.notComplete}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => { setStatusFilter('ALL'); setInstitutionFilter('DELEGATION'); }}
+          className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+            institutionFilter === 'DELEGATION'
+              ? 'bg-purple-500/25 text-purple-300 border border-purple-500/40 font-bold shadow-sm'
+              : 'bg-[#090E26] text-slate-300 hover:text-purple-300 border border-white/10'
+          }`}
+        >
+          <span>🏛️ College Delegations</span>
+          <span className="px-1.5 py-0.2 rounded-full bg-purple-950/60 text-purple-300 text-[10px] font-mono font-bold">{stats.delegations}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => { setStatusFilter('ALL'); setInstitutionFilter('SMCH_HOST'); }}
+          className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+            institutionFilter === 'SMCH_HOST'
+              ? 'bg-teal-500/25 text-teal-300 border border-teal-500/40 font-bold shadow-sm'
+              : 'bg-[#090E26] text-slate-300 hover:text-teal-300 border border-white/10'
+          }`}
+        >
+          <span>🏥 SMCH Host Students</span>
+          <span className="px-1.5 py-0.2 rounded-full bg-teal-950/60 text-teal-300 text-[10px] font-mono font-bold">{stats.smchHosts}</span>
+        </button>
       </div>
 
       {/* Operations Toolbar */}
@@ -1409,9 +1753,18 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by Reg ID, Student Name, College, Mobile, UTR..."
+            placeholder="Search by Reg ID, Code, Student Name, College, Mobile, UTR, Batch..."
             className="w-full pl-9 pr-4 py-2 rounded-xl bg-black/40 border border-white/15 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-[#D4AF37]"
           />
+          {searchTerm && (
+            <button
+              type="button"
+              onClick={() => setSearchTerm('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-white"
+            >
+              Clear
+            </button>
+          )}
         </div>
 
         {/* Filters and Actions */}
@@ -1420,7 +1773,7 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as any)}
-            className="px-3 py-2 rounded-xl bg-black/40 border border-white/15 text-xs text-slate-200 focus:outline-none focus:border-[#D4AF37]"
+            className="px-3 py-2 rounded-xl bg-black/40 border border-white/15 text-xs text-slate-200 focus:outline-none focus:border-[#D4AF37] cursor-pointer"
           >
             <option value="ALL">All Statuses ({allRegistrations.length})</option>
             <option value="PENDING">🟡 Pending ({stats.pending})</option>
@@ -1429,17 +1782,58 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
             <option value="NOT_COMPLETE">⚪ Not Complete ({stats.notComplete})</option>
           </select>
 
+          {/* Institution Filter Dropdown */}
+          <select
+            value={institutionFilter}
+            onChange={(e) => setInstitutionFilter(e.target.value as any)}
+            className="px-3 py-2 rounded-xl bg-black/40 border border-white/15 text-xs text-slate-200 focus:outline-none focus:border-[#D4AF37] cursor-pointer"
+          >
+            <option value="ALL">All Institutions</option>
+            <option value="DELEGATION">🏛️ Official Delegations ({stats.delegations})</option>
+            <option value="SMCH_HOST">🏥 SMCH Host Students ({stats.smchHosts})</option>
+            <option value="OTHER_COLLEGE">🎓 Other Colleges ({stats.otherColleges})</option>
+          </select>
+
           {/* Event Filter */}
           <select
             value={eventFilter}
             onChange={(e) => setEventFilter(e.target.value)}
-            className="px-3 py-2 rounded-xl bg-black/40 border border-white/15 text-xs text-slate-200 focus:outline-none focus:border-[#D4AF37]"
+            className="px-3 py-2 rounded-xl bg-black/40 border border-white/15 text-xs text-slate-200 focus:outline-none focus:border-[#D4AF37] cursor-pointer"
           >
             <option value="ALL">All {EVENTS_DATA.length} Events</option>
             {EVENTS_DATA.map((ev) => (
               <option key={ev.code} value={ev.code}>{ev.code} ({ev.title})</option>
             ))}
           </select>
+
+          {/* Sort Filter */}
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as any)}
+            className="px-3 py-2 rounded-xl bg-black/40 border border-white/15 text-xs text-slate-200 focus:outline-none focus:border-[#D4AF37] cursor-pointer"
+          >
+            <option value="newest">🕒 Newest First</option>
+            <option value="oldest">⏳ Oldest First</option>
+            <option value="amount_desc">💰 Fee: High to Low</option>
+            <option value="amount_asc">🪙 Fee: Low to High</option>
+            <option value="event">🎭 Event Code (A-Z)</option>
+            <option value="college">🏫 College Name (A-Z)</option>
+          </select>
+
+          {/* Expand/Collapse All Rows Toggle */}
+          <button
+            type="button"
+            onClick={handleToggleExpandAll}
+            className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-slate-200 transition-colors flex items-center gap-1.5 cursor-pointer"
+            title="Expand or collapse all details inline"
+          >
+            <Layers className="w-3.5 h-3.5 text-[#D4AF37]" />
+            <span>
+              {filteredRegistrations.length > 0 && filteredRegistrations.every((r) => expandedRowIds[r.id])
+                ? 'Collapse Rows'
+                : 'Expand All'}
+            </span>
+          </button>
 
           {/* Refresh */}
           <button
@@ -1674,8 +2068,9 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                   ).length;
 
                   return (
-                    <tr key={reg.id} className={`hover:bg-white/[0.03] transition-colors ${isSelected ? 'bg-[#D4AF37]/10' : ''}`}>
-                      {/* Checkbox & Serial Number */}
+                    <React.Fragment key={reg.id}>
+                      <tr className={`hover:bg-white/[0.03] transition-colors ${isSelected ? 'bg-[#D4AF37]/10' : ''}`}>
+                      {/* Checkbox, Serial Number & Expand Toggle */}
                       <td className="py-3 px-3 text-center font-mono">
                         <div className="flex flex-col items-center justify-center gap-1">
                           <input
@@ -1684,6 +2079,22 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                             onChange={() => handleToggleSelectRow(reg.id)}
                             className="rounded accent-[#D4AF37] cursor-pointer w-4 h-4"
                           />
+                          <button
+                            type="button"
+                            onClick={() => toggleExpandRow(reg.id)}
+                            className={`p-1 rounded-md transition-all cursor-pointer ${
+                              expandedRowIds[reg.id]
+                                ? 'bg-[#D4AF37] text-black font-bold shadow-sm'
+                                : 'bg-white/5 hover:bg-white/15 text-slate-300'
+                            }`}
+                            title={expandedRowIds[reg.id] ? 'Hide details' : 'Show all details inline'}
+                          >
+                            {expandedRowIds[reg.id] ? (
+                              <ChevronUp className="w-3.5 h-3.5" />
+                            ) : (
+                              <ChevronDown className="w-3.5 h-3.5" />
+                            )}
+                          </button>
                           <span className="text-[10px] text-slate-400 font-bold">#{index + 1}</span>
                         </div>
                       </td>
@@ -1715,7 +2126,7 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                           <MapPin className="w-3 h-3 text-slate-500" />
                           <span>{reg.college?.city}, {reg.college?.state}</span>
                         </div>
-                        {reg.college?.isHostCollege && (
+                        {reg.college?.isHostCollege ? (
                           <div className="mt-1 flex flex-wrap items-center gap-1">
                             <span className="px-1.5 py-0.2 rounded text-[9px] bg-emerald-500/25 text-emerald-300 font-mono font-bold border border-emerald-500/40">
                               SMCH Host · Free ₹0
@@ -1726,10 +2137,13 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                               </span>
                             )}
                           </div>
-                        )}
-                        {reg.college?.isCollegeDelegation && !reg.college?.isHostCollege && (
-                          <span className="inline-block mt-1 px-1.5 py-0.2 rounded text-[9px] bg-purple-500/20 text-purple-300 font-mono">
-                            College Delegation
+                        ) : reg.college?.isCollegeDelegation ? (
+                          <span className="inline-block mt-1 px-1.5 py-0.2 rounded text-[9px] bg-purple-500/20 text-purple-300 font-mono border border-purple-500/30">
+                            Official College Delegation
+                          </span>
+                        ) : (
+                          <span className="inline-block mt-1 px-1.5 py-0.2 rounded text-[9px] bg-sky-500/15 text-sky-300 font-mono border border-sky-500/25">
+                            Other College (Direct)
                           </span>
                         )}
                       </td>
@@ -1894,12 +2308,27 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                       {/* 8. Dossier / Manage */}
                       <td className="py-3 px-3 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          {/* Check All Columns */}
+                          {/* Inline Details Toggle */}
+                          <button
+                            type="button"
+                            onClick={() => toggleExpandRow(reg.id)}
+                            className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer border flex items-center gap-1 ${
+                              expandedRowIds[reg.id]
+                                ? 'bg-[#D4AF37] text-black border-[#D4AF37] font-bold shadow-sm'
+                                : 'bg-white/5 hover:bg-white/15 text-slate-200 border-white/15'
+                            }`}
+                            title="Expand all details inline"
+                          >
+                            <span>{expandedRowIds[reg.id] ? 'Close' : 'Details'}</span>
+                            {expandedRowIds[reg.id] ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                          </button>
+
+                          {/* Inspect Modal Trigger */}
                           <button
                             type="button"
                             onClick={() => setInspectRegistration(reg)}
                             className="p-1.5 rounded-lg bg-[#D4AF37]/15 hover:bg-[#D4AF37]/30 text-[#E6C57D] hover:text-white transition-colors cursor-pointer border border-[#D4AF37]/30"
-                            title="Inspect full details, ID cards & payment slip"
+                            title="Open full inspector modal"
                           >
                             <Eye className="w-3.5 h-3.5" />
                           </button>
@@ -1925,8 +2354,388 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                           </button>
                         </div>
                       </td>
-                    </tr>
-                  );
+                      </tr>
+
+                      {/* INLINE EXPANDED DOSSIER DRAWER WITH ALL DETAILS */}
+                      {expandedRowIds[reg.id] && (
+                      <tr key={`${reg.id}-expanded`} className="bg-[#050818]/95">
+                        <td colSpan={9} className="p-0 border-y-2 border-[#D4AF37]/50 shadow-inner">
+                          <div className="p-4 sm:p-6 space-y-4 bg-gradient-to-b from-[#090F2C] to-[#040716] text-xs">
+                            
+                            {/* Drawer Header: Key Metadata & Action Buttons */}
+                            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-white/10">
+                              <div className="flex items-center gap-2.5 flex-wrap">
+                                <span className="font-mono text-xs font-bold text-[#D4AF37] bg-[#D4AF37]/15 border border-[#D4AF37]/35 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
+                                  <span>ID: {reg.id}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyText(reg.id, `reg-${reg.id}`, 'Registration ID')}
+                                    className="hover:text-white transition-colors cursor-pointer"
+                                    title="Copy Reg ID"
+                                  >
+                                    {copiedKey === `reg-${reg.id}` ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-[#D4AF37]" />}
+                                  </button>
+                                </span>
+
+                                {reg.registrationCode && (
+                                  <span className="font-mono text-xs text-white bg-white/10 border border-white/15 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
+                                    <span>Code: {reg.registrationCode}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyText(reg.registrationCode, `code-${reg.id}`, 'Registration Code')}
+                                      className="hover:text-[#D4AF37] transition-colors cursor-pointer"
+                                      title="Copy Code"
+                                    >
+                                      {copiedKey === `code-${reg.id}` ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+                                    </button>
+                                  </span>
+                                )}
+
+                                <span className="text-slate-400 font-mono text-[11px]">
+                                  Submitted: {reg.createdAt}
+                                </span>
+
+                                {/* Institution Badge */}
+                                {reg.college?.isHostCollege ? (
+                                  <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-mono font-bold text-xs flex items-center gap-1.5">
+                                    <GraduationCap className="w-3.5 h-3.5 text-emerald-400" />
+                                    <span>SMCH Host · MBBS {reg.college.hostBatch || 'Batch'} · Reg: {reg.college.hostRegisterNumber || 'Host Student'}</span>
+                                  </span>
+                                ) : reg.college?.isCollegeDelegation ? (
+                                  <span className="px-2.5 py-1 rounded-lg bg-purple-500/20 border border-purple-500/40 text-purple-300 font-mono font-bold text-xs flex items-center gap-1.5">
+                                    <Building className="w-3.5 h-3.5 text-purple-400" />
+                                    <span>Official College Delegation</span>
+                                  </span>
+                                ) : (
+                                  <span className="px-2.5 py-1 rounded-lg bg-sky-500/20 border border-sky-500/40 text-sky-300 font-mono font-bold text-xs flex items-center gap-1.5">
+                                    <Building className="w-3.5 h-3.5 text-sky-400" />
+                                    <span>Direct College Entry</span>
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Action Buttons inside Drawer */}
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {!isVerified && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleVerify(reg.id)}
+                                    className="px-3 py-1.5 rounded-lg bg-emerald-500 text-black font-bold text-xs hover:bg-emerald-400 transition-colors flex items-center gap-1.5 shadow-md shadow-emerald-500/20 cursor-pointer"
+                                  >
+                                    <Check className="w-3.5 h-3.5" />
+                                    <span>Approve & Verify</span>
+                                  </button>
+                                )}
+
+                                {!isRejected && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenRejectModal(reg)}
+                                    className="px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/35 border border-rose-500/40 text-rose-300 font-semibold text-xs transition-colors flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                    <span>Reject</span>
+                                  </button>
+                                )}
+
+                                {!isNotComplete && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenIncompleteModal(reg)}
+                                    className="px-2.5 py-1.5 rounded-lg bg-slate-500/20 hover:bg-slate-500/35 border border-slate-500/30 text-slate-300 text-xs transition-colors cursor-pointer"
+                                  >
+                                    Hold / Incomplete
+                                  </button>
+                                )}
+
+                                {(isVerified || isRejected || isNotComplete) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleResetToPending(reg.id)}
+                                    className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-slate-300 text-xs transition-colors flex items-center gap-1 cursor-pointer"
+                                    title="Reset back to pending"
+                                  >
+                                    <RotateCcw className="w-3.5 h-3.5" />
+                                    <span>Reset Pending</span>
+                                  </button>
+                                )}
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleExportSingleRegistration(reg)}
+                                  className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 text-xs transition-colors flex items-center gap-1 cursor-pointer"
+                                  title="Download complete text dossier"
+                                >
+                                  <Download className="w-3.5 h-3.5 text-[#D4AF37]" />
+                                  <span>Dossier</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => toggleExpandRow(reg.id)}
+                                  className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-400 hover:text-white text-xs cursor-pointer"
+                                >
+                                  Close
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* 3 Detail Cards: Event, College & Payments */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              {/* Card 1: Event & Rules */}
+                              <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 space-y-2">
+                                <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
+                                  <span className="font-mono text-[10px] uppercase font-bold text-[#D4AF37] flex items-center gap-1">
+                                    <Calendar className="w-3.5 h-3.5 text-[#D4AF37]" />
+                                    Event Details
+                                  </span>
+                                  <span className="px-1.5 py-0.2 rounded bg-white/10 text-[10px] font-mono text-slate-300">
+                                    {reg.eventCode}
+                                  </span>
+                                </div>
+                                <div className="space-y-1 text-slate-300">
+                                  <div className="font-bold text-white text-sm">{reg.eventTitle}</div>
+                                  <div className="text-[11px] text-slate-400">
+                                    Format: <strong className="text-white">{reg.eventType}</strong> ({reg.participants.length} member{reg.participants.length !== 1 ? 's' : ''})
+                                  </div>
+                                  <div className="text-[11px] text-slate-400">
+                                    Category: <strong className="text-[#E6C57D]">{reg.eventCategory}</strong>
+                                  </div>
+                                  <div className="text-[11px] text-slate-400">
+                                    Venue: <strong className="text-white">{reg.venue}</strong>
+                                  </div>
+                                  {reg.teamName && (
+                                    <div className="text-[11px] text-slate-400 pt-1">
+                                      Team Name: <strong className="text-emerald-400 font-mono">{reg.teamName}</strong>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Card 2: College & Faculty Rep */}
+                              <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 space-y-2">
+                                <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
+                                  <span className="font-mono text-[10px] uppercase font-bold text-[#D4AF37] flex items-center gap-1">
+                                    <Building2 className="w-3.5 h-3.5 text-[#D4AF37]" />
+                                    Collegiate Profile
+                                  </span>
+                                  <span className="px-1.5 py-0.2 rounded bg-white/10 text-[10px] font-mono text-slate-300">
+                                    {[reg.college?.city, reg.college?.state].filter(Boolean).join(', ') || 'Tamil Nadu'}
+                                  </span>
+                                </div>
+                                <div className="space-y-1 text-slate-300">
+                                  <div className="font-semibold text-white">{reg.college?.collegeName || 'N/A'}</div>
+                                  <div className="text-[11px] text-slate-400">
+                                    Representative / HOD: <strong className="text-white">{reg.college?.contactPerson || 'N/A'}</strong>
+                                  </div>
+                                  {reg.college?.contactMobile && (
+                                    <div className="text-[11px] flex items-center gap-2">
+                                      <span className="text-slate-400">Mobile:</span>
+                                      <a href={`tel:${reg.college.contactMobile}`} className="text-emerald-400 hover:underline font-mono">
+                                        {reg.college.contactMobile}
+                                      </a>
+                                    </div>
+                                  )}
+                                  {reg.college?.contactEmail && (
+                                    <div className="text-[11px] text-slate-400 truncate">
+                                      Email: <span className="text-slate-300">{reg.college.contactEmail}</span>
+                                    </div>
+                                  )}
+                                  {reg.college?.isHostCollege && (
+                                    <div className="mt-1 pt-1 border-t border-white/5 text-[11px] text-emerald-300 font-mono">
+                                      SMCH Student Reg: <strong>{reg.college.hostRegisterNumber || 'Verified'}</strong> · Batch: <strong>{reg.college.hostBatch || 'MBBS'}</strong>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Card 3: Financials & Payment Proof Slip */}
+                              <div className="p-3.5 rounded-xl bg-black/40 border border-[#D4AF37]/30 space-y-2">
+                                <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
+                                  <span className="font-mono text-[10px] uppercase font-bold text-emerald-400 flex items-center gap-1">
+                                    <CreditCard className="w-3.5 h-3.5 text-emerald-400" />
+                                    Payment Audit
+                                  </span>
+                                  <span className="font-mono font-bold text-sm text-emerald-300">
+                                    {reg.college?.isHostCollege ? '₹0 (Host Pass)' : `₹${reg.totalAmount}`}
+                                  </span>
+                                </div>
+
+                                <div className="space-y-1.5 text-slate-300">
+                                  <div className="flex items-center justify-between text-[11px]">
+                                    <span className="text-slate-400">UPI / UTR Reference:</span>
+                                    <span className="font-mono font-bold text-[#F5E7C4] flex items-center gap-1 bg-black/60 px-2 py-0.5 rounded border border-white/10">
+                                      <span>{reg.utrNumber || 'N/A'}</span>
+                                      {reg.utrNumber && reg.utrNumber !== 'NOT_SUBMITTED' && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleCopyText(reg.utrNumber || '', `utr-${reg.id}`, 'UTR Number')}
+                                          className="hover:text-white transition-colors cursor-pointer"
+                                          title="Copy UTR"
+                                        >
+                                          {copiedKey === `utr-${reg.id}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3 text-slate-400" />}
+                                        </button>
+                                      )}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center justify-between text-[11px]">
+                                    <span className="text-slate-400">Fee Rate:</span>
+                                    <span className="font-mono text-slate-300">₹{reg.feePerUnit} ({reg.feeType})</span>
+                                  </div>
+
+                                  {/* Payment Proof Slip Thumbnail / Viewer */}
+                                  <div className="pt-1 flex items-center justify-between">
+                                    <span className="text-slate-400 text-[11px]">Screenshot Proof:</span>
+                                    {paymentMediaUrl ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => setActiveLightbox({
+                                          url: paymentMediaUrl,
+                                          title: `Payment Receipt · ${reg.id}`,
+                                          subtitle: `UTR: ${reg.utrNumber} · ₹${reg.totalAmount} · ${reg.college?.collegeName}`,
+                                          fileName: reg.paymentScreenshotName || 'receipt.png'
+                                        })}
+                                        className="px-2.5 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-mono text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                                      >
+                                        <ImageIcon className="w-3 h-3" />
+                                        <span>View Screenshot 🔍</span>
+                                      </button>
+                                    ) : (
+                                      <span className="text-[10px] text-amber-400/90 italic">
+                                        No screenshot attached
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Participant Roster Table with ID Proof Buttons */}
+                            <div className="rounded-xl border border-white/10 bg-black/40 overflow-hidden">
+                              <div className="p-3 bg-white/5 border-b border-white/10 flex items-center justify-between flex-wrap gap-2">
+                                <span className="font-mono text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                                  <Users className="w-3.5 h-3.5 text-[#D4AF37]" />
+                                  <span>Full Participant Roster ({reg.participants.length} Student{reg.participants.length !== 1 ? 's' : ''})</span>
+                                </span>
+                                
+                                {reg.participants[0]?.mobile && (
+                                  <div className="flex items-center gap-2">
+                                    <a
+                                      href={getWhatsAppLink(reg.participants[0].mobile, reg.participants[0].fullName, reg.eventTitle, reg.registrationCode || reg.id)}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="px-2.5 py-1 rounded-lg bg-emerald-600/25 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <MessageCircle className="w-3 h-3 text-emerald-300" />
+                                      <span>WhatsApp Captain</span>
+                                    </a>
+                                    <a
+                                      href={`tel:${reg.participants[0].mobile}`}
+                                      className="px-2.5 py-1 rounded-lg bg-blue-600/25 hover:bg-blue-600/40 text-blue-300 border border-blue-500/40 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <Phone className="w-3 h-3 text-blue-300" />
+                                      <span>Call Captain</span>
+                                    </a>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-left text-xs">
+                                  <thead className="bg-[#0A102A] text-slate-400 text-[10px] uppercase font-mono tracking-wider border-b border-white/5">
+                                    <tr>
+                                      <th className="py-2 px-3 text-center">#</th>
+                                      <th className="py-2 px-3">Student Name</th>
+                                      <th className="py-2 px-3">Role</th>
+                                      <th className="py-2 px-3">Mobile & WhatsApp</th>
+                                      <th className="py-2 px-3">Email</th>
+                                      <th className="py-2 px-3">Demographics</th>
+                                      <th className="py-2 px-3 text-right">Student ID Proof</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-white/5">
+                                    {reg.participants.map((m, mIdx) => {
+                                      const idProofUrl = getMediaUrl(
+                                        m.idCardFileData || m.idCardStoragePath,
+                                        'id-cards'
+                                      );
+
+                                      return (
+                                        <tr key={mIdx} className="hover:bg-white/5 transition-colors">
+                                          <td className="py-2.5 px-3 text-center font-mono font-bold text-[#D4AF37]">
+                                            {mIdx + 1}
+                                          </td>
+                                          <td className="py-2.5 px-3 font-semibold text-white">
+                                            {m.fullName}
+                                          </td>
+                                          <td className="py-2.5 px-3 font-mono text-[11px]">
+                                            <span className={`px-2 py-0.5 rounded ${
+                                              mIdx === 0
+                                                ? 'bg-[#D4AF37]/20 text-[#F5E7C4] border border-[#D4AF37]/35 font-bold'
+                                                : 'bg-white/5 text-slate-300'
+                                            }`}>
+                                              {m.role || (mIdx === 0 ? 'Leader' : 'Member')}
+                                            </span>
+                                          </td>
+                                          <td className="py-2.5 px-3 font-mono text-[11px]">
+                                            {m.mobile ? (
+                                              <div className="flex items-center gap-2">
+                                                <a href={`tel:${m.mobile}`} className="text-slate-200 hover:text-emerald-400 hover:underline">
+                                                  {m.mobile}
+                                                </a>
+                                                <a
+                                                  href={getWhatsAppLink(m.mobile, m.fullName, reg.eventTitle, reg.registrationCode || reg.id)}
+                                                  target="_blank"
+                                                  rel="noopener noreferrer"
+                                                  className="p-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30"
+                                                  title="WhatsApp Student"
+                                                >
+                                                  <MessageCircle className="w-3 h-3 text-emerald-300" />
+                                                </a>
+                                              </div>
+                                            ) : (
+                                              <span className="text-slate-500">N/A</span>
+                                            )}
+                                          </td>
+                                          <td className="py-2.5 px-3 text-slate-300 text-[11px]">
+                                            {m.email || 'N/A'}
+                                          </td>
+                                          <td className="py-2.5 px-3 text-slate-400 text-[11px] font-mono">
+                                            {[m.gender, m.age ? `${m.age} yrs` : null].filter(Boolean).join(' · ') || 'N/A'}
+                                          </td>
+                                          <td className="py-2.5 px-3 text-right">
+                                            {idProofUrl ? (
+                                              <button
+                                                type="button"
+                                                onClick={() => setActiveLightbox({
+                                                  url: idProofUrl,
+                                                  title: `Student ID Card: ${m.fullName}`,
+                                                  subtitle: `${m.role || 'Participant'} · ${reg.college?.collegeName || 'College Student'}`,
+                                                  fileName: m.idCardFileName || 'student_id.png'
+                                                })}
+                                                className="px-2 py-0.5 rounded bg-[#D4AF37]/20 hover:bg-[#D4AF37]/35 text-[#F5E7C4] border border-[#D4AF37]/40 text-[10px] font-mono inline-flex items-center gap-1 cursor-pointer transition-colors"
+                                              >
+                                                <Eye className="w-3 h-3 text-[#D4AF37]" />
+                                                <span>View ID Card</span>
+                                              </button>
+                                            ) : (
+                                              <span className="text-[10px] text-slate-500 italic">No ID uploaded</span>
+                                            )}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
                 })}
               </tbody>
             </table>

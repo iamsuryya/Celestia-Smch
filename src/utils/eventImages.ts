@@ -1,5 +1,54 @@
 import { EventItem } from '../data/festivalData';
 
+import imgSeraphia from '../assets/images/regenerated_image_1792232104341.jpg';
+import imgSymphora from '../assets/images/regenerated_image_1792232117700.jpg';
+import imgNrityara from '../assets/images/regenerated_image_1792232129829.jpg';
+import imgReflexia from '../assets/images/regenerated_image_1792232140692.jpg';
+import imgStellarBid from '../assets/images/regenerated_image_1792232160031.jpg';
+import imgEclipse from '../assets/images/regenerated_image_1792232170862.jpg';
+import imgCosmicSwitch from '../assets/images/regenerated_image_1792232181442.jpg';
+import imgTwinFlare from '../assets/images/regenerated_image_1792232191228.jpg';
+import imgStarfusion from '../assets/images/regenerated_image_1792232202262.jpg';
+import imgElaris from '../assets/images/regenerated_image_1792232212539.jpg';
+import imgSilhouette from '../assets/images/regenerated_image_1792232222364.jpg';
+import imgAdblitz from '../assets/images/regenerated_image_1792232231748.jpg';
+import imgMememania from '../assets/images/regenerated_image_1792232242415.jpg';
+import imgCineverse from '../assets/images/regenerated_image_1792232251549.jpg';
+
+const REGENERATED_EVENT_IMAGES: Record<string, string> = {
+  seraphia: imgSeraphia,
+  m01: imgSeraphia,
+  symphora: imgSymphora,
+  m02: imgSymphora,
+  nrityara: imgNrityara,
+  d01: imgNrityara,
+  reflexia: imgReflexia,
+  e01: imgReflexia,
+  'stellar-bid': imgStellarBid,
+  stellar_bid: imgStellarBid,
+  s01: imgStellarBid,
+  eclipse: imgEclipse,
+  d02: imgEclipse,
+  'cosmic-switch': imgCosmicSwitch,
+  cosmic_switch: imgCosmicSwitch,
+  e02: imgCosmicSwitch,
+  'twin-flare': imgTwinFlare,
+  twin_flare: imgTwinFlare,
+  d03: imgTwinFlare,
+  starfusion: imgStarfusion,
+  d04: imgStarfusion,
+  elaris: imgElaris,
+  f01: imgElaris,
+  silhouette: imgSilhouette,
+  f02: imgSilhouette,
+  adblitz: imgAdblitz,
+  e03: imgAdblitz,
+  mememania: imgMememania,
+  md01: imgMememania,
+  cineverse: imgCineverse,
+  md02: imgCineverse,
+};
+
 /**
  * Default fallback celestial event cover image
  */
@@ -18,86 +67,7 @@ const CATEGORY_IMAGES: Record<string, string> = {
 };
 
 /**
- * Specific Event Code / ID curated cover images for all 14 official Celestia'26 events
- */
-const EVENT_IMAGES: Record<string, string> = {
-  // 1. Seraphia (Solo Singing)
-  SERAPHIA: 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1200&q=80',
-  seraphia: 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1200&q=80',
-  M01: 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1200&q=80',
-
-  // 2. Symphora (Instrumental Music)
-  SYMPHORA: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=1200&q=80',
-  symphora: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=1200&q=80',
-  M02: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=1200&q=80',
-
-  // 3. Nrityara (Classical Solo Dance)
-  NRITYARA: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&w=1200&q=80',
-  nrityara: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&w=1200&q=80',
-  D01: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&w=1200&q=80',
-
-  // 4. Reflexia (Replica Dance / Entertainment)
-  REFLEXIA: 'https://images.unsplash.com/photo-1518834107812-67b0b7c58434?auto=format&fit=crop&w=1200&q=80',
-  reflexia: 'https://images.unsplash.com/photo-1518834107812-67b0b7c58434?auto=format&fit=crop&w=1200&q=80',
-  E01: 'https://images.unsplash.com/photo-1518834107812-67b0b7c58434?auto=format&fit=crop&w=1200&q=80',
-
-  // 5. Stellar Bid (Mock IPL Auction)
-  'STELLAR-BID': 'https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?auto=format&fit=crop&w=1200&q=80',
-  'stellar-bid': 'https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?auto=format&fit=crop&w=1200&q=80',
-  stellar_bid: 'https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?auto=format&fit=crop&w=1200&q=80',
-  S01: 'https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?auto=format&fit=crop&w=1200&q=80',
-
-  // 6. Eclipse (Solo Western Dance)
-  ECLIPSE: 'https://images.unsplash.com/photo-1535525153412-5a42439e210d?auto=format&fit=crop&w=1200&q=80',
-  eclipse: 'https://images.unsplash.com/photo-1535525153412-5a42439e210d?auto=format&fit=crop&w=1200&q=80',
-  D02: 'https://images.unsplash.com/photo-1535525153412-5a42439e210d?auto=format&fit=crop&w=1200&q=80',
-
-  // 7. Cosmic Switch (Adaptunes)
-  'COSMIC-SWITCH': 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1200&q=80',
-  'cosmic-switch': 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1200&q=80',
-  cosmic_switch: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1200&q=80',
-  E02: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1200&q=80',
-
-  // 8. Twin Flare (Duo Dance)
-  'TWIN-FLARE': 'https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&w=1200&q=80',
-  'twin-flare': 'https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&w=1200&q=80',
-  twin_flare: 'https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&w=1200&q=80',
-  D03: 'https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&w=1200&q=80',
-
-  // 9. Starfusion (Group Dance)
-  STARFUSION: 'https://images.unsplash.com/photo-1504609773096-104ff2c73ba4?auto=format&fit=crop&w=1200&q=80',
-  starfusion: 'https://images.unsplash.com/photo-1504609773096-104ff2c73ba4?auto=format&fit=crop&w=1200&q=80',
-  D04: 'https://images.unsplash.com/photo-1504609773096-104ff2c73ba4?auto=format&fit=crop&w=1200&q=80',
-
-  // 10. Elaris (Cosplay / Solo Fashion Walk)
-  ELARIS: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1200&q=80',
-  elaris: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1200&q=80',
-  F01: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1200&q=80',
-
-  // 11. Silhouette (Arabian Nights Theme Fashion Parade)
-  SILHOUETTE: 'https://images.unsplash.com/photo-1469334031218-e382a71b716b?auto=format&fit=crop&w=1200&q=80',
-  silhouette: 'https://images.unsplash.com/photo-1469334031218-e382a71b716b?auto=format&fit=crop&w=1200&q=80',
-  F02: 'https://images.unsplash.com/photo-1469334031218-e382a71b716b?auto=format&fit=crop&w=1200&q=80',
-
-  // 12. AdBlitz (Adzap)
-  ADBLITZ: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=1200&q=80',
-  adblitz: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=1200&q=80',
-  E03: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=1200&q=80',
-
-  // 13. Mememania (Online Meme Competition)
-  MEMEMANIA: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=1200&q=80',
-  mememania: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=1200&q=80',
-  MD01: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=1200&q=80',
-
-  // 14. Cineverse (Movie Recreation Reel)
-  CINEVERSE: 'https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?auto=format&fit=crop&w=1200&q=80',
-  cineverse: 'https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?auto=format&fit=crop&w=1200&q=80',
-  MD02: 'https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?auto=format&fit=crop&w=1200&q=80',
-};
-
-/**
- * Returns a suitable image URL for a given event, event ID, event code, or category.
- * Also checks localStorage overrides and maps clean fallbacks.
+ * Returns the primary local cover image path or custom override for an event.
  */
 export function getEventImage(
   eventOrKey?: EventItem | string | null,
@@ -110,56 +80,92 @@ export function getEventImage(
     return DEFAULT_FALLBACK_IMAGE;
   }
 
-  // Handle EventItem object input
+  let cleanId = '';
+  let cleanCode = '';
+  let catKey = '';
+
   if (typeof eventOrKey === 'object') {
-    const idKey = eventOrKey.id?.toLowerCase();
-    const codeKey = eventOrKey.code?.toUpperCase();
-    const catKey = eventOrKey.category?.toLowerCase();
-
-    // Check localStorage custom override first if set
-    if (typeof window !== 'undefined' && idKey) {
-      const customSaved = localStorage.getItem(`celestia_event_image_${idKey}`);
-      if (customSaved && customSaved.trim()) return customSaved.trim();
-    }
-
-    if (idKey && EVENT_IMAGES[idKey]) {
-      return EVENT_IMAGES[idKey];
-    }
-    if (codeKey && EVENT_IMAGES[codeKey]) {
-      return EVENT_IMAGES[codeKey];
-    }
-    if (catKey && CATEGORY_IMAGES[catKey]) {
-      return CATEGORY_IMAGES[catKey];
-    }
-    return DEFAULT_FALLBACK_IMAGE;
+    cleanId = (eventOrKey.id || '').toLowerCase().trim();
+    cleanCode = (eventOrKey.code || '').toLowerCase().trim();
+    catKey = (eventOrKey.category || '').toLowerCase().trim();
+  } else {
+    cleanId = String(eventOrKey).toLowerCase().trim();
   }
 
-  // Handle string key input (code or id)
-  const key = String(eventOrKey).trim();
-  const lowerKey = key.toLowerCase();
-  const upperKey = key.toUpperCase();
-
-  if (typeof window !== 'undefined') {
-    const customSaved = localStorage.getItem(`celestia_event_image_${lowerKey}`);
+  // Check localStorage custom override first if set
+  if (typeof window !== 'undefined' && cleanId) {
+    const customSaved = localStorage.getItem(`celestia_event_image_${cleanId}`);
     if (customSaved && customSaved.trim()) return customSaved.trim();
   }
 
-  if (EVENT_IMAGES[lowerKey]) {
-    return EVENT_IMAGES[lowerKey];
-  }
-  if (EVENT_IMAGES[upperKey]) {
-    return EVENT_IMAGES[upperKey];
-  }
-  if (EVENT_IMAGES[key]) {
-    return EVENT_IMAGES[key];
+  if (cleanId && REGENERATED_EVENT_IMAGES[cleanId]) {
+    return REGENERATED_EVENT_IMAGES[cleanId];
   }
 
-  const lowerCat = (fallbackCategory || key).toLowerCase();
-  if (CATEGORY_IMAGES[lowerCat]) {
-    return CATEGORY_IMAGES[lowerCat];
+  if (cleanCode && REGENERATED_EVENT_IMAGES[cleanCode]) {
+    return REGENERATED_EVENT_IMAGES[cleanCode];
+  }
+
+  if (cleanId) {
+    return `/images/events/${cleanId}.jpg`;
+  }
+
+  if (cleanCode) {
+    return `/images/events/${cleanCode}.jpg`;
+  }
+
+  if (catKey && CATEGORY_IMAGES[catKey]) {
+    return CATEGORY_IMAGES[catKey];
   }
 
   return DEFAULT_FALLBACK_IMAGE;
+}
+
+/**
+ * Handles image load errors gracefully by trying alternative local extensions (.png, .webp, .jpeg, underscore variant)
+ * before finally falling back to the curated Unsplash stock cover artwork.
+ */
+export function handleEventImageError(
+  e: React.SyntheticEvent<HTMLImageElement, Event>,
+  eventOrKey?: EventItem | string | null,
+  fallbackCategory?: string
+): void {
+  const img = e.currentTarget;
+  if (!img) return;
+
+  let cleanId = '';
+  let catKey = '';
+
+  if (typeof eventOrKey === 'object' && eventOrKey) {
+    cleanId = (eventOrKey.id || '').toLowerCase().trim();
+    catKey = (eventOrKey.category || '').toLowerCase().trim();
+  } else if (eventOrKey) {
+    cleanId = String(eventOrKey).toLowerCase().trim();
+  }
+
+  const currentIndex = parseInt(img.dataset.tryIndex || '0', 10);
+  const nextIndex = currentIndex + 1;
+  img.dataset.tryIndex = String(nextIndex);
+
+  const underscoreId = cleanId.replace(/-/g, '_');
+
+  const candidateUrls: string[] = [
+    `/images/events/${cleanId}.jpg`,
+    `/images/events/${cleanId}.png`,
+    `/images/events/${cleanId}.webp`,
+    `/images/events/${cleanId}.jpeg`,
+    `/images/events/${underscoreId}.jpg`,
+    `/images/events/${underscoreId}.png`,
+    `/images/events/${underscoreId}.webp`,
+    REGENERATED_EVENT_IMAGES[cleanId] || (catKey ? CATEGORY_IMAGES[catKey] : null) || DEFAULT_FALLBACK_IMAGE,
+  ];
+
+  if (nextIndex < candidateUrls.length && candidateUrls[nextIndex]) {
+    img.src = candidateUrls[nextIndex];
+  } else {
+    // Final fallback if all candidates fail
+    img.src = REGENERATED_EVENT_IMAGES[cleanId] || (catKey ? CATEGORY_IMAGES[catKey] : null) || DEFAULT_FALLBACK_IMAGE;
+  }
 }
 
 export default getEventImage;

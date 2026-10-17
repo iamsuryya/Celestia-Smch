@@ -1,3 +1,6 @@
+import rioRajPhoto from '../assets/images/rio-raj.jpg';
+import aparnaDasPhoto from '../assets/images/aparna-das.jpg';
+
 export interface GuestItem {
   id: string;
   name: string;
@@ -19,7 +22,7 @@ export const MAIN_GUESTS_DATA: GuestItem[] = [
     name: 'Rio Raj',
     designation: 'Actor & Television Presenter',
     institution: 'Tamil Cinema & Media Industry',
-    photo: '/images/guests/rio-raj.jpg',
+    photo: rioRajPhoto,
     role: 'Chief Guest',
     day: 1,
     isMainGuest: true,
@@ -29,7 +32,7 @@ export const MAIN_GUESTS_DATA: GuestItem[] = [
     name: 'Aparna Das',
     designation: 'Celebrity Guest & Artist',
     institution: 'Cultural Arts & Entertainment',
-    photo: '/images/guests/aparna-das.jpg',
+    photo: aparnaDasPhoto,
     role: 'Guest of Honour',
     day: 1,
     isMainGuest: true,

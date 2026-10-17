@@ -4,7 +4,7 @@ import {
   ParticipantMember, 
   CollegeDetails 
 } from '../types/registration';
-import { EventItem } from '../data/festivalData';
+import { EventItem, EVENTS_DATA } from '../data/festivalData';
 import { generateRegistrationCode } from '../utils/registrationCode';
 
 export interface RegistrationPayload {
@@ -587,26 +587,62 @@ export const supabaseRegistrationService = {
       const payment = Array.isArray(row.payment_submissions) ? row.payment_submissions[0] : row.payment_submissions;
       const roster = Array.isArray(row.participants) ? row.participants : [];
 
+      const rawCode = row.event_code || '';
+      const rawId = row.event_id || '';
+      const rawTitle = row.event_title || '';
+
+      const matchedEvent = EVENTS_DATA.find((e: EventItem) =>
+        e.code.toLowerCase() === rawCode.toLowerCase() ||
+        e.id.toLowerCase() === rawCode.toLowerCase() ||
+        e.id.toLowerCase() === rawId.toLowerCase() ||
+        e.title.toLowerCase() === rawTitle.toLowerCase() ||
+        e.title.toLowerCase() === rawCode.toLowerCase()
+      );
+
+      const eventCode = matchedEvent ? matchedEvent.code : (rawCode.toUpperCase() || 'FEST');
+      const eventTitle = matchedEvent ? matchedEvent.title : (rawTitle || rawCode || 'Fest Event');
+      const eventId = matchedEvent ? matchedEvent.id : (rawId || rawCode.toLowerCase());
+      const eventCategory = matchedEvent ? matchedEvent.categoryDisplay : 'Cultural';
+      const eventType = matchedEvent ? matchedEvent.type : (row.event_type || 'Solo');
+      const venue = matchedEvent ? matchedEvent.venue : 'Main Stage';
+      const duration = matchedEvent ? matchedEvent.duration : 'Standard';
+
       return {
         id: row.registration_code || row.id,
+        registrationCode: row.registration_code || row.id,
         userId: 'cloud',
-        eventId: row.event_code?.toLowerCase() || '',
-        eventTitle: row.event_code || 'Fest Event',
-        eventCode: row.event_code || '',
-        eventCategory: 'Cultural',
-        eventType: row.event_type || 'Solo',
-        venue: 'Main Stage',
+        eventId,
+        eventTitle,
+        eventCode,
+        eventCategory,
+        eventType,
+        venue,
         dateStr: 'November 3-5, 2026',
-        duration: 'Standard',
-        college: {
-          collegeName: row.college_name || 'N/A',
-          city: row.college_city || '',
-          state: row.college_state || '',
-          contactPerson: row.college_contact_person || '',
-          contactMobile: row.college_contact_mobile || '',
-          contactEmail: row.college_contact_email || '',
-          isCollegeDelegation: Boolean(row.is_college_delegation),
-        },
+        duration,
+        isHostCollege: (() => {
+          const cName = (row.college_name || '').toLowerCase();
+          return Boolean(row.is_host_college) || cName.includes('srinivasan') || (Boolean(row.host_register_number) && !cName.includes('medical') && !cName.includes('college'));
+        })(),
+        college: (() => {
+          const rawCollegeName = (row.college_name || '').trim();
+          const cNameLower = rawCollegeName.toLowerCase();
+          const isHost = Boolean(row.is_host_college) || cNameLower.includes('srinivasan');
+          const isDelegation = !isHost && Boolean(row.is_college_delegation);
+
+          return {
+            collegeName: rawCollegeName || (isHost ? 'Srinivasan Medical College and Hospital, Trichy' : 'Collegiate Institute'),
+            city: row.college_city || (isHost ? 'Trichy' : ''),
+            state: row.college_state || (isHost ? 'Tamil Nadu' : ''),
+            contactPerson: row.college_contact_person || '',
+            contactMobile: row.college_contact_mobile || '',
+            contactEmail: row.college_contact_email || '',
+            isCollegeDelegation: isDelegation,
+            isHostCollege: isHost,
+            hostRegisterNumber: isHost ? (row.host_register_number || 'SMCH-STUDENT') : undefined,
+            hostBatch: isHost ? (row.host_batch || 'MBBS') : undefined,
+            hostDepartment: isHost ? (row.host_department || 'MBBS') : undefined,
+          };
+        })(),
         teamName: row.team_name,
         participants: roster.map((p: any) => ({
           fullName: p.full_name,
@@ -728,13 +764,18 @@ export const supabaseRegistrationService = {
   /**
    * Deletes a registration record and cleans local storage safely without affecting other entries
    */
-  async deleteRegistration(registrationCode: string): Promise<VerificationResult> {
+  async deleteRegistration(identifier: string): Promise<VerificationResult> {
+    if (!identifier) {
+      return { success: false, message: 'Invalid registration identifier' };
+    }
+
+    // 1. Clean from local storage cache
     try {
       const saved = localStorage.getItem('celestia26_registrations');
       if (saved) {
         const parsed: RegistrationSubmission[] = JSON.parse(saved);
         const filtered = parsed.filter(
-          (r) => r.id !== registrationCode && r.registrationCode !== registrationCode
+          (r) => r.id !== identifier && r.registrationCode !== identifier
         );
         localStorage.setItem('celestia26_registrations', JSON.stringify(filtered));
       }
@@ -743,41 +784,88 @@ export const supabaseRegistrationService = {
     }
 
     if (!supabase) {
-      return { success: true, message: `Registration ${registrationCode} removed successfully` };
+      return { success: true, message: `Registration ${identifier} removed locally` };
     }
 
     try {
-      const { data: reg, error: findError } = await supabase
-        .from('registrations')
-        .select('id, registration_code')
-        .or(`registration_code.eq.${registrationCode},id.eq.${registrationCode}`)
-        .maybeSingle();
+      let regRecord: { id: string; registration_code: string } | null = null;
 
-      if (findError || !reg) {
-        return { success: true, message: `Registration ${registrationCode} deleted` };
+      // Check if identifier is a valid UUID
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
+
+      if (isUuid) {
+        const { data, error } = await supabase
+          .from('registrations')
+          .select('id, registration_code')
+          .eq('id', identifier)
+          .maybeSingle();
+
+        if (!error && data) {
+          regRecord = data;
+        }
       }
 
-      // Delete child records safely
+      // If not found by UUID, query by registration_code text
+      if (!regRecord) {
+        const { data, error } = await supabase
+          .from('registrations')
+          .select('id, registration_code')
+          .eq('registration_code', identifier)
+          .maybeSingle();
+
+        if (!error && data) {
+          regRecord = data;
+        }
+      }
+
+      // If still not found and not a UUID, try case-insensitive text match
+      if (!regRecord && !isUuid) {
+        const { data } = await supabase
+          .from('registrations')
+          .select('id, registration_code')
+          .ilike('registration_code', identifier)
+          .maybeSingle();
+
+        if (data) {
+          regRecord = data;
+        }
+      }
+
+      if (!regRecord) {
+        return { success: true, message: `Registration ${identifier} removed or already deleted.` };
+      }
+
+      const targetId = regRecord.id;
+
+      // 2. Delete foreign key child records first (participants and payment submissions)
       try {
-        await supabase.from('participants').delete().eq('registration_id', reg.id);
-        await supabase.from('payment_submissions').delete().eq('registration_id', reg.id);
-      } catch {
-        // Non-fatal
+        await supabase.from('participants').delete().eq('registration_id', targetId);
+      } catch (err) {
+        console.warn('Notice deleting participants:', err);
       }
 
+      try {
+        await supabase.from('payment_submissions').delete().eq('registration_id', targetId);
+      } catch (err) {
+        console.warn('Notice deleting payment submissions:', err);
+      }
+
+      // 3. Delete parent registration
       const { error: delError } = await supabase
         .from('registrations')
         .delete()
-        .eq('id', reg.id);
+        .eq('id', targetId);
 
       if (delError) {
-        return { success: false, message: delError.message };
+        console.error('Failed to delete registration record from Supabase:', delError);
+        return { success: false, message: `Failed to delete from database: ${delError.message}` };
       }
 
-      return { success: true, message: `Registration ${registrationCode} deleted permanently` };
+      return { success: true, message: `Registration ${regRecord.registration_code || identifier} deleted permanently` };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Deletion error';
-      return { success: true, message: `Registration ${registrationCode} removed` };
+      console.error('Delete registration exception:', err);
+      return { success: false, message: `Deletion error: ${msg}` };
     }
   },
 

@@ -61,10 +61,10 @@ export const FESTIVAL_METADATA = {
   targetDateISO: "2026-11-03T09:00:00",
   
   // Configurable registration deadline setting (informational notice, registrations remain open until admin stops)
-  registrationDeadlineFormatted: "October 28, 2026 (Oct 1 for Cineverse & Mememania)",
+  registrationDeadlineFormatted: "October 28, 2026 (Nov 1 for Cineverse & Mememania)",
   registrationDeadlineISO: "2026-10-28T23:59:59",
   standardDeadlineFormatted: "October 28, 2026",
-  mediaDeadlineFormatted: "October 1, 2026",
+  mediaDeadlineFormatted: "November 1, 2026",
   isRegistrationOpen: true,
 
   defaultVenue: "Main Stage",
@@ -82,7 +82,7 @@ export const FESTIVAL_METADATA = {
 
 /**
  * Returns event-specific registration deadline.
- * - Cineverse (Movie Recreation Reel) and Mememania (Meme Competition): October 1, 2026
+ * - Cineverse (Movie Recreation Reel) and Mememania (Meme Competition): November 1, 2026
  * - All other 12 festival events: October 28, 2026
  */
 export function getEventDeadline(eventIdOrCode?: string): string {
@@ -96,7 +96,7 @@ export function getEventDeadline(eventIdOrCode?: string): string {
     clean.includes('reel') ||
     clean.includes('meme')
   ) {
-    return 'October 1, 2026';
+    return 'November 1, 2026';
   }
   return 'October 28, 2026';
 }
@@ -183,6 +183,7 @@ export const EVENTS_DATA: EventItem[] = [
       'Medleys are allowed.',
       'Karaoke or own instruments are allowed.',
       'Drums will not be provided.',
+      'Points will be deducted if team exceeds the alloted time limit.',
     ],
     judgingCriteria: [
       'Timing and pitch',
@@ -194,7 +195,7 @@ export const EVENTS_DATA: EventItem[] = [
     incharges: [
       { name: 'Mahalakshmi S', phone: '8148149106', role: 'Event In-Charge' },
       { name: 'Aishwarya K', phone: '7826078945', role: 'Event In-Charge' },
-      { name: 'Shri Praveen', phone: '9600388545', role: 'Event In-Charge' },
+      { name: 'Shri Praveen', phone: '8248076124', role: 'Event In-Charge' },
     ],
     featured: true,
   },
@@ -229,6 +230,7 @@ export const EVENTS_DATA: EventItem[] = [
       'Participants must bring their own instruments.',
       'Only drums will be provided.',
       'Allowed instruments include keyboard, guitar, violin, woodwind, drums and classical instruments.',
+      'Points will be deducted if team exceeds the alloted time limit.',
       "Judges' decision will be final.",
     ],
     judgingCriteria: [
@@ -274,9 +276,9 @@ export const EVENTS_DATA: EventItem[] = [
       'Prelims may be conducted.',
       'Any pure classical dance form is allowed.',
       'Props must be informed beforehand.',
+      'Points will be deducted if team exceeds the alloted time limit.',
       'Soundtrack must be submitted before the event.',
-      'Only classical songs are allowed.',
-      'Cinema songs are not allowed.',
+      'Any songs with classical beats or decent lyrics can be taken.',
       "Judges' decision will be final.",
     ],
     judgingCriteria: [
@@ -328,6 +330,7 @@ export const EVENTS_DATA: EventItem[] = [
       'Dangerous props are prohibited.',
       'Participants must arrange their own props.',
       'Edited reference/performance video must be submitted in MP4 format before the deadline.',
+      'Points will be deducted if team exceeds the alloted time limit.',
     ],
     judgingCriteria: null,
     incharges: [
@@ -418,6 +421,7 @@ export const EVENTS_DATA: EventItem[] = [
       'Participants must arrange their own props.',
       'Slippery or messy materials are prohibited.',
       'MP3 must be submitted before the event.',
+      'Points will be deducted if team exceeds the alloted time limit.',
     ],
     judgingCriteria: [
       'Coordination',
@@ -448,24 +452,25 @@ export const EVENTS_DATA: EventItem[] = [
     participants: '1',
     minParticipants: 1,
     maxParticipants: 1,
-    feeAmount: 250,
+    feeAmount: 300,
     feeType: 'per_head',
     allowsOnSpotRegistration: false,
     maxEntriesPerCollege: null,
     maxTotalCapacity: null,
-    registrationFee: '₹250 per head',
+    registrationFee: '₹300 per head',
     duration: '3–5 minutes',
     venue: 'Main Stage',
     prizes: {
-      winner: '₹6,000',
+      winner: '₹5,000',
       runnerUp: '₹3,000',
-      totalFormatted: '₹9,000',
+      totalFormatted: '₹8,000',
     },
     rules: [
       'Individual solo adaptunes competition.',
       'Priority is based on registration order.',
       'Random music in any language will be played continuously.',
       'Participants must adapt and dance according to the changing tracks on the spot.',
+      'Points will be deducted if team exceeds the alloted time limit.',
       "Judges' decision will be final and binding.",
     ],
     judgingCriteria: [
@@ -510,6 +515,7 @@ export const EVENTS_DATA: EventItem[] = [
       'Any gender combination is allowed.',
       'Any language is allowed.',
       'Contemporary, western or freestyle dance is allowed.',
+      'Points will be deducted if team exceeds the alloted time limit.',
       'Props require approval.',
       'Powder, water and confetti are prohibited.',
       'MP3 must be submitted.',
@@ -558,6 +564,7 @@ export const EVENTS_DATA: EventItem[] = [
     rules: [
       'Only 1 team per college.',
       'All participants must belong to the same college.',
+      'Points will be deducted if team exceeds the alloted time limit.',
       'Any language is allowed.',
       'Props must be shown beforehand.',
       'Participants must arrange their own props.',
@@ -578,7 +585,7 @@ export const EVENTS_DATA: EventItem[] = [
     incharges: [
       { name: 'Nithyasri', phone: '7016600195', role: 'Event In-Charge' },
       { name: 'Krushna Ghaandh', phone: '8072298956', role: 'Event In-Charge' },
-      { name: 'Kamali', phone: '7904560950', role: 'Event In-Charge' },
+      { name: 'Kamalika', phone: '7904560950', role: 'Event In-Charge' },
     ],
     featured: true,
   },
@@ -614,6 +621,7 @@ export const EVENTS_DATA: EventItem[] = [
       'Costumes must be decent.',
       'Vulgarity and obscene gestures are prohibited.',
       'Music must be provided in a pen drive with a backup.',
+      'Points will be deducted if team exceeds the alloted time limit.',
     ],
     judgingCriteria: [
       'Theme interpretation',
@@ -661,10 +669,13 @@ export const EVENTS_DATA: EventItem[] = [
       'Theme: Arabian Nights.',
       'Theme communication is expected.',
       'Props, accessories and choreography are subject to safety approval.',
+      'Costumes must be shown to the organisers before the event begins.',
       'Fire, sharp objects, explosives, liquids, powders and other hazards are prohibited.',
       'Music must be provided in advance/pen drive with backup.',
       'Costumes must be decent.',
       'Vulgarity and obscene gestures are prohibited.',
+      'The allotted time includes stage setup, costume presentation, and clearing the stage.',
+      'Points will be deducted if team exceeds the alloted time limit.',
     ],
     judgingCriteria: [
       'Theme interpretation',
@@ -713,6 +724,7 @@ export const EVENTS_DATA: EventItem[] = [
       'Performance duration 4–5 minutes.',
       'No stage sets.',
       'Pre-recorded music and instruments are allowed.',
+      'Points will be deducted if team exceeds the alloted time limit.',
     ],
     judgingCriteria: [
       'Theme',
@@ -765,7 +777,7 @@ export const EVENTS_DATA: EventItem[] = [
       'Memes should be original, humorous and must not offend any person or group.',
       'Memes will be posted on our Instagram handle: celestia__26.',
       'Any form of plagiarism, presence of watermarks, use of AI-generated content without prior disclosure, or violation of the given rules will result in immediate disqualification.',
-      'Submission Guidelines: Last date of submission: 1st October, 2026.',
+      'Submission Guidelines: Last date of submission: 1st November, 2026.',
       'File format: JPEG / PNG.',
       'Aspect ratio: 1:1 or 4:5.',
       'Resolution: Minimum 1080 × 1080 px.',
@@ -818,11 +830,12 @@ export const EVENTS_DATA: EventItem[] = [
       'The final output must be in 9:16 dimension video (with top: original video, bottom: recreated video).',
       'The dress code must be relevant to the recreated song or scene.',
       'The time limit is 60 seconds. Participants must strictly adhere to the prescribed time limit.',
+      'Points will be deducted if team exceeds the alloted time limit.',
       'Multiple entries from the same college are allowed.',
       'Only one entry per participant is permitted.',
       'Cross-college teams are not allowed.',
       'Reels will be posted on our Instagram handle: celestia__26.',
-      'Submission Guidelines: Last date of submission: 1st October, 2026.',
+      'Submission Guidelines: Last date of submission: 1st November, 2026.',
       'File format: Video, background ratio: 9:16 (Top: Original video, Bottom: Recreated video, Time limit: 60 seconds).',
       'Resolution: Minimum 1080 × 1080 px.',
       'File name format: CINEVERSE_NAME_College.',

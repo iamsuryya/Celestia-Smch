@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { X, Award, Clock, MapPin, Users, AlertCircle, CheckCircle2, Calendar, Sparkles, Phone } from 'lucide-react';
 import { EventItem, FESTIVAL_METADATA, getEventDeadline } from '../data/festivalData';
 import { isEventRegistrationOpen } from '../utils/registrationStatus';
-import { getEventImage } from '../utils/eventImages';
+import { getEventImage, handleEventImageError } from '../utils/eventImages';
 
 interface EventDetailModalProps {
   event: EventItem | null;
@@ -58,9 +58,7 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
             alt={event.title}
             className="w-full h-full object-cover object-center opacity-70"
             loading="lazy"
-            onError={(e) => {
-              (e.target as HTMLElement).style.display = 'none';
-            }}
+            onError={(e) => handleEventImageError(e, event)}
           />
           <div className="absolute inset-0 bg-gradient-to-t from-[#070B1E] via-[#070B1E]/60 to-transparent" />
 

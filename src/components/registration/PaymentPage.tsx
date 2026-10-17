@@ -16,8 +16,7 @@ import {
   GraduationCap, 
   ShieldAlert, 
   CheckCircle2,
-  FileText,
-  Camera
+  FileText
 } from 'lucide-react';
 import { useRegistration } from '../../context/RegistrationContext';
 import { FESTIVAL_METADATA } from '../../data/festivalData';
@@ -65,6 +64,7 @@ export const PaymentPage: React.FC = () => {
   // List of candidate URLs to automatically locate the uploaded QR in GitHub public folder
   const qrCandidateUrls: string[] = React.useMemo(() => [
     '/payment_qr.png',
+    '/Payment_qr.png',
     '/payment_qr.jpg',
     '/payment_qr.jpeg',
     '/payment_qr.webp',
@@ -88,29 +88,8 @@ export const PaymentPage: React.FC = () => {
   const [allQrCandidatesFailed, setAllQrCandidatesFailed] = useState(false);
   const [dynamicQrDataUrl, setDynamicQrDataUrl] = useState<string>('');
   const [qrGenerating, setQrGenerating] = useState<boolean>(!isHost);
-  const qrFileInputRef = React.useRef<HTMLInputElement>(null);
-
-  // Custom photo upload stored in localStorage (exactly like GuestPhotoUploader)
-  const [customBankQr, setCustomBankQr] = useState<string>(() => {
-    try {
-      return localStorage.getItem('celestia_custom_bank_qr') || '';
-    } catch {
-      return '';
-    }
-  });
 
   const handleBankQrImgError = () => {
-    if (customBankQr) {
-      setCustomBankQr('');
-      try {
-        localStorage.removeItem('celestia_custom_bank_qr');
-      } catch {
-        // ignore
-      }
-      setQrCandidateIndex(0);
-      return;
-    }
-
     if (qrCandidateIndex + 1 < qrCandidateUrls.length) {
       setQrCandidateIndex((prev) => prev + 1);
     } else {
@@ -118,32 +97,7 @@ export const PaymentPage: React.FC = () => {
     }
   };
 
-  const handleUploadCustomQr = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-      alert('Please select a valid image file (PNG, JPG, WEBP).');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      if (dataUrl) {
-        setCustomBankQr(dataUrl);
-        try {
-          localStorage.setItem('celestia_custom_bank_qr', dataUrl);
-        } catch (err) {
-          console.warn('Unable to store custom QR in localStorage:', err);
-        }
-        setAllQrCandidatesFailed(false);
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const activeBankQrSrc = customBankQr || qrCandidateUrls[qrCandidateIndex];
+  const activeBankQrSrc = qrCandidateUrls[qrCandidateIndex];
 
   useEffect(() => {
     if (isHost || totalFee === 0) {
@@ -461,20 +415,10 @@ export const PaymentPage: React.FC = () => {
             {/* QR Code and UPI ID Area */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 items-center pt-1">
               
-              {/* Official Bank QR Code Box (With Guest-Photo Style Uploader) */}
-              <div className="flex flex-col items-center justify-center p-4 sm:p-5 rounded-xl bg-[#060919] border border-[#D4AF37]/40 text-center relative group shadow-lg">
-                
-                {/* File input for direct browser image upload */}
-                <input
-                  type="file"
-                  ref={qrFileInputRef}
-                  onChange={handleUploadCustomQr}
-                  accept="image/*"
-                  className="hidden"
-                />
-
-                <div className="w-44 h-44 sm:w-48 sm:h-48 rounded-xl bg-white p-2 border-2 border-[#D4AF37] flex flex-col items-center justify-center relative shadow-inner overflow-hidden group/qr">
-                  {!allQrCandidatesFailed || customBankQr ? (
+              {/* Official Bank QR Code Box (Maximized & Completely Fitting Box) */}
+              <div className="flex items-center justify-center p-2 sm:p-2.5 rounded-2xl bg-[#060919] border-2 border-[#D4AF37] shadow-xl w-full max-w-[280px] sm:max-w-[320px] aspect-square mx-auto">
+                <div className="w-full h-full rounded-xl bg-white p-2 flex flex-col items-center justify-center relative shadow-inner overflow-hidden">
+                  {!allQrCandidatesFailed ? (
                     <img
                       src={activeBankQrSrc}
                       alt={`Scan Official Bank QR & Pay ₹${totalFee}`}
@@ -488,43 +432,11 @@ export const PaymentPage: React.FC = () => {
                       className="w-full h-full object-contain rounded"
                     />
                   ) : (
-                    <div className="flex flex-col items-center justify-center text-slate-800">
-                      <QrCode className="w-16 h-16 text-[#070B1B] mb-1" />
-                      <span className="text-[10px] font-mono font-bold text-[#070B1B]">Scan with Any UPI App</span>
+                    <div className="flex flex-col items-center justify-center text-slate-800 p-4">
+                      <QrCode className="w-20 h-20 text-[#070B1B] mb-2" />
+                      <span className="text-xs font-mono font-bold text-[#070B1B]">Scan with Any UPI App</span>
                     </div>
                   )}
-
-                  {/* Overlay Upload Button - Exactly like Guest Photo Uploader */}
-                  <button
-                    type="button"
-                    onClick={() => qrFileInputRef.current?.click()}
-                    className="absolute inset-0 bg-black/60 opacity-0 group-hover/qr:opacity-100 transition-opacity flex flex-col items-center justify-center text-white p-2 text-center cursor-pointer"
-                    title="Click to Upload Custom Bank QR Image"
-                  >
-                    <Camera className="w-6 h-6 text-[#E6C57D] mb-1" />
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#F5E7C4]">Change QR Image</span>
-                    <span className="text-[9px] text-slate-300">Click to upload photo</span>
-                  </button>
-                </div>
-
-                <div className="mt-2.5 space-y-1 text-center">
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[10px] text-emerald-400 font-mono font-medium">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>Official Bank Payment QR · ₹{totalFee}</span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => qrFileInputRef.current?.click()}
-                    className="flex items-center justify-center gap-1 text-[11px] text-[#D4AF37] hover:text-[#F5E7C4] transition-colors mx-auto font-medium cursor-pointer"
-                  >
-                    <Camera className="w-3.5 h-3.5" />
-                    <span>Upload / Replace QR Image</span>
-                  </button>
-
-                  <span className="text-[10px] text-slate-400 block font-mono">
-                    GPay · PhonePe · Paytm · BHIM · Cred
-                  </span>
                 </div>
               </div>
 
