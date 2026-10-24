@@ -772,8 +772,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               : 'border-transparent text-slate-400 hover:text-slate-200'
           }`}
         >
-          <Tag className="w-4 h-4" />
-          <span>Promo Codes & Discounts ({promoCodes.length})</span>
+          <Tag className="w-4 h-4 text-[#D4AF37]" />
+          <span>Promo Codes & Discounts</span>
+          <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#D4AF37]/20 text-[#F5E7C4] border border-[#D4AF37]/40">
+            {promoCodes.length}
+          </span>
         </button>
 
         <button

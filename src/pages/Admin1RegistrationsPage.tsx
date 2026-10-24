@@ -53,11 +53,17 @@ import {
   MessageCircle,
   Building,
   LogOut,
-  Layers
+  Layers,
+  Tag,
+  Percent,
+  Plus,
+  ToggleLeft,
+  ToggleRight
 } from 'lucide-react';
 import { useRegistration } from '../context/RegistrationContext';
-import { RegistrationSubmission, ParticipantMember } from '../types/registration';
+import { RegistrationSubmission, ParticipantMember, PromoCode } from '../types/registration';
 import { EVENTS_DATA } from '../data/festivalData';
+import { promoCodeService } from '../services/promoCodeService';
 import { 
   isEventRegistrationOpen, 
   setEventRegistrationOpen, 
@@ -216,6 +222,83 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
   const [selectedRegIds, setSelectedRegIds] = useState<string[]>([]);
   const [showEventClassificationModal, setShowEventClassificationModal] = useState<boolean>(false);
   const [bulkDeleteConfirmModal, setBulkDeleteConfirmModal] = useState<boolean>(false);
+
+  // Promo Code Modal & Management State
+  const [showPromoCodeModal, setShowPromoCodeModal] = useState<boolean>(false);
+  const [promoCodes, setPromoCodes] = useState<PromoCode[]>([]);
+  const [loadingPromos, setLoadingPromos] = useState<boolean>(false);
+  const [newCodeName, setNewCodeName] = useState<string>('');
+  const [newCodeDiscount, setNewCodeDiscount] = useState<string>('');
+  const [newCodeDesc, setNewCodeDesc] = useState<string>('');
+  const [isCreatingPromo, setIsCreatingPromo] = useState<boolean>(false);
+
+  const loadPromoCodes = async () => {
+    setLoadingPromos(true);
+    try {
+      const data = await promoCodeService.getPromoCodes();
+      setPromoCodes(data);
+    } catch {
+      // ignore
+    } finally {
+      setLoadingPromos(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadPromoCodes();
+      const unsubscribe = promoCodeService.subscribeToRealtimePromos((updatedCodes) => {
+        setPromoCodes(updatedCodes);
+      });
+      return () => {
+        unsubscribe();
+      };
+    }
+  }, [isAuthenticated]);
+
+  const handleCreatePromo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const discountVal = parseFloat(newCodeDiscount);
+    if (!newCodeName.trim()) {
+      showToast('Please enter a promo code string (e.g. CELESTIA20)');
+      return;
+    }
+    if (isNaN(discountVal) || discountVal <= 0 || discountVal > 100) {
+      showToast('Discount percentage must be between 1% and 100%');
+      return;
+    }
+
+    setIsCreatingPromo(true);
+    try {
+      const res = await promoCodeService.createPromoCode(newCodeName, discountVal, newCodeDesc);
+      showToast(res.message);
+      if (res.success) {
+        setNewCodeName('');
+        setNewCodeDiscount('');
+        setNewCodeDesc('');
+        loadPromoCodes();
+      }
+    } catch {
+      showToast('Failed to create promo code.');
+    } finally {
+      setIsCreatingPromo(false);
+    }
+  };
+
+  const handleTogglePromoStatus = async (id: string, currentActive: boolean) => {
+    const nextActive = !currentActive;
+    const res = await promoCodeService.togglePromoCodeStatus(id, nextActive);
+    showToast(res.message);
+    loadPromoCodes();
+  };
+
+  const handleDeletePromo = async (id: string) => {
+    if (window.confirm('Delete this promo code permanently?')) {
+      const res = await promoCodeService.deletePromoCode(id);
+      showToast(res.message);
+      loadPromoCodes();
+    }
+  };
 
   // Inline row expansion & copy helper for organized verification
   const [expandedRowIds, setExpandedRowIds] = useState<Record<string, boolean>>({});
@@ -1371,6 +1454,16 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
           >
             <Sparkles className="w-3.5 h-3.5 text-purple-400" />
             <span>Test Suite (25 Records)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowPromoCodeModal(true)}
+            className="px-3.5 py-2 rounded-xl bg-[#D4AF37]/20 hover:bg-[#D4AF37]/30 border border-[#D4AF37]/50 text-xs font-semibold text-[#F5E7C4] transition-all flex items-center gap-1.5 cursor-pointer shadow-lg shadow-[#D4AF37]/10"
+            title="Manage Promo Codes & Discounts"
+          >
+            <Tag className="w-3.5 h-3.5 text-[#D4AF37]" />
+            <span>Promo Codes ({promoCodes.length})</span>
           </button>
 
           <button
@@ -4263,6 +4356,231 @@ CREATE POLICY "Allow public insert to payment_submissions" ON public.payment_sub
                 className="px-4 py-2 rounded-xl font-bold text-xs uppercase text-white bg-rose-600 hover:bg-rose-500 transition-colors cursor-pointer"
               >
                 Permanently Delete Selected
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 10: PROMO CODE & DISCOUNT MANAGEMENT MODAL */}
+      {showPromoCodeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
+          <div className="relative w-full max-w-4xl celestial-glass rounded-2xl p-5 sm:p-6 border border-[#D4AF37]/40 shadow-2xl space-y-5 my-8 max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-[#D4AF37]/20 border border-[#D4AF37]/40 text-[#E6C57D] flex items-center justify-center">
+                  <Tag className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-cinzel text-lg font-bold text-white flex items-center gap-2">
+                    <span>Promo Code & Discount Management</span>
+                  </h3>
+                  <p className="text-xs text-slate-300">
+                    Create percentage discounts for participants and toggle them active or inactive instantly.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  Realtime Active
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowPromoCodeModal(false)}
+                  className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Create New Promo Code Form */}
+            <div className="p-4 rounded-xl bg-[#070B1C] border border-white/10">
+              <h4 className="text-xs font-mono uppercase text-[#D4AF37] font-bold mb-3 flex items-center gap-1.5">
+                <Plus className="w-3.5 h-3.5" />
+                <span>Create New Discount Code</span>
+              </h4>
+              <form onSubmit={handleCreatePromo} className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
+                    Promo Code String *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newCodeName}
+                    onChange={(e) => setNewCodeName(e.target.value.toUpperCase())}
+                    placeholder="e.g. CELESTIA20"
+                    className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white placeholder-slate-500 uppercase focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
+                    Discount Percentage (%) *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      required
+                      value={newCodeDiscount}
+                      onChange={(e) => setNewCodeDiscount(e.target.value)}
+                      placeholder="e.g. 20"
+                      className="w-full px-3 py-2 pr-8 rounded-xl bg-black/60 border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white placeholder-slate-500 focus:outline-none"
+                    />
+                    <Percent className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-2.5" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
+                    Campaign Description
+                  </label>
+                  <input
+                    type="text"
+                    value={newCodeDesc}
+                    onChange={(e) => setNewCodeDesc(e.target.value)}
+                    placeholder="e.g. 20% Early bird offer"
+                    className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/15 focus:border-[#D4AF37] text-xs text-white placeholder-slate-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex items-end">
+                  <button
+                    type="submit"
+                    disabled={isCreatingPromo || !newCodeName.trim() || !newCodeDiscount}
+                    className="w-full py-2 px-4 rounded-xl bg-gradient-to-r from-[#F5E7C4] via-[#E6C57D] to-[#D4AF37] hover:brightness-110 text-[#050714] font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>{isCreatingPromo ? 'Creating...' : 'Create Code'}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* Promo Codes List Table */}
+            <div className="rounded-xl overflow-hidden border border-white/10 bg-black/40">
+              <div className="p-3 bg-black/60 border-b border-white/10 flex items-center justify-between">
+                <span className="text-xs font-mono font-bold text-[#D4AF37]">
+                  Active Promo Codes ({promoCodes.length})
+                </span>
+                <button
+                  type="button"
+                  onClick={loadPromoCodes}
+                  disabled={loadingPromos}
+                  className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-slate-300 flex items-center gap-1 cursor-pointer"
+                >
+                  <RefreshCw className={`w-3 h-3 text-[#D4AF37] ${loadingPromos ? 'animate-spin' : ''}`} />
+                  <span>Refresh</span>
+                </button>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-white/10 bg-black/40 text-[10px] font-mono uppercase text-slate-400">
+                      <th className="py-2.5 px-3">Code</th>
+                      <th className="py-2.5 px-3">Discount</th>
+                      <th className="py-2.5 px-3">Description</th>
+                      <th className="py-2.5 px-3 text-center">Status</th>
+                      <th className="py-2.5 px-3 text-center">Redemptions</th>
+                      <th className="py-2.5 px-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {promoCodes.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="py-6 text-center text-slate-400 italic">
+                          No promo codes found. Create one above to get started.
+                        </td>
+                      </tr>
+                    ) : (
+                      promoCodes.map((p) => (
+                        <tr key={p.id} className="hover:bg-white/[0.02]">
+                          <td className="py-3 px-3 font-mono font-bold text-[#F5E7C4] text-sm">
+                            {p.code}
+                          </td>
+                          <td className="py-3 px-3 font-mono font-bold text-emerald-400">
+                            {p.discountPercent}% OFF
+                          </td>
+                          <td className="py-3 px-3 text-slate-300">
+                            {p.description || 'N/A'}
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            {p.isActive ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                <CheckCircle className="w-3 h-3" /> ACTIVE
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                <Clock className="w-3 h-3" /> DEACTIVATED
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 text-center font-mono text-slate-200">
+                            {p.redemptionCount}
+                          </td>
+                          <td className="py-3 px-3 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleTogglePromoStatus(p.id, p.isActive)}
+                                className={`px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1 ${
+                                  p.isActive
+                                    ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40'
+                                    : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40'
+                                }`}
+                              >
+                                {p.isActive ? (
+                                  <>
+                                    <ToggleRight className="w-3.5 h-3.5" /> Deactivate
+                                  </>
+                                ) : (
+                                  <>
+                                    <ToggleLeft className="w-3.5 h-3.5" /> Activate
+                                  </>
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeletePromo(p.id)}
+                                className="p-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 cursor-pointer"
+                                title="Delete promo code"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Supabase Table Setup Note */}
+            <div className="p-3 rounded-xl bg-blue-950/40 border border-blue-500/20 text-xs text-blue-200 space-y-1">
+              <div className="font-bold font-mono text-[#D4AF37] flex items-center gap-1.5">
+                <Database className="w-3.5 h-3.5" />
+                <span>Hosted Supabase Database Persistence Note</span>
+              </div>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                If running on a custom hosted Supabase project, ensure the <code className="text-[#F5E7C4] font-mono">celestia_promo_codes</code> table exists. All changes also sync to local storage immediately as a fail-safe fallback!
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end pt-2 border-t border-white/10">
+              <button
+                type="button"
+                onClick={() => setShowPromoCodeModal(false)}
+                className="px-5 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs text-slate-200 cursor-pointer"
+              >
+                Close Promo Panel
               </button>
             </div>
           </div>
