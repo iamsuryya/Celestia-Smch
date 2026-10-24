@@ -20,6 +20,11 @@ export interface RegistrationPayload {
   paymentScreenshotData?: string;
   idCardFiles?: (File | null)[];
   userId?: string;
+  // Promo code & discount details
+  promoCode?: string;
+  discountPercent?: number;
+  discountAmount?: number;
+  originalAmount?: number;
 }
 
 export interface VerificationResult {
@@ -325,6 +330,10 @@ export const supabaseRegistrationService = {
         fee_per_unit: Number(payload.selectedEvent?.feeAmount) || 0,
         fee_type: payload.selectedEvent?.feeType || 'per_team',
         total_fee: Number(payload.totalFee) || 0,
+        promo_code: payload.promoCode || null,
+        discount_percent: payload.discountPercent || null,
+        discount_amount: payload.discountAmount || null,
+        original_amount: payload.originalAmount || null,
         registration_status: 'Submitted',
         rules_accepted: true,
         rules_version: 'v1.0-celestia26',

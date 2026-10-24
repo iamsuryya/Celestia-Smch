@@ -49,7 +49,14 @@ export const RegistrationCard: React.FC<RegistrationCardProps> = ({
           </div>
           <div className="flex justify-between pt-1 border-t border-white/5">
             <span className="text-slate-400">Amount:</span>
-            <span className="font-mono font-bold text-[#F5E7C4]">₹{registration.totalAmount.toLocaleString('en-IN')}</span>
+            <div className="text-right">
+              <span className="font-mono font-bold text-[#F5E7C4]">₹{registration.totalAmount.toLocaleString('en-IN')}</span>
+              {registration.promoCode && (
+                <span className="block text-[10px] text-emerald-400 font-mono">
+                  Code: {registration.promoCode} ({registration.discountPercent}% OFF)
+                </span>
+              )}
+            </div>
           </div>
         </div>
 

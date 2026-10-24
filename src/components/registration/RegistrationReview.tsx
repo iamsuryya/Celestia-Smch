@@ -9,6 +9,8 @@ export const RegistrationReview: React.FC = () => {
     participants, 
     teamName, 
     calculateTotalFee, 
+    calculateDiscountAmount,
+    appliedPromoCode,
     goToStep 
   } = useRegistration();
 
@@ -26,7 +28,10 @@ export const RegistrationReview: React.FC = () => {
     );
   }
 
-  const totalFee = calculateTotalFee(selectedEvent, participants.length);
+  const isHost = Boolean(collegeDetails.isHostCollege);
+  const baseFee = isHost ? 0 : (selectedEvent.feeType === 'per_head' ? selectedEvent.feeAmount * Math.max(participants.length, 1) : selectedEvent.feeAmount);
+  const discountAmount = isHost ? 0 : calculateDiscountAmount(selectedEvent, participants.length);
+  const totalFee = isHost ? 0 : calculateTotalFee(selectedEvent, participants.length);
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-4 space-y-6">
@@ -229,8 +234,22 @@ export const RegistrationReview: React.FC = () => {
               </div>
             ) : null}
 
+            {!isHost && appliedPromoCode && (
+              <div className="p-3 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 my-2 space-y-1">
+                <div className="flex justify-between font-bold text-xs sm:text-sm">
+                  <span>Applied Promo Code ({appliedPromoCode.code}):</span>
+                  <span>-{appliedPromoCode.discountPercent}% OFF (-₹{discountAmount.toLocaleString('en-IN')})</span>
+                </div>
+                <p className="text-[11px] text-emerald-200">
+                  {appliedPromoCode.description || `${appliedPromoCode.discountPercent}% promotional discount applied.`}
+                </p>
+              </div>
+            )}
+
             <div className="pt-3 border-t border-white/10 flex justify-between items-center text-base sm:text-lg">
-              <span className="font-cinzel font-bold text-white">Total Amount Payable:</span>
+              <span className="font-cinzel font-bold text-white">
+                {appliedPromoCode ? 'Revised Amount Payable:' : 'Total Amount Payable:'}
+              </span>
               <span className={`font-cinzel font-extrabold text-xl sm:text-2xl tabular-nums ${
                 collegeDetails.isHostCollege ? 'text-emerald-400' : 'gold-gradient-text'
               }`}>

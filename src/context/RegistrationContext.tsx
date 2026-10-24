@@ -4,10 +4,12 @@ import {
   UserAccount, 
   CollegeDetails, 
   ParticipantMember, 
-  RegistrationSubmission 
+  RegistrationSubmission,
+  PromoCode
 } from '../types/registration';
 import { EventItem, EVENTS_DATA } from '../data/festivalData';
 import { supabaseRegistrationService } from '../services/supabaseRegistrationService';
+import { promoCodeService } from '../services/promoCodeService';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { generateRegistrationCode } from '../utils/registrationCode';
 
@@ -44,8 +46,14 @@ interface RegistrationContextType {
   paymentConfirmed: boolean;
   setPaymentConfirmed: (confirmed: boolean) => void;
   
+  // Promo Code State & Actions
+  appliedPromoCode: PromoCode | null;
+  applyPromoCode: (codeStr: string) => Promise<{ success: boolean; message: string; promo?: PromoCode }>;
+  removePromoCode: () => void;
+  
   // Fee Calculation
-  calculateTotalFee: (event: EventItem | null, participantCount: number) => number;
+  calculateTotalFee: (event: EventItem | null, participantCount: number, customPromo?: PromoCode | null) => number;
+  calculateDiscountAmount: (event: EventItem | null, participantCount: number, customPromo?: PromoCode | null) => number;
   
   // Completed Registrations List
   myRegistrations: RegistrationSubmission[];
@@ -115,111 +123,42 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [paymentScreenshotData, setPaymentScreenshotData] = useState<string>('');
   const [paymentConfirmed, setPaymentConfirmed] = useState<boolean>(false);
 
-  // Persist user changes
-  useEffect(() => {
-    if (currentUser) {
-      localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(currentUser));
-    } else {
-      localStorage.removeItem(USER_STORAGE_KEY);
-    }
-  }, [currentUser]);
+  // Promo code state
+  const [appliedPromoCode, setAppliedPromoCode] = useState<PromoCode | null>(null);
 
-  // Persist college details
+  // Real-time Promo Code Sync Listener & Poller
   useEffect(() => {
-    if (collegeDetails) {
-      try {
-        localStorage.setItem(COLLEGE_STORAGE_KEY, JSON.stringify(collegeDetails));
-      } catch (err) {
-        console.warn('Could not persist collegeDetails to localStorage:', err);
-      }
-    }
-  }, [collegeDetails]);
-
-  // Listen for external status changes (e.g. Admin verifying registration)
-  useEffect(() => {
-    const handleStatusSync = (e?: Event) => {
-      try {
-        const saved = localStorage.getItem(REGISTRATIONS_STORAGE_KEY);
-        if (saved) {
-          const list: RegistrationSubmission[] = JSON.parse(saved);
-          setMyRegistrations(list);
+    const handleCodesUpdate = (latestCodes: PromoCode[]) => {
+      setAppliedPromoCode((current) => {
+        if (!current) return null;
+        const match = latestCodes.find((p) => p.code.toUpperCase() === current.code.toUpperCase());
+        // If code was deleted or deactivated by Admin, invalidate instantly
+        if (!match || !match.isActive) {
+          return null;
         }
-      } catch (err) {
-        console.warn('Error reading updated registrations from localStorage:', err);
-      }
+        // If discount or description changed, update instantly
+        if (match.discountPercent !== current.discountPercent || match.description !== current.description) {
+          return match;
+        }
+        return current;
+      });
     };
 
-    window.addEventListener('celestia-registration-status-changed', handleStatusSync);
-    window.addEventListener('storage', handleStatusSync);
+    const unsubscribeRealtime = promoCodeService.subscribeToRealtimePromos(handleCodesUpdate);
+    
+    // Initial fetch
+    promoCodeService.getPromoCodes().then(handleCodesUpdate);
+
+    const interval = setInterval(async () => {
+      const latest = await promoCodeService.getPromoCodes();
+      handleCodesUpdate(latest);
+    }, 3000);
+
     return () => {
-      window.removeEventListener('celestia-registration-status-changed', handleStatusSync);
-      window.removeEventListener('storage', handleStatusSync);
+      unsubscribeRealtime();
+      clearInterval(interval);
     };
   }, []);
-
-  // Periodic background check & live cloud status sync so user's registered event page updates as soon as admin verifies
-  useEffect(() => {
-    if (!currentUser?.email) return;
-
-    const syncCloudStatus = async () => {
-      try {
-        const cloudList = await supabaseRegistrationService.fetchAdminRegistrations();
-        if (cloudList && cloudList.length > 0) {
-          setMyRegistrations((prev) => {
-            let changed = false;
-            const updated = prev.map((localReg) => {
-              const cloudMatch = cloudList.find(
-                (c) =>
-                  c.id === localReg.id ||
-                  c.registrationCode === localReg.id ||
-                  (c.registrationCode && c.registrationCode === localReg.registrationCode)
-              );
-              if (
-                cloudMatch &&
-                (cloudMatch.paymentStatus !== localReg.paymentStatus ||
-                  cloudMatch.registrationStatus !== localReg.registrationStatus)
-              ) {
-                changed = true;
-                return {
-                  ...localReg,
-                  paymentStatus: cloudMatch.paymentStatus,
-                  registrationStatus: cloudMatch.registrationStatus,
-                  paymentConfirmed: cloudMatch.paymentStatus === 'Verified',
-                };
-              }
-              return localReg;
-            });
-            return changed ? updated : prev;
-          });
-        }
-      } catch (err) {
-        // Non-fatal background status sync error
-      }
-    };
-
-    syncCloudStatus();
-    const interval = setInterval(syncCloudStatus, 8000); // 8-second interval for fast cloud update
-    return () => clearInterval(interval);
-  }, [currentUser?.email]);
-
-  // Persist registrations safely
-  useEffect(() => {
-    try {
-      localStorage.setItem(REGISTRATIONS_STORAGE_KEY, JSON.stringify(myRegistrations));
-    } catch (err) {
-      console.warn('Could not persist full registrations with screenshot payload to localStorage (quota reached). Retrying with lightweight records:', err);
-      try {
-        const lightweight = myRegistrations.map((r) => ({
-          ...r,
-          paymentScreenshotData: undefined, // remove bulky base64 if quota hit
-          participants: r.participants.map((p) => ({ ...p, idCardFileData: undefined })),
-        }));
-        localStorage.setItem(REGISTRATIONS_STORAGE_KEY, JSON.stringify(lightweight));
-      } catch (e2) {
-        console.warn('Failed to persist lightweight registrations:', e2);
-      }
-    }
-  }, [myRegistrations]);
 
   const loginUser = (user: UserAccount) => {
     setCurrentUser(user);
@@ -242,7 +181,6 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     const cleanName = currentUser?.fullName && currentUser.fullName !== 'Collegiate Delegate' ? currentUser.fullName : '';
     const cleanMobile = currentUser?.mobile && currentUser.mobile !== '9876543210' ? currentUser.mobile : '';
 
-    // Pre-populate with current user if solo
     if (event.type === 'Solo') {
       setParticipants([
         {
@@ -255,7 +193,6 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         }
       ]);
     } else if (event.type === 'Duo') {
-      // Duo event: initialize with Team Captain (Participant 1); Participant 2 is optional to add
       setParticipants([
         {
           fullName: cleanName,
@@ -267,7 +204,6 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         }
       ]);
     } else {
-      // Team event: initialize with only the Team Captain (1 member)
       setParticipants([
         {
           fullName: cleanName,
@@ -281,16 +217,50 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   };
 
-  const calculateTotalFee = (event: EventItem | null, participantCount: number): number => {
+  const applyPromoCode = async (codeStr: string) => {
+    const res = await promoCodeService.validatePromoCode(codeStr);
+    if (res.valid && res.promo) {
+      // Single code constraint: Overwrite any existing promo code rather than compounding
+      setAppliedPromoCode(res.promo);
+      return { success: true, message: res.message, promo: res.promo };
+    }
+    return { success: false, message: res.message };
+  };
+
+  const removePromoCode = () => {
+    setAppliedPromoCode(null);
+  };
+
+  const calculateDiscountAmount = (
+    event: EventItem | null,
+    participantCount: number,
+    customPromo?: PromoCode | null
+  ): number => {
+    if (!event || collegeDetails?.isHostCollege) return 0;
+    const promo = customPromo !== undefined ? customPromo : appliedPromoCode;
+    if (!promo || !promo.discountPercent) return 0;
+
+    const baseFee = event.feeType === 'per_head'
+      ? event.feeAmount * Math.max(participantCount, 1)
+      : event.feeAmount;
+
+    return Math.round(baseFee * (promo.discountPercent / 100));
+  };
+
+  const calculateTotalFee = (
+    event: EventItem | null,
+    participantCount: number,
+    customPromo?: PromoCode | null
+  ): number => {
     if (!event) return 0;
-    // Free registration fee waiver for students of Srinivasan Medical College and Hospital Trichy
-    if (collegeDetails?.isHostCollege) {
-      return 0;
-    }
-    if (event.feeType === 'per_head') {
-      return event.feeAmount * Math.max(participantCount, 1);
-    }
-    return event.feeAmount;
+    if (collegeDetails?.isHostCollege) return 0;
+
+    const baseFee = event.feeType === 'per_head'
+      ? event.feeAmount * Math.max(participantCount, 1)
+      : event.feeAmount;
+
+    const discount = calculateDiscountAmount(event, participantCount, customPromo);
+    return Math.max(baseFee - discount, 0);
   };
 
   const submitRegistration = async (): Promise<RegistrationSubmission | null> => {
@@ -298,7 +268,10 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
     const submissionId = generateRegistrationCode(selectedEvent.id);
     const isHost = Boolean(collegeDetails.isHostCollege);
-    const totalAmount = isHost ? 0 : calculateTotalFee(selectedEvent, participants.length);
+    
+    const baseFee = isHost ? 0 : (selectedEvent.feeType === 'per_head' ? selectedEvent.feeAmount * Math.max(participants.length, 1) : selectedEvent.feeAmount);
+    const discountAmount = isHost ? 0 : calculateDiscountAmount(selectedEvent, participants.length);
+    const totalAmount = isHost ? 0 : Math.max(baseFee - discountAmount, 0);
 
     const newSubmission: RegistrationSubmission = {
       id: submissionId,
@@ -318,6 +291,10 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       participants: [...participants],
       feePerUnit: isHost ? 0 : selectedEvent.feeAmount,
       feeType: selectedEvent.feeType,
+      promoCode: !isHost && appliedPromoCode ? appliedPromoCode.code : undefined,
+      discountPercent: !isHost && appliedPromoCode ? appliedPromoCode.discountPercent : undefined,
+      discountAmount: !isHost ? discountAmount : 0,
+      originalAmount: !isHost ? baseFee : 0,
       totalAmount,
       utrNumber: isHost 
         ? (utrNumber.trim() || 'SMCH-HOST-FREE') 
@@ -355,6 +332,10 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           paymentScreenshotData: currentPaymentData || undefined,
           idCardFiles: currentParticipants.map((p) => p.idCardFile || null),
           userId: currentUser.id,
+          promoCode: newSubmission.promoCode,
+          discountPercent: newSubmission.discountPercent,
+          discountAmount: newSubmission.discountAmount,
+          originalAmount: newSubmission.originalAmount,
         });
       } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : 'Network error communicating with database';
@@ -373,16 +354,22 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
     }
 
+    // Increment redemption counter on applied promo code
+    if (appliedPromoCode?.code) {
+      promoCodeService.incrementRedemption(appliedPromoCode.code).catch(() => {});
+    }
+
     // Append to local state ONLY after cloud write confirmation (or in offline-only mode)
     setMyRegistrations((prev) => [newSubmission, ...prev]);
     setActiveRegistration(newSubmission);
 
-    // Clear draft payment inputs after successful confirmation
+    // Clear draft payment inputs & promo code after successful confirmation
     setUtrNumber('');
     setPaymentScreenshotName('');
     setPaymentScreenshotFile(null);
     setPaymentScreenshotData('');
     setPaymentConfirmed(false);
+    setAppliedPromoCode(null);
 
     return newSubmission;
   };
@@ -402,6 +389,7 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     setPaymentScreenshotFile(null);
     setPaymentScreenshotData('');
     setPaymentConfirmed(false);
+    setAppliedPromoCode(null);
 
     // If user is already logged in and has college details, jump straight to event or participants
     if (currentUser && collegeDetails) {
@@ -471,7 +459,11 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         setPaymentScreenshotData,
         paymentConfirmed,
         setPaymentConfirmed,
+        appliedPromoCode,
+        applyPromoCode,
+        removePromoCode,
         calculateTotalFee,
+        calculateDiscountAmount,
         myRegistrations,
         activeRegistration,
         setActiveRegistration,

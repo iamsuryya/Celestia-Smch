@@ -51,6 +51,16 @@ export interface ParticipantMember {
   batch?: string;
 }
 
+export interface PromoCode {
+  id: string;
+  code: string;               // e.g. "CELESTIA20" (always stored in uppercase)
+  discountPercent: number;    // e.g. 20 for 20% discount
+  description?: string;       // e.g. "Early Bird Offer 20% Off"
+  isActive: boolean;          // Admin active toggle
+  redemptionCount: number;    // Total uses recorded
+  createdAt: string;
+}
+
 export interface RegistrationSubmission {
   id: string; // e.g. C26-131026-1-1
   registrationCode?: string;
@@ -71,6 +81,12 @@ export interface RegistrationSubmission {
   // Participants details
   teamName?: string;
   participants: ParticipantMember[];
+  
+  // Promo code & discount details
+  promoCode?: string;
+  discountPercent?: number;
+  discountAmount?: number;
+  originalAmount?: number;
   
   // Payment info
   feePerUnit: number;

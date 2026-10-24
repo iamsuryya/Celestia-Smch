@@ -16,7 +16,8 @@ import {
   GraduationCap, 
   ShieldAlert, 
   CheckCircle2,
-  FileText
+  FileText,
+  Tag
 } from 'lucide-react';
 import { useRegistration } from '../../context/RegistrationContext';
 import { FESTIVAL_METADATA } from '../../data/festivalData';
@@ -27,6 +28,10 @@ export const PaymentPage: React.FC = () => {
     collegeDetails,
     participants, 
     calculateTotalFee, 
+    calculateDiscountAmount,
+    appliedPromoCode,
+    applyPromoCode,
+    removePromoCode,
     utrNumber, 
     setUtrNumber, 
     paymentScreenshotName, 
@@ -42,6 +47,9 @@ export const PaymentPage: React.FC = () => {
 
   const [copiedUpi, setCopiedUpi] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [promoInputCode, setPromoInputCode] = useState('');
+  const [promoMsg, setPromoMsg] = useState('');
+  const [isValidatingPromo, setIsValidatingPromo] = useState(false);
 
   if (!selectedEvent) {
     return (
@@ -58,8 +66,27 @@ export const PaymentPage: React.FC = () => {
   }
 
   const isHost = Boolean(collegeDetails?.isHostCollege);
+  const baseFee = isHost ? 0 : (selectedEvent.feeType === 'per_head' ? selectedEvent.feeAmount * Math.max(participants.length, 1) : selectedEvent.feeAmount);
+  const discountAmount = isHost ? 0 : calculateDiscountAmount(selectedEvent, participants.length);
   const totalFee = isHost ? 0 : calculateTotalFee(selectedEvent, participants.length);
   const upiId = FESTIVAL_METADATA.paymentUpiIdPlaceholder;
+
+  const handleApplyPromo = async () => {
+    if (!promoInputCode.trim()) return;
+    setIsValidatingPromo(true);
+    setPromoMsg('');
+    try {
+      const res = await applyPromoCode(promoInputCode.trim());
+      setPromoMsg(res.message);
+      if (res.success) {
+        setPromoInputCode('');
+      }
+    } catch {
+      setPromoMsg('Unable to validate promo code.');
+    } finally {
+      setIsValidatingPromo(false);
+    }
+  };
 
   // List of candidate URLs to automatically locate the uploaded QR in GitHub public folder
   const qrCandidateUrls: string[] = React.useMemo(() => [
@@ -233,32 +260,141 @@ export const PaymentPage: React.FC = () => {
       <div className="celestial-glass rounded-2xl p-4 sm:p-8 border border-[#D4AF37]/35 shadow-2xl space-y-5">
         
         {/* Total Amount Payable Banner */}
-        <div className={`p-3.5 sm:p-4 rounded-xl border flex items-center justify-between ${
+        <div className={`p-3.5 sm:p-4 rounded-xl border ${
           isHost 
-            ? 'bg-[#0E163B] border-emerald-500/40' 
-            : 'bg-[#080D24] border-white/10'
+            ? 'bg-[#0E163B] border-emerald-500/40 flex items-center justify-between' 
+            : 'bg-[#080D24] border-white/10 space-y-3'
         }`}>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] sm:text-xs uppercase tracking-wider text-slate-400 block font-mono">
-                Total Amount Payable
+          {isHost ? (
+            <>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] sm:text-xs uppercase tracking-wider text-slate-400 block font-mono">
+                    Total Amount Payable
+                  </span>
+                  <span className="px-2 py-0.2 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                    SMCH Host Student Waiver
+                  </span>
+                </div>
+                <span className="text-xs text-slate-300 font-medium">
+                  {selectedEvent.title} ({participants.length} member{participants.length !== 1 ? 's' : ''})
+                </span>
+              </div>
+              <div className="font-cinzel text-2xl sm:text-3xl font-extrabold text-emerald-400 tabular-nums">
+                ₹0
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] sm:text-xs uppercase tracking-wider text-slate-400 block font-mono">
+                    Registration Fee
+                  </span>
+                  <span className="text-xs text-slate-300 font-medium">
+                    {selectedEvent.title} ({participants.length} member{participants.length !== 1 ? 's' : ''})
+                  </span>
+                </div>
+                <div className="text-right">
+                  {appliedPromoCode ? (
+                    <div>
+                      <span className="text-xs text-slate-400 line-through block font-mono">₹{baseFee.toLocaleString('en-IN')}</span>
+                      <span className="text-xs font-mono font-bold text-emerald-400 block">-₹{discountAmount.toLocaleString('en-IN')} ({appliedPromoCode.discountPercent}% OFF)</span>
+                    </div>
+                  ) : (
+                    <span className="font-cinzel text-2xl sm:text-3xl font-extrabold gold-gradient-text tabular-nums">
+                      ₹{baseFee.toLocaleString('en-IN')}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {appliedPromoCode && (
+                <div className="pt-2.5 border-t border-white/10 flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-mono font-bold text-[#E6C57D] uppercase tracking-wider block">
+                      Revised Amount Payable
+                    </span>
+                    <span className="text-[11px] text-emerald-300 font-mono">
+                      Pay exactly ₹{totalFee.toLocaleString('en-IN')} using the Bank QR code below
+                    </span>
+                  </div>
+                  <div className="font-cinzel text-2xl sm:text-3xl font-extrabold gold-gradient-text tabular-nums">
+                    ₹{totalFee.toLocaleString('en-IN')}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* PROMO CODE ENTRY CARD (Non-Host) */}
+        {!isHost && (
+          <div className="p-4 rounded-xl bg-[#070B1E] border border-[#D4AF37]/30 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-[#F5E7C4] flex items-center gap-1.5 font-mono">
+                <Tag className="w-3.5 h-3.5 text-[#D4AF37]" />
+                <span>Have a Promo Code or Discount Voucher?</span>
               </span>
-              {isHost && (
-                <span className="px-2 py-0.2 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                  SMCH Host Student Waiver
+              {appliedPromoCode && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                  {appliedPromoCode.discountPercent}% OFF ACTIVE
                 </span>
               )}
             </div>
-            <span className="text-xs text-slate-300 font-medium">
-              {selectedEvent.title} ({participants.length} member{participants.length !== 1 ? 's' : ''})
-            </span>
+
+            {appliedPromoCode ? (
+              <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <div>
+                    <span className="font-bold text-emerald-300 font-mono">{appliedPromoCode.code}</span>
+                    <span className="text-slate-300 block text-[11px]">
+                      {appliedPromoCode.description || `${appliedPromoCode.discountPercent}% OFF`} (You save ₹{discountAmount.toLocaleString('en-IN')})
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={removePromoCode}
+                  className="px-2.5 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[11px] font-semibold transition-colors cursor-pointer"
+                >
+                  Remove Code
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={promoInputCode}
+                  onChange={(e) => setPromoInputCode(e.target.value.toUpperCase())}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleApplyPromo();
+                    }
+                  }}
+                  placeholder="e.g. CELESTIA10 or EARLYBIRD20"
+                  className="flex-1 px-3.5 py-2 rounded-lg bg-[#080D24] border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white placeholder-slate-500 focus:outline-none uppercase"
+                />
+                <button
+                  type="button"
+                  onClick={handleApplyPromo}
+                  disabled={isValidatingPromo || !promoInputCode.trim()}
+                  className="px-4 py-2 rounded-lg bg-gradient-to-r from-[#F5E7C4] to-[#D4AF37] hover:brightness-110 text-[#050714] font-bold text-xs transition-all disabled:opacity-50 cursor-pointer shrink-0"
+                >
+                  {isValidatingPromo ? 'Checking...' : 'Apply Code'}
+                </button>
+              </div>
+            )}
+
+            {promoMsg && (
+              <p className={`text-[11px] font-mono ${promoMsg.includes('applied') || promoMsg.includes('OFF') ? 'text-emerald-400' : 'text-rose-300'}`}>
+                {promoMsg}
+              </p>
+            )}
           </div>
-          <div className={`font-cinzel text-2xl sm:text-3xl font-extrabold tabular-nums ${
-            isHost ? 'text-emerald-400' : 'gold-gradient-text'
-          }`}>
-            {isHost ? '₹0' : `₹${totalFee.toLocaleString('en-IN')}`}
-          </div>
-        </div>
+        )}
 
         {/* ------------------------------------------------------------------ */}
         {/* CASE A: HOST COLLEGE STUDENT (₹0 PAYMENT FLOW & STRICT WARNING) */}

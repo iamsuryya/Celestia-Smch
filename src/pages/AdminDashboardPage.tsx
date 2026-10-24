@@ -20,13 +20,19 @@ import {
   X,
   FileText,
   Database,
-  RefreshCw
+  RefreshCw,
+  Tag,
+  Percent,
+  Plus,
+  ToggleLeft,
+  ToggleRight
 } from 'lucide-react';
 import { useResults } from '../context/ResultsContext';
 import { useRegistration } from '../context/RegistrationContext';
 import { EVENTS_DATA, EventItem } from '../data/festivalData';
 import { EventResultItem } from '../types/results';
-import { RegistrationSubmission } from '../types/registration';
+import { RegistrationSubmission, PromoCode } from '../types/registration';
+import { promoCodeService } from '../services/promoCodeService';
 import { 
   isSupabaseConfigured, 
   getSupabaseConfigStatus, 
@@ -87,10 +93,30 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [authError, setAuthError] = useState('');
   const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
 
-  // Active Tab: 'results' | 'registrations' | 'overview'
-  const [activeTab, setActiveTab] = useState<'results' | 'registrations' | 'overview'>('results');
+  // Active Tab: 'results' | 'registrations' | 'promocodes' | 'overview'
+  const [activeTab, setActiveTab] = useState<'results' | 'registrations' | 'promocodes' | 'overview'>('results');
 
-  // Load cloud registrations
+  // Promo Codes State
+  const [promoCodes, setPromoCodes] = useState<PromoCode[]>([]);
+  const [loadingPromos, setLoadingPromos] = useState<boolean>(false);
+  const [newCodeName, setNewCodeName] = useState<string>('');
+  const [newCodeDiscount, setNewCodeDiscount] = useState<string>('');
+  const [newCodeDesc, setNewCodeDesc] = useState<string>('');
+  const [isCreatingPromo, setIsCreatingPromo] = useState<boolean>(false);
+
+  const loadPromoCodes = async () => {
+    setLoadingPromos(true);
+    try {
+      const data = await promoCodeService.getPromoCodes();
+      setPromoCodes(data);
+    } catch {
+      // ignore
+    } finally {
+      setLoadingPromos(false);
+    }
+  };
+
+  // Load cloud registrations & promo codes
   const loadCloudRegistrations = async () => {
     setLoadingRegistrations(true);
     try {
@@ -106,8 +132,61 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   useEffect(() => {
     if (isAuthenticated) {
       loadCloudRegistrations();
+      loadPromoCodes();
+
+      const unsubscribe = promoCodeService.subscribeToRealtimePromos((updatedCodes) => {
+        setPromoCodes(updatedCodes);
+      });
+
+      return () => {
+        unsubscribe();
+      };
     }
   }, [isAuthenticated]);
+
+  const handleCreatePromo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const discountVal = parseFloat(newCodeDiscount);
+    if (!newCodeName.trim()) {
+      showToast('Please enter a promo code string (e.g. CELESTIA20)');
+      return;
+    }
+    if (isNaN(discountVal) || discountVal <= 0 || discountVal > 100) {
+      showToast('Discount percentage must be between 1% and 100%');
+      return;
+    }
+
+    setIsCreatingPromo(true);
+    try {
+      const res = await promoCodeService.createPromoCode(newCodeName, discountVal, newCodeDesc);
+      showToast(res.message);
+      if (res.success) {
+        setNewCodeName('');
+        setNewCodeDiscount('');
+        setNewCodeDesc('');
+        loadPromoCodes();
+      }
+    } catch {
+      showToast('Failed to create promo code.');
+    } finally {
+      setIsCreatingPromo(false);
+    }
+  };
+
+  const handleTogglePromoStatus = async (id: string, currentActive: boolean) => {
+    const nextActive = !currentActive;
+    const res = await promoCodeService.togglePromoCodeStatus(id, nextActive);
+    showToast(res.message);
+    loadPromoCodes();
+  };
+
+  const handleDeletePromo = async (id: string) => {
+    if (window.confirm('Delete this promo code permanently?')) {
+      const res = await promoCodeService.deletePromoCode(id);
+      showToast(res.message);
+      loadPromoCodes();
+    }
+  };
 
   // Combine cloud registrations with local registrations, deduplicating by ID
   const allRegistrations: RegistrationSubmission[] = React.useMemo(() => {
@@ -686,6 +765,18 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         </button>
 
         <button
+          onClick={() => setActiveTab('promocodes')}
+          className={`pb-3 text-xs sm:text-sm font-semibold tracking-wide cursor-pointer transition-all flex items-center gap-2 border-b-2 ${
+            activeTab === 'promocodes'
+              ? 'border-[#D4AF37] text-[#F5E7C4]'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Tag className="w-4 h-4" />
+          <span>Promo Codes & Discounts ({promoCodes.length})</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('overview')}
           className={`pb-3 text-xs sm:text-sm font-semibold tracking-wide cursor-pointer transition-all flex items-center gap-2 border-b-2 ${
             activeTab === 'overview'
@@ -991,6 +1082,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         </td>
                         <td className="py-3.5 px-4 font-mono text-emerald-400 font-bold">
                           ₹{reg.totalAmount}
+                          {reg.promoCode && (
+                            <span className="block text-[10px] text-[#E6C57D] font-normal font-sans">
+                              Code: {reg.promoCode} ({reg.discountPercent}% OFF)
+                            </span>
+                          )}
                         </td>
                         <td className="py-3.5 px-4">
                           <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-mono uppercase ${
@@ -1048,7 +1144,188 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         </div>
       )}
 
-      {/* ================= TAB 3: OPERATIONS & PRESET CONTROLS ================= */}
+      {/* ================= TAB 3: PROMO CODES & DISCOUNTS ================= */}
+      {activeTab === 'promocodes' && (
+        <div className="space-y-6">
+          {/* Header & Create Card */}
+          <div className="p-5 rounded-2xl bg-[#090E26] border border-[#D4AF37]/30 celestial-glass shadow-xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-white/10 flex-wrap gap-2">
+              <div>
+                <h3 className="font-cinzel text-lg font-bold text-white flex items-center gap-2">
+                  <Tag className="w-5 h-5 text-[#D4AF37]" />
+                  <span>Promo Code & Discount Management</span>
+                </h3>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Create percentage-based discount codes for festival registrants and toggle them active/inactive instantly.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5 shadow-sm">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  Realtime Sync Active
+                </span>
+                <button
+                  type="button"
+                  onClick={loadPromoCodes}
+                  disabled={loadingPromos}
+                  className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-slate-200 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-[#D4AF37] ${loadingPromos ? 'animate-spin' : ''}`} />
+                  <span>Refresh Codes</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Create New Promo Code Form */}
+            <form onSubmit={handleCreatePromo} className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-1">
+              <div>
+                <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
+                  Promo Code String *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newCodeName}
+                  onChange={(e) => setNewCodeName(e.target.value.toUpperCase())}
+                  placeholder="e.g. CELESTIA20"
+                  className="w-full px-3 py-2 rounded-xl bg-[#050714] border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white placeholder-slate-500 uppercase focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
+                  Discount Percentage (%) *
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    required
+                    value={newCodeDiscount}
+                    onChange={(e) => setNewCodeDiscount(e.target.value)}
+                    placeholder="e.g. 20"
+                    className="w-full px-3 py-2 pr-8 rounded-xl bg-[#050714] border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white placeholder-slate-500 focus:outline-none"
+                  />
+                  <Percent className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-2.5" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
+                  Campaign Description
+                </label>
+                <input
+                  type="text"
+                  value={newCodeDesc}
+                  onChange={(e) => setNewCodeDesc(e.target.value)}
+                  placeholder="e.g. 20% Early bird discount offer"
+                  className="w-full px-3 py-2 rounded-xl bg-[#050714] border border-white/15 focus:border-[#D4AF37] text-xs text-white placeholder-slate-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex items-end">
+                <button
+                  type="submit"
+                  disabled={isCreatingPromo || !newCodeName.trim() || !newCodeDiscount}
+                  className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#F5E7C4] via-[#E6C57D] to-[#D4AF37] hover:brightness-110 text-[#050714] font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>{isCreatingPromo ? 'Creating...' : 'Create Code'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Promo Codes Table */}
+          <div className="celestial-glass rounded-2xl overflow-hidden border border-white/10 shadow-xl">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-white/10 bg-black/40 text-[11px] font-mono uppercase tracking-wider text-[#D4AF37]">
+                    <th className="py-3 px-4">Code Name</th>
+                    <th className="py-3 px-4">Discount Rate</th>
+                    <th className="py-3 px-4">Campaign Description</th>
+                    <th className="py-3 px-4 text-center">Status</th>
+                    <th className="py-3 px-4 text-center">Total Redemptions</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {promoCodes.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-slate-400">
+                        No promo codes found. Use the form above to add your first discount code.
+                      </td>
+                    </tr>
+                  ) : (
+                    promoCodes.map((p) => (
+                      <tr key={p.id} className="hover:bg-white/[0.02] transition-colors">
+                        <td className="py-3.5 px-4 font-mono font-bold text-base text-[#F5E7C4]">
+                          {p.code}
+                        </td>
+                        <td className="py-3.5 px-4 font-mono font-bold text-emerald-400 text-sm">
+                          {p.discountPercent}% OFF
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-300">
+                          {p.description || 'N/A'}
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
+                          {p.isActive ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                              <CheckCircle className="w-3 h-3" /> ACTIVE
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-medium bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                              <Clock className="w-3 h-3" /> DEACTIVATED
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-center font-mono text-slate-200 font-bold">
+                          {p.redemptionCount} use(s)
+                        </td>
+                        <td className="py-3.5 px-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleTogglePromoStatus(p.id, p.isActive)}
+                              className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1 ${
+                                p.isActive
+                                  ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40'
+                                  : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40'
+                              }`}
+                            >
+                              {p.isActive ? (
+                                <>
+                                  <ToggleRight className="w-3.5 h-3.5" /> Deactivate
+                                </>
+                              ) : (
+                                <>
+                                  <ToggleLeft className="w-3.5 h-3.5" /> Activate
+                                </>
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePromo(p.id)}
+                              className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 cursor-pointer transition-colors"
+                              title="Delete promo code"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= TAB 4: OPERATIONS & PRESET CONTROLS ================= */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
