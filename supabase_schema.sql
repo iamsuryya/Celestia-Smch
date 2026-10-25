@@ -37,6 +37,10 @@ CREATE TABLE IF NOT EXISTS public.registrations (
 -- Ensure all columns exist even if table was previously created
 ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS admin_notes TEXT;
 ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS promo_code TEXT;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS discount_percent NUMERIC;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS discount_amount NUMERIC DEFAULT 0;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS original_amount NUMERIC;
 
 -- 3. Create Participants Table
 CREATE TABLE IF NOT EXISTS public.participants (

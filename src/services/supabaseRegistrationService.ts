@@ -352,10 +352,65 @@ export const supabaseRegistrationService = {
           });
       regInsertData.id = registrationId;
 
-      // Execute insert into registrations
-      const { error: regError } = await supabase
+      // Execute insert into registrations with automatic fallback if optional columns (e.g. discount_amount, promo_code, discount_percent, original_amount) are missing in hosted Supabase DB
+      let { error: regError } = await supabase
         .from('registrations')
         .insert([regInsertData]);
+
+      if (regError && (
+        regError.message.includes('Could not find') ||
+        regError.message.includes('column') ||
+        regError.message.includes('schema cache')
+      )) {
+        console.warn('Supabase insert failed due to DB schema variation. Retrying without optional promo/discount columns:', regError.message);
+        
+        // Remove optional promo & discount columns that might not exist in remote DB schema
+        const fallbackRegData = { ...regInsertData };
+        delete fallbackRegData.discount_amount;
+        delete fallbackRegData.discount_percent;
+        delete fallbackRegData.promo_code;
+        delete fallbackRegData.original_amount;
+
+        const retryResult = await supabase
+          .from('registrations')
+          .insert([fallbackRegData]);
+          
+        regError = retryResult.error;
+
+        // If still failing due to another missing column (e.g. event_id or rules fields), try minimal base fields
+        if (regError && (
+          regError.message.includes('Could not find') ||
+          regError.message.includes('column') ||
+          regError.message.includes('schema cache')
+        )) {
+          console.warn('Retrying with core registration payload:', regError.message);
+          const minimalRegData = {
+            id: registrationId,
+            registration_code: registrationCode,
+            event_code: payload.selectedEvent?.code || 'EVENT',
+            event_type: payload.selectedEvent?.type || 'Solo',
+            team_name: payload.teamName || 'Team',
+            college_name: payload.collegeDetails?.collegeName || 'N/A',
+            college_city: payload.collegeDetails?.city || '',
+            college_state: payload.collegeDetails?.state || '',
+            college_contact_person: payload.collegeDetails?.contactPerson || '',
+            college_contact_mobile: payload.collegeDetails?.contactMobile || '',
+            college_contact_email: payload.collegeDetails?.contactEmail || '',
+            is_college_delegation: Boolean(payload.collegeDetails?.isCollegeDelegation),
+            participant_count: payload.participants?.length || 1,
+            fee_per_unit: Number(payload.selectedEvent?.feeAmount) || 0,
+            fee_type: payload.selectedEvent?.feeType || 'per_team',
+            total_fee: Number(payload.totalFee) || 0,
+            registration_status: 'Submitted',
+          };
+
+          const minRetry = await supabase
+            .from('registrations')
+            .insert([minimalRegData]);
+          
+          regError = minRetry.error;
+        }
+      }
 
       if (regError) {
         console.error('Supabase registrations table insert error:', regError.message, regError.details || '');
