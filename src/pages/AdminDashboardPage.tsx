@@ -50,6 +50,7 @@ import {
   AUTH_PROFILES 
 } from '../lib/authProfiles';
 import { isAutoApproveEnabled, setAutoApproveEnabled } from '../utils/registrationStatus';
+import { exportVerifiedByEventCSV } from '../utils/exportVerifiedHelper';
 
 interface AdminDashboardPageProps {
   onNavigateToPublicResults: () => void;
@@ -1079,6 +1080,16 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             <div className="flex items-center gap-3">
               <button
                 type="button"
+                onClick={() => exportVerifiedByEventCSV(registrations, showToast)}
+                className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-emerald-400 to-teal-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer hover:brightness-110 transition-all shadow-md"
+                title="Export verified registrations formatted event-by-event for Excel/Sheets"
+              >
+                <CheckCircle className="w-3.5 h-3.5 text-slate-950" />
+                <span>Verified By Event (Excel)</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={loadCloudRegistrations}
                 disabled={loadingRegistrations}
                 className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-slate-200 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
@@ -1090,6 +1101,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 Total Records: {registrations.length}
               </div>
             </div>
+
           </div>
 
           {registrations.length === 0 ? (

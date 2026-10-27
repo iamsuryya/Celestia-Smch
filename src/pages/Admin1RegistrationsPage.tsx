@@ -92,6 +92,7 @@ import {
 } from '../lib/authProfiles';
 import { InchargesPortalPage } from './InchargesPortalPage';
 import { testDataGenerator, TestGeneratorResult, TestPurgeResult } from '../services/testDataGenerator';
+import { exportVerifiedByEventCSV } from '../utils/exportVerifiedHelper';
 
 interface Admin1RegistrationsPageProps {
   onExit: () => void;
@@ -2079,6 +2080,17 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
             <span>Classify By Events</span>
           </button>
 
+          {/* Download Verified By Event CSV */}
+          <button
+            type="button"
+            onClick={() => exportVerifiedByEventCSV(allRegistrations, showToast)}
+            className="px-3.5 py-2 rounded-xl font-bold text-xs uppercase tracking-wider text-emerald-950 bg-gradient-to-r from-emerald-300 via-emerald-400 to-teal-400 hover:brightness-110 transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-500/20"
+            title="Export only verified & approved registrations formatted event by event for Excel/Sheets"
+          >
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-950" />
+            <span>Verified By Event (Excel)</span>
+          </button>
+
           {/* Download CSV */}
           <button
             type="button"
@@ -2088,6 +2100,7 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
             <Download className="w-3.5 h-3.5" />
             <span>Download All (CSV)</span>
           </button>
+
         </div>
       </div>
 
