@@ -545,8 +545,8 @@ export const EVENTS_DATA: EventItem[] = [
     categoryDisplay: 'Group Dance',
     type: 'Team',
     gender: 'Open',
-    participants: '5–15',
-    minParticipants: 5,
+    participants: '10–15',
+    minParticipants: 10,
     maxParticipants: 15,
     feeAmount: 300,
     feeType: 'per_head', // ₹300 per head

@@ -161,7 +161,11 @@ export const ComboOffersPage: React.FC<ComboOffersPageProps> = ({
                   <div>
                     <span className="text-xs text-slate-400 uppercase font-semibold block mb-0.5">Offer Price</span>
                     <div className="flex items-baseline gap-2">
-                      {offer.priceType === 'fixed_price' ? (
+                      {offer.comboPriceFormatted ? (
+                        <span className="text-3xl font-extrabold text-amber-400">
+                          {offer.comboPriceFormatted}
+                        </span>
+                      ) : offer.priceType === 'fixed_price' ? (
                         <span className="text-3xl font-extrabold text-amber-400">
                           ₹{offer.comboPrice.toLocaleString()}
                         </span>

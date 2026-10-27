@@ -10,6 +10,7 @@ export interface ComboOffer {
   shortDescription: string;
   fullDescription: string;
   comboPrice: number; // In INR or fixed total/discount calculation type
+  comboPriceFormatted?: string; // Custom display string for price range, e.g. "₹2,100 – ₹3,000"
   originalEstimatedValue?: number;
   savingsAmount?: number;
   savingsPercent?: number;
@@ -292,13 +293,14 @@ export const COMBO_OFFERS: ComboOffer[] = [
     name: 'Fashion Royale',
     category: 'package',
     categoryTitle: 'Combined Packages',
-    shortDescription: 'Register for Fashion Parade Get 3 Fashion Solo Entries completely Free!',
+    shortDescription: 'Register for Fashion Parade and get 3 Fashion Walk entries completely FREE!',
     fullDescription: 'Register for Silhouette Fashion Parade and automatically receive 3 FREE entries for Elaris Fashion Walk.',
-    comboPrice: 3000, // Standard team fee for Silhouette
+    comboPrice: 2100, // Dynamic range 2100 - 3000
+    comboPriceFormatted: '₹2,100 – ₹3,000',
     originalEstimatedValue: 3750,
     savingsAmount: 750,
     priceType: 'fixed_price',
-    buttonText: 'Unlock Fashion Royale Package',
+    buttonText: 'Register for Fashion Parade and unlock 3 solo fashion walk tickets',
     packageStructure: {
       requiresSpecificEvent: 'silhouette',
       bonusFreeEvents: {
@@ -309,7 +311,7 @@ export const COMBO_OFFERS: ComboOffer[] = [
     eligibilityConditions: [
       'Requires registration for Silhouette Fashion Parade.',
       'Includes 3 FREE Elaris Solo Fashion entries (₹750 value free).',
-      'Package total fee: ₹3,000.'
+      'Package total fee = No. of participants × ₹300.'
     ]
   },
   {
@@ -320,8 +322,8 @@ export const COMBO_OFFERS: ComboOffer[] = [
     shortDescription: '1 Major + 2 Solo Events.',
     fullDescription: 'Combine main stage team glory with individual star performances.',
     comboPrice: 2400,
-    originalEstimatedValue: 3000,
-    savingsAmount: 600,
+    originalEstimatedValue: 5100,
+    savingsAmount: 2700,
     priceType: 'fixed_price',
     buttonText: 'Choose Spotlight Squad (₹2,400)',
     eligibleCategoryType: 'mixed',
@@ -333,7 +335,7 @@ export const COMBO_OFFERS: ComboOffer[] = [
     eligibilityConditions: [
       'Requires exactly 1 Major event + 2 Solo events.',
       'Fixed team package price: ₹2,400.',
-      'Save ₹600 on combined entries.'
+      'Save ₹2,700 on combined entries.'
     ]
   },
   {
@@ -344,8 +346,8 @@ export const COMBO_OFFERS: ComboOffer[] = [
     shortDescription: '1 Major + 2 Minor Events.',
     fullDescription: 'Target the high-stakes stage events with 1 Major and 2 Minor competitions.',
     comboPrice: 2400,
-    originalEstimatedValue: 3300,
-    savingsAmount: 900,
+    originalEstimatedValue: 5300,
+    savingsAmount: 2900,
     priceType: 'fixed_price',
     buttonText: 'Choose Power Trio (₹2,400)',
     eligibleCategoryType: 'mixed',
@@ -357,7 +359,7 @@ export const COMBO_OFFERS: ComboOffer[] = [
     eligibilityConditions: [
       'Requires exactly 1 Major event + 2 Minor events.',
       'Fixed team package price: ₹2,400.',
-      'Savings up to ₹900.'
+      'Savings up to ₹2,900.'
     ]
   },
   {
@@ -368,8 +370,8 @@ export const COMBO_OFFERS: ComboOffer[] = [
     shortDescription: '1 Major + 2 Minor + 2 Solo Events.',
     fullDescription: 'The ultimate all-inclusive festival package for complete campus participation.',
     comboPrice: 3000,
-    originalEstimatedValue: 4200,
-    savingsAmount: 1200,
+    originalEstimatedValue: 5900,
+    savingsAmount: 2900,
     priceType: 'fixed_price',
     buttonText: 'Choose All-Access Package (₹3,000)',
     eligibleCategoryType: 'mixed',
@@ -381,7 +383,7 @@ export const COMBO_OFFERS: ComboOffer[] = [
     eligibilityConditions: [
       'Requires exactly 1 Major event + 2 Minor events + 2 Solo events.',
       'All-inclusive team package price: ₹3,000.',
-      'Massive savings up to ₹1,200.'
+      'Massive savings up to ₹2,900.'
     ]
   }
 ];

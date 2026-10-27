@@ -266,6 +266,16 @@ export const ComboRegistrationWizard: React.FC<ComboRegistrationWizardProps> = (
       const soloEvt1 = EVENTS_DATA.find(e => e.id === spotlightSolo1Id);
       const soloEvt2 = EVENTS_DATA.find(e => e.id === spotlightSolo2Id);
       currentList = [majorEvt, soloEvt1, soloEvt2].filter(Boolean) as EventItem[];
+    } else if (combo.id === 'double-impact-minor' || combo.id === 'campus-clash-major') {
+      const baseEvt = currentList[0] || (genericPickedEventIds.length > 0 ? EVENTS_DATA.find(e => genericPickedEventIds.includes(e.id)) : undefined) || (combo.eligibleEventIds?.[0] ? EVENTS_DATA.find(e => e.id === combo.eligibleEventIds![0]) : undefined) || EVENTS_DATA.find(e => e.id === 'adblitz');
+      if (baseEvt) {
+        currentList = [baseEvt, baseEvt];
+      }
+    } else if (combo.id === 'triple-takeover-minor' || combo.id === 'campus-domination-major') {
+      const baseEvt = currentList[0] || (genericPickedEventIds.length > 0 ? EVENTS_DATA.find(e => genericPickedEventIds.includes(e.id)) : undefined) || (combo.eligibleEventIds?.[0] ? EVENTS_DATA.find(e => e.id === combo.eligibleEventIds![0]) : undefined) || EVENTS_DATA.find(e => e.id === 'adblitz');
+      if (baseEvt) {
+        currentList = [baseEvt, baseEvt, baseEvt];
+      }
     } else if (currentList.length === 0 && genericPickedEventIds.length > 0) {
       currentList = genericPickedEventIds.map(id => EVENTS_DATA.find(e => e.id === id)).filter(Boolean) as EventItem[];
     }
@@ -309,12 +319,12 @@ export const ComboRegistrationWizard: React.FC<ComboRegistrationWizardProps> = (
 
   // Compute pricing accurately based on package rules
   const calculatePricing = () => {
-    // 1. Fashion Royale: Silhouette count * 300 + 3 * 250 (3 Elaris entries)
+    // 1. Fashion Royale: No. of participants for Fashion Parade (Silhouette) * 300 = total payable amount
     if (combo.id === 'fashion-royale') {
       const silCount = (fashionRoyaleSilhouetteCount !== '' ? Number(fashionRoyaleSilhouetteCount) : 7) || 7;
-      const originalTotal = (silCount * 300) + (3 * 250);
-      const finalFee = 3000;
-      const discountVal = Math.max(0, originalTotal - finalFee);
+      const finalFee = silCount * 300;
+      const originalTotal = finalFee + (3 * 250);
+      const discountVal = 750;
       return {
         originalTotal,
         finalFee,
@@ -760,11 +770,16 @@ export const ComboRegistrationWizard: React.FC<ComboRegistrationWizardProps> = (
           const rawCount = formData.totalParticipants;
           const count = (rawCount !== undefined && rawCount !== '') ? Number(rawCount) : (evt.minParticipants || 1);
 
+          const isMultiTeamCombo = combo.id === 'double-impact-minor' || combo.id === 'campus-clash-major' || combo.id === 'triple-takeover-minor' || combo.id === 'campus-domination-major';
+          const calculatedTeamName = isMultiTeamCombo
+            ? `${formData.captainName || fullName} (Team ${idx + 1} - ${evt.title})`
+            : (formData.captainName ? `${formData.captainName}'s ${evt.title} Entry` : evt.title);
+
           const payload = {
             selectedEvent: evt,
             collegeDetails: { collegeName, city, state, contactPerson: fullName, contactMobile: mobile, contactEmail: email, isCollegeDelegation: false },
             participants: [{ fullName: formData.captainName || fullName, gender: 'Male' as const, age: '20', mobile: formData.captainPhone || mobile, email, role: evt.type === 'Solo' ? 'Solo Participant' : 'Team Captain' }],
-            teamName: formData.captainName ? `${formData.captainName}'s ${evt.title} Entry` : evt.title,
+            teamName: calculatedTeamName,
             participantCount: count,
             totalFee: idx === 0 ? pricing.finalFee : 0,
             utrNumber,
@@ -1558,19 +1573,24 @@ export const ComboRegistrationWizard: React.FC<ComboRegistrationWizardProps> = (
           };
 
           const isTeam = evt.type === 'Team';
+          const isMultiTeamCombo = combo.id === 'double-impact-minor' || combo.id === 'campus-clash-major' || combo.id === 'triple-takeover-minor' || combo.id === 'campus-domination-major';
 
           return (
             <div key={key} className="bg-slate-900/90 p-6 rounded-2xl border border-slate-800 shadow-xl space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-slate-800">
                 <span className="text-xs font-bold uppercase tracking-wider text-amber-400 bg-amber-950 px-3 py-1 rounded-full border border-amber-500/30">
-                  {idx + 1}. {evt.title} ({evt.categoryDisplay} • {evt.type})
+                  {isMultiTeamCombo 
+                    ? `Team ${idx + 1}: ${evt.title} (${evt.categoryDisplay} • ${evt.type})` 
+                    : `${idx + 1}. ${evt.title} (${evt.categoryDisplay} • ${evt.type})`}
                 </span>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1">
-                    {evt.type === 'Solo' ? 'Participant Full Name *' : 'Captain Full Name *'}
+                    {isMultiTeamCombo 
+                      ? `Team ${idx + 1} Captain Full Name *` 
+                      : (evt.type === 'Solo' ? 'Participant Full Name *' : 'Captain Full Name *')}
                   </label>
                   <input
                     type="text"
@@ -1582,7 +1602,7 @@ export const ComboRegistrationWizard: React.FC<ComboRegistrationWizardProps> = (
                         [key]: { ...currentData, captainName: val }
                       }));
                     }}
-                    placeholder="Full Legal Name"
+                    placeholder={`Team ${idx + 1} Captain Name`}
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:border-amber-500 focus:outline-none"
                   />
                   {errors[`capName_${evt.id}_${idx}`] && (
@@ -1592,7 +1612,9 @@ export const ComboRegistrationWizard: React.FC<ComboRegistrationWizardProps> = (
 
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1">
-                    Phone Number *
+                    {isMultiTeamCombo 
+                      ? `Team ${idx + 1} Captain Phone Number *` 
+                      : 'Phone Number *'}
                   </label>
                   <input
                     type="tel"

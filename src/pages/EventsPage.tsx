@@ -17,7 +17,10 @@ export function isEventInTier(event: EventItem, tier: EventTier): boolean {
   if (tier === 'ALL') return true;
 
   if (tier === 'SOLO') {
-    // Solo events + Stellar Bid (since 1 person solo entry is allowed)
+    // Solo events + Stellar Bid (excluding digital media events mememania & cineverse)
+    if (event.id === 'mememania' || event.id === 'cineverse' || event.category === 'media') {
+      return false;
+    }
     return event.type === 'Solo' || event.id === 'stellar-bid';
   }
 
