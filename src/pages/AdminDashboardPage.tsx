@@ -320,13 +320,25 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     const res = await supabaseRegistrationService.updatePaymentVerification(regId, status);
     showToast(res.success ? res.message : `Marked as ${status}`);
 
-    // Update local storage instantly
+    const targetReg = allRegistrations.find((r) => r.id === regId || r.registrationCode === regId);
+    const comboGroupId = targetReg?.comboGroupId;
+    const comboId = targetReg?.comboId;
+    const utr = targetReg?.utrNumber;
+
+    const isMatch = (r: RegistrationSubmission) => {
+      if (r.id === regId || r.registrationCode === regId) return true;
+      if (comboGroupId && r.comboGroupId === comboGroupId) return true;
+      if (comboId && utr && r.comboId === comboId && r.utrNumber === utr) return true;
+      return false;
+    };
+
+    // Update local storage instantly across combo batch
     try {
       const saved = localStorage.getItem('celestia26_registrations');
       if (saved) {
         const list: RegistrationSubmission[] = JSON.parse(saved);
         const updated = list.map((r) =>
-          (r.id === regId || r.registrationCode === regId)
+          isMatch(r)
             ? {
                 ...r,
                 paymentStatus: status,
@@ -347,7 +359,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     loadCloudRegistrations();
     setCloudRegistrations((prev) =>
       prev.map((r) =>
-        (r.id === regId || r.registrationCode === regId)
+        isMatch(r)
           ? {
               ...r,
               paymentStatus: status,

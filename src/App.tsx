@@ -18,6 +18,9 @@ import { Admin1RegistrationsPage } from './pages/Admin1RegistrationsPage';
 import { InchargesPortalPage } from './pages/InchargesPortalPage';
 import { AboutPage } from './pages/AboutPage';
 import { ContactPage } from './pages/ContactPage';
+import { ComboOffersPage } from './pages/ComboOffersPage';
+import { ComboRegistrationWizard } from './components/registration/ComboRegistrationWizard';
+import { ComboOffer } from './data/comboOffersData';
 import { EventItem, CategoryInfo } from './data/festivalData';
 
 function AppContent() {
@@ -34,6 +37,7 @@ function AppContent() {
     if (path.includes('admin') || hash.includes('admin')) {
       return 'admin';
     }
+    if (path === '/combos' || hash === '#/combos' || hash === '#combos') return 'combos';
     if (path === '/schedule' || hash === '#/schedule' || hash === '#schedule') return 'schedule';
     if (path === '/accommodation' || hash === '#/accommodation' || hash === '#accommodation' || path === '/accomodation' || hash === '#/accomodation' || hash === '#accomodation') return 'accommodation';
     if (path === '/results' || hash === '#/results' || hash === '#results') return 'results';
@@ -41,9 +45,10 @@ function AppContent() {
     if (path === '/events' || hash === '#/events' || hash === '#events') return 'events';
     return 'home';
   });
-  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<CategoryInfo['id'] | 'all'>('all');
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('all');
   const [activeModalEvent, setActiveModalEvent] = useState<EventItem | null>(null);
   const [isRegisteringView, setIsRegisteringView] = useState(false);
+  const [activeComboWizard, setActiveComboWizard] = useState<{ combo: ComboOffer; selectedEvents: EventItem[] } | null>(null);
 
   const { currentUser, startNewRegistration, goToStep, logoutUser } = useRegistration();
 
@@ -73,6 +78,7 @@ function AppContent() {
 
   const handleNavigate = (page: NavigationPage) => {
     setIsRegisteringView(false);
+    setActiveComboWizard(null);
     setCurrentPage(page);
     // Update hash for accessible deep-linking without disrupting SPA
     if (page === 'admin') {
@@ -91,6 +97,7 @@ function AppContent() {
 
   const handleSelectCategoryFromHome = (categoryId: CategoryInfo['id']) => {
     setIsRegisteringView(false);
+    setActiveComboWizard(null);
     setSelectedCategoryFilter(categoryId);
     setCurrentPage('events');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -98,6 +105,7 @@ function AppContent() {
 
   const handleOpenRegister = (event?: EventItem) => {
     setActiveModalEvent(null);
+    setActiveComboWizard(null);
     startNewRegistration(event?.id);
     setIsRegisteringView(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -105,6 +113,7 @@ function AppContent() {
 
   const handleOpenDashboard = () => {
     setActiveModalEvent(null);
+    setActiveComboWizard(null);
     goToStep('dashboard');
     setIsRegisteringView(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -128,6 +137,18 @@ function AppContent() {
       {/* Main Page Content or Registration Flow */}
       {isRegisteringView ? (
         <RegistrationWizard onExit={() => setIsRegisteringView(false)} />
+      ) : activeComboWizard ? (
+        <main className="relative z-10 min-h-[calc(100vh-250px)]">
+          <ComboRegistrationWizard
+            combo={activeComboWizard.combo}
+            selectedEvents={activeComboWizard.selectedEvents}
+            onCancel={() => setActiveComboWizard(null)}
+            onComplete={() => {
+              setActiveComboWizard(null);
+              handleNavigate('home');
+            }}
+          />
+        </main>
       ) : (
         <main className="relative z-10 min-h-[calc(100vh-250px)]">
           {currentPage === 'home' && (
@@ -136,6 +157,16 @@ function AppContent() {
               onSelectCategory={handleSelectCategoryFromHome}
               onViewEventDetails={(ev) => setActiveModalEvent(ev)}
               onOpenRegister={(ev) => handleOpenRegister(ev)}
+            />
+          )}
+
+          {currentPage === 'combos' && (
+            <ComboOffersPage
+              onNavigateHome={() => handleNavigate('home')}
+              onSelectComboForWizard={(combo, selectedEvents) => {
+                setActiveComboWizard({ combo, selectedEvents });
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
             />
           )}
 
@@ -211,8 +242,8 @@ function AppContent() {
         onRegister={(ev) => handleOpenRegister(ev)}
       />
 
-      {/* Footer (shown on main website views, hidden when in admin, admin1, incharges or registering) */}
-      {!isRegisteringView && currentPage !== 'admin' && currentPage !== 'admin1' && currentPage !== 'incharges' && (
+      {/* Footer (shown on main website views, hidden when in admin, admin1, incharges, combo wizard or registering) */}
+      {!isRegisteringView && !activeComboWizard && currentPage !== 'admin' && currentPage !== 'admin1' && currentPage !== 'incharges' && (
         <Footer
           onNavigate={handleNavigate}
           onOpenRegister={() => handleOpenRegister()}

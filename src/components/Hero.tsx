@@ -5,9 +5,10 @@ import { FESTIVAL_METADATA } from '../data/festivalData';
 interface HeroProps {
   onExploreEvents: () => void;
   onOpenRegister: () => void;
+  onOpenCombos?: () => void;
 }
 
-export const Hero: React.FC<HeroProps> = ({ onExploreEvents, onOpenRegister }) => {
+export const Hero: React.FC<HeroProps> = ({ onExploreEvents, onOpenRegister, onOpenCombos }) => {
   return (
     <section className="relative min-h-[70vh] sm:min-h-[85vh] flex flex-col justify-center items-center text-center px-4 sm:px-6 lg:px-8 pt-20 sm:pt-28 pb-8 sm:pb-16 overflow-hidden">
       <div className="relative z-10 max-w-4xl mx-auto flex flex-col items-center w-full">
@@ -60,22 +61,36 @@ export const Hero: React.FC<HeroProps> = ({ onExploreEvents, onOpenRegister }) =
         </div>
 
         {/* Interactive CTA Buttons */}
-        <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
-          <button
-            onClick={onOpenRegister}
-            className="w-full sm:w-auto px-8 py-3.5 text-sm font-bold tracking-wider uppercase text-[#070B1B] bg-gradient-to-r from-[#F5E7C4] via-[#E6C57D] to-[#D4AF37] hover:brightness-110 active:scale-95 transition-all rounded-lg shadow-lg shadow-[#D4AF37]/25 flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <span>REGISTER NOW</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
+        <div className="flex flex-col items-center gap-3 w-full max-w-md">
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full">
+            <button
+              onClick={onOpenRegister}
+              className="w-full sm:w-1/2 px-6 py-3.5 text-sm font-bold tracking-wider uppercase text-[#070B1B] bg-gradient-to-r from-[#F5E7C4] via-[#E6C57D] to-[#D4AF37] hover:brightness-110 active:scale-95 transition-all rounded-lg shadow-lg shadow-[#D4AF37]/25 flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <span>REGISTER NOW</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
 
-          <button
-            onClick={onExploreEvents}
-            className="w-full sm:w-auto px-8 py-3.5 text-sm font-semibold tracking-wider uppercase text-[#F5E7C4] hover:text-white bg-[#0E1538]/80 hover:bg-[#162152] border border-[#D4AF37]/40 hover:border-[#D4AF37] transition-all rounded-lg flex items-center justify-center gap-2 cursor-pointer backdrop-blur-md"
-          >
-            <Compass className="w-4 h-4 text-[#E6C57D]" />
-            <span>EXPLORE EVENTS</span>
-          </button>
+            <button
+              onClick={onExploreEvents}
+              className="w-full sm:w-1/2 px-6 py-3.5 text-sm font-semibold tracking-wider uppercase text-[#F5E7C4] hover:text-white bg-[#0E1538]/80 hover:bg-[#162152] border border-[#D4AF37]/40 hover:border-[#D4AF37] transition-all rounded-lg flex items-center justify-center gap-2 cursor-pointer backdrop-blur-md"
+            >
+              <Compass className="w-4 h-4 text-[#E6C57D]" />
+              <span>EXPLORE EVENTS</span>
+            </button>
+          </div>
+
+          {/* Prominent COMBO OFFERS Button immediately below Register option */}
+          {onOpenCombos && (
+            <button
+              onClick={onOpenCombos}
+              className="w-full px-6 py-3.5 text-sm font-extrabold tracking-wider uppercase text-amber-300 bg-gradient-to-r from-amber-950/90 via-slate-900 to-amber-950/90 hover:from-amber-900 hover:to-slate-800 border-2 border-amber-500/80 hover:border-amber-400 transition-all rounded-lg shadow-xl shadow-amber-500/20 flex items-center justify-center gap-2 cursor-pointer group"
+            >
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+              <span>COMBO OFFERS</span>
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            </button>
+          )}
         </div>
       </div>
     </section>

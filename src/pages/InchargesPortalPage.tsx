@@ -27,7 +27,8 @@ import {
   Building,
   Award,
   FileText,
-  ExternalLink
+  ExternalLink,
+  CreditCard
 } from 'lucide-react';
 import { EVENTS_DATA, EventItem } from '../data/festivalData';
 import { RegistrationSubmission, ParticipantMember } from '../types/registration';
@@ -56,6 +57,7 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEventId, setSelectedEventId] = useState<string>('ALL');
   const [queueFilter, setQueueFilter] = useState<'all' | 'checked_in' | 'awaiting'>('all');
+  const [regTypeFilter, setRegTypeFilter] = useState<'all' | 'individual' | 'combo'>('all');
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
   const [showRulesDrawer, setShowRulesDrawer] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
@@ -63,6 +65,12 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
 
   // ID Card Viewer Modal State
   const [activeIdModal, setActiveIdModal] = useState<IdProofModalData | null>(null);
+
+  // Payment Proof Modal State
+  const [activePaymentModal, setActivePaymentModal] = useState<{
+    reg: RegistrationSubmission;
+    paymentUrl: string | null;
+  } | null>(null);
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     return (
@@ -219,7 +227,7 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
       const key = matched ? matched.id : evId;
       if (counts[key] !== undefined) {
         counts[key] += 1;
-        participantCounts[key] += reg.participants?.length || 1;
+        participantCounts[key] += reg.participantCount || reg.participants?.length || 1;
       }
     });
 
@@ -232,7 +240,7 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
     return EVENTS_DATA.find((e) => e.id === selectedEventId) || null;
   }, [selectedEventId]);
 
-  // Registrations matching the selected event and search query
+  // Registrations matching the selected event, regType, and search query
   const eventFilteredRegistrations = useMemo(() => {
     return registrations.filter((reg) => {
       const ev = EVENTS_DATA.find((e) => e.id === reg.eventId || e.code.toUpperCase() === reg.eventCode?.toUpperCase());
@@ -241,6 +249,11 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
       if (selectedEventId !== 'ALL') {
         if (!ev || ev.id !== selectedEventId) return false;
       }
+
+      // Filter by Registration Type (All vs Individual vs Combo)
+      const isCombo = Boolean(reg.comboId || reg.comboGroupId || reg.comboName);
+      if (regTypeFilter === 'combo' && !isCombo) return false;
+      if (regTypeFilter === 'individual' && isCombo) return false;
 
       // Filter by Search Query
       if (searchQuery.trim()) {
@@ -251,6 +264,7 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
         const cityMatch = (reg.college?.city || '').toLowerCase().includes(q);
         const hostRegMatch = (reg.college?.hostRegisterNumber || '').toLowerCase().includes(q);
         const eventTitleMatch = (ev?.title || reg.eventTitle || '').toLowerCase().includes(q);
+        const comboMatch = (reg.comboName || '').toLowerCase().includes(q);
         const participantMatch = reg.participants?.some(
           (p) =>
             p.fullName?.toLowerCase().includes(q) ||
@@ -258,12 +272,12 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
             p.email?.toLowerCase().includes(q)
         );
 
-        return Boolean(code.includes(q) || teamMatch || collegeMatch || cityMatch || hostRegMatch || eventTitleMatch || participantMatch);
+        return Boolean(code.includes(q) || teamMatch || collegeMatch || cityMatch || hostRegMatch || eventTitleMatch || comboMatch || participantMatch);
       }
 
       return true;
     });
-  }, [registrations, selectedEventId, searchQuery]);
+  }, [registrations, selectedEventId, regTypeFilter, searchQuery]);
 
   // Stage Queue counts for segmented filter tabs
   const queueCounts = useMemo(() => {
@@ -293,6 +307,16 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
       teamName: reg.teamName || 'Solo Performer',
       collegeName: reg.college?.collegeName || 'College Student',
       idUrl: resolvedUrl,
+    });
+  };
+
+  // Helper to open Payment Proof Slip Modal
+  const openPaymentModal = (reg: RegistrationSubmission) => {
+    const rawPath = reg.paymentScreenshotData || reg.paymentScreenshotPath;
+    const resolvedUrl = supabaseRegistrationService.resolveMediaUrl(rawPath, 'payment-proofs');
+    setActivePaymentModal({
+      reg,
+      paymentUrl: resolvedUrl,
     });
   };
 
@@ -644,6 +668,46 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
           </div>
         )}
 
+        {/* Registration Format Filter Tabs (All / Individual / Combo Packages) */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-white/10">
+          <div className="flex items-center gap-1.5 bg-[#050816] p-1 rounded-xl border border-[#D4AF37]/30">
+            <span className="text-[10px] text-slate-400 font-mono px-2 uppercase font-bold tracking-wider">Format:</span>
+            <button
+              type="button"
+              onClick={() => setRegTypeFilter('all')}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                regTypeFilter === 'all'
+                  ? 'bg-white/20 text-white font-bold shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              All Formats ({registrations.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setRegTypeFilter('individual')}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                regTypeFilter === 'individual'
+                  ? 'bg-blue-500/25 text-blue-300 border border-blue-500/40 font-bold'
+                  : 'text-slate-400 hover:text-blue-300'
+              }`}
+            >
+              👤 Individual
+            </button>
+            <button
+              type="button"
+              onClick={() => setRegTypeFilter('combo')}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                regTypeFilter === 'combo'
+                  ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40 font-bold'
+                  : 'text-slate-400 hover:text-amber-300'
+              }`}
+            >
+              ⚡ Combo Packages
+            </button>
+          </div>
+        </div>
+
         {/* Feature 3: Sleek Stage Queue Segmented Controls (All / Checked-In / Awaiting Arrival) */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1 border-t border-white/10">
           <div className="flex items-center gap-1.5 bg-[#050816] p-1 rounded-xl border border-white/10">
@@ -822,6 +886,13 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
                       <div className="text-[10px] text-slate-400 font-mono">
                         {reg.eventTitle} ({reg.eventCode})
                       </div>
+                      {(reg.comboName || reg.comboId || reg.comboGroupId) && (
+                        <div className="mt-1">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-extrabold bg-amber-500/25 text-amber-300 border border-amber-400/60 shadow-sm">
+                            ⚡ COMBO CODE: {reg.comboId ? reg.comboId.toUpperCase() : 'COMBO'} ({reg.comboName || 'Combo Offer'})
+                          </span>
+                        </div>
+                      )}
                     </td>
 
                     {/* College & Location */}
@@ -832,7 +903,7 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
                       </div>
                     </td>
 
-                    {/* Captain Contact with 1-Tap WhatsApp & Call */}
+                    {/* Captain Contact with 1-Tap WhatsApp, Call & Payment Proof */}
                     <td className="py-3 px-3 whitespace-nowrap">
                       <div className="text-white font-medium">{leader?.fullName || 'N/A'}</div>
                       {leader?.mobile ? (
@@ -859,10 +930,24 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
                       ) : (
                         <span className="text-slate-500 text-[10px]">No phone</span>
                       )}
+
+                      {/* Payment Slip Button */}
+                      <button
+                        type="button"
+                        onClick={() => openPaymentModal(reg)}
+                        className="mt-1.5 px-2 py-0.5 rounded bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/35 text-[10px] font-mono text-emerald-300 flex items-center gap-1 cursor-pointer transition-colors"
+                        title="View Payment Proof Slip"
+                      >
+                        <CreditCard className="w-3 h-3 text-emerald-400" />
+                        <span>Payment Slip</span>
+                      </button>
                     </td>
 
                     {/* Feature 1: Members List with View ID Button */}
                     <td className="py-3 px-3">
+                      <div className="text-[10px] text-slate-400 font-mono mb-1">
+                        Headcount: <strong className="text-white">{reg.participantCount || members.length || 1}</strong>
+                      </div>
                       <div className="text-[11px] text-slate-300 space-y-1">
                         {members.map((m, i) => (
                           <div key={i} className="flex items-center justify-between gap-2 max-w-xs">
@@ -937,6 +1022,11 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
                       <span className="px-2 py-0.5 rounded font-mono text-xs font-semibold bg-white/10 text-slate-300">
                         {ev?.title || reg.eventTitle} ({ev?.code || reg.eventCode})
                       </span>
+                      {(reg.comboName || reg.comboId || reg.comboGroupId) && (
+                        <span className="px-2.5 py-0.5 rounded text-[11px] font-mono font-extrabold bg-amber-500/25 text-amber-300 border border-amber-400/60 flex items-center gap-1 shadow-sm">
+                          <span>⚡ COMBO CODE: {reg.comboId ? reg.comboId.toUpperCase() : 'COMBO'} ({reg.comboName || 'Combo Offer'})</span>
+                        </span>
+                      )}
                       <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
                         <CheckCircle className="w-3 h-3 text-emerald-400" />
                         <span>Approved</span>
@@ -977,8 +1067,19 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
                     </div>
                   </div>
 
-                  {/* Right Column: Captain Calling & Stage Check-In */}
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
+                  {/* Right Column: Captain Calling, Payment Slip & Stage Check-In */}
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0 flex-wrap">
+                    {/* View Payment Proof Slip */}
+                    <button
+                      type="button"
+                      onClick={() => openPaymentModal(reg)}
+                      className="px-3 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                      title="Inspect Payment Proof Slip"
+                    >
+                      <CreditCard className="w-3.5 h-3.5 text-emerald-300" />
+                      <span>Payment Slip</span>
+                    </button>
+
                     {/* 1-Tap Captain WhatsApp Summoning */}
                     {leader?.mobile && (
                       <a
@@ -1025,7 +1126,7 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
                 <div className="mt-4 pt-4 border-t border-white/10">
                   <div className="flex items-center justify-between text-xs text-slate-400 font-mono mb-2.5">
                     <span className="uppercase tracking-wider font-semibold text-slate-300">
-                      Team Roster ({members.length} Student{members.length !== 1 ? 's' : ''})
+                      Team Roster ({reg.participantCount || members.length || 1} Student{(reg.participantCount || members.length || 1) !== 1 ? 's' : ''})
                     </span>
                     <span className="text-[11px] text-slate-400">
                       Primary Contact: {leader?.fullName || 'N/A'} {leader?.mobile ? `(${leader.mobile})` : ''}
@@ -1153,6 +1254,115 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveIdModal(null)}
+                className="px-4 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white font-medium cursor-pointer transition-colors"
+              >
+                Close View
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Feature: Verified Payment Proof Slip Modal */}
+      {activePaymentModal && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 animate-fade-in"
+          onClick={() => setActivePaymentModal(null)}
+        >
+          <div 
+            className="w-full max-w-lg rounded-2xl bg-[#090D22] border-2 border-emerald-500/60 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="p-4 bg-[#0E1538] border-b border-white/10 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                  <CreditCard className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-cinzel text-sm sm:text-base font-bold text-white leading-tight">
+                    Payment Proof Receipt
+                  </h3>
+                  <span className="text-[11px] text-emerald-300 font-mono block">
+                    Verified Remittance · {activePaymentModal.reg.eventTitle} ({activePaymentModal.reg.eventCode})
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setActivePaymentModal(null)}
+                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body: Payment Details & Slip Image */}
+            <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-4 bg-black/40">
+              {/* Payment Summary Info Box */}
+              <div className="p-3.5 rounded-xl bg-[#040817] border border-white/10 grid grid-cols-2 gap-3 text-xs font-mono">
+                <div>
+                  <span className="text-slate-400 text-[10px] block uppercase">Reg Code</span>
+                  <strong className="text-white text-xs">{activePaymentModal.reg.registrationCode || activePaymentModal.reg.id}</strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block uppercase">UTR / Ref Number</span>
+                  <strong className="text-amber-300 text-xs break-all">{activePaymentModal.reg.utrNumber || 'N/A'}</strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block uppercase">Total Remittance</span>
+                  <strong className="text-emerald-300 text-sm">₹{activePaymentModal.reg.totalAmount?.toLocaleString() || '0'}</strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block uppercase">Status</span>
+                  <strong className="text-emerald-400 text-xs">✓ Verified by Admin</strong>
+                </div>
+                {activePaymentModal.reg.comboName && (
+                  <div className="col-span-2 pt-1 border-t border-white/10">
+                    <span className="text-[10px] text-amber-400 uppercase font-bold block">Package Offer</span>
+                    <span className="text-white text-xs">⚡ {activePaymentModal.reg.comboName} (Shared remittance proof for all package events)</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Payment Slip Screenshot */}
+              <div className="text-center space-y-2">
+                <span className="text-[11px] font-mono text-slate-400 block uppercase tracking-wider">UPI / Bank Remittance Screenshot:</span>
+                {activePaymentModal.paymentUrl ? (
+                  <div className="rounded-xl overflow-hidden border border-white/15 bg-black/60 p-2 flex flex-col items-center justify-center">
+                    <img 
+                      src={activePaymentModal.paymentUrl} 
+                      alt={`Payment Proof for ${activePaymentModal.reg.registrationCode}`}
+                      className="max-h-[45vh] w-auto max-w-full object-contain rounded"
+                    />
+                    <a
+                      href={activePaymentModal.paymentUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs text-[#D4AF37] hover:underline font-mono mt-2"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>Open High-Res Slip in New Tab</span>
+                    </a>
+                  </div>
+                ) : (
+                  <div className="p-6 rounded-xl bg-black/40 border border-white/10 text-center text-xs text-slate-400 space-y-1">
+                    <AlertCircle className="w-8 h-8 text-amber-400 mx-auto mb-1" />
+                    <p className="text-white font-semibold">Offline Cash / Direct Counter Clearance</p>
+                    <p className="text-[11px]">This entry was confirmed with UTR {activePaymentModal.reg.utrNumber} at the central registration desk.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-3 bg-[#060A1C] border-t border-white/10 flex items-center justify-between text-xs text-slate-400 font-mono">
+              <span>Captain: {activePaymentModal.reg.participants?.[0]?.fullName || 'N/A'}</span>
+              <button
+                type="button"
+                onClick={() => setActivePaymentModal(null)}
                 className="px-4 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white font-medium cursor-pointer transition-colors"
               >
                 Close View

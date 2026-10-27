@@ -80,6 +80,7 @@ export interface RegistrationSubmission {
   
   // Participants details
   teamName?: string;
+  participantCount?: number;
   participants: ParticipantMember[];
   
   // Promo code & discount details
@@ -98,6 +99,15 @@ export interface RegistrationSubmission {
   paymentScreenshotPath?: string;
   paymentScreenshotData?: string;
   paymentConfirmed: boolean;
+  
+  // Combo offer metadata (if registered as part of a combo)
+  comboGroupId?: string;
+  comboId?: string;
+  comboName?: string;
+  comboType?: string;
+  comboDiscountAmount?: number;
+  comboEventIndex?: number;
+  comboTotalEvents?: number;
   
   // Statuses
   paymentStatus: PaymentStatus;

@@ -52,6 +52,7 @@ export const HomePage: React.FC<HomePageProps> = ({
       <Hero 
         onExploreEvents={() => onNavigate('events')} 
         onOpenRegister={() => onOpenRegister()} 
+        onOpenCombos={() => onNavigate('combos')}
       />
 
       {/* 2. QUICK STATS */}

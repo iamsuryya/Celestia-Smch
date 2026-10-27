@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Menu, X, Sparkles, UserCheck, LogOut } from 'lucide-react';
 
-export type NavigationPage = 'home' | 'events' | 'guests' | 'schedule' | 'accommodation' | 'results' | 'about' | 'contact' | 'admin' | 'admin1' | 'incharges';
+export type NavigationPage = 'home' | 'events' | 'combos' | 'guests' | 'schedule' | 'accommodation' | 'results' | 'about' | 'contact' | 'admin' | 'admin1' | 'incharges';
 
 interface NavbarProps {
   currentPage: NavigationPage;
@@ -34,6 +34,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const navItems: { label: string; page: NavigationPage }[] = [
     { label: 'Home', page: 'home' },
     { label: 'Events', page: 'events' },
+    { label: 'Combos', page: 'combos' },
     { label: 'Event Guests', page: 'guests' },
     { label: 'Schedule', page: 'schedule' },
     { label: 'Accommodation', page: 'accommodation' },

@@ -205,6 +205,7 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
   // Search & Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'VERIFIED' | 'REJECTED' | 'NOT_COMPLETE'>('ALL');
+  const [regTypeFilter, setRegTypeFilter] = useState<'ALL' | 'INDIVIDUAL' | 'COMBO'>('ALL');
   const [institutionFilter, setInstitutionFilter] = useState<'ALL' | 'DELEGATION' | 'SMCH_HOST' | 'OTHER_COLLEGE'>('ALL');
   const [eventFilter, setEventFilter] = useState<string>('ALL');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'amount_desc' | 'amount_asc' | 'event' | 'college'>('newest');
@@ -612,6 +613,11 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
         return false;
       }
 
+      // Registration Format Filter (ALL / INDIVIDUAL / COMBO)
+      const isCombo = Boolean(r.comboId || r.comboGroupId || r.comboName);
+      if (regTypeFilter === 'INDIVIDUAL' && isCombo) return false;
+      if (regTypeFilter === 'COMBO' && !isCombo) return false;
+
       return true;
     });
 
@@ -637,7 +643,7 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
       }
       return 0;
     });
-  }, [allRegistrations, searchTerm, statusFilter, institutionFilter, eventFilter, sortBy]);
+  }, [allRegistrations, searchTerm, statusFilter, regTypeFilter, institutionFilter, eventFilter, sortBy]);
 
   // Statistics
   const stats = useMemo(() => {
@@ -651,6 +657,8 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
     let otherColleges = 0;
     let totalParticipants = 0;
     let withReceipt = 0;
+    let comboEntries = 0;
+    let individualEntries = 0;
 
     allRegistrations.forEach((r) => {
       const status = getDeskStatus(r);
@@ -680,7 +688,13 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
         withReceipt++;
       }
 
-      totalParticipants += r.participants?.length || 1;
+      if (r.comboId || r.comboGroupId || r.comboName) {
+        comboEntries++;
+      } else {
+        individualEntries++;
+      }
+
+      totalParticipants += r.participantCount || r.participants?.length || 1;
     });
 
     return {
@@ -695,6 +709,8 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
       otherColleges,
       totalParticipants,
       withReceipt,
+      comboEntries,
+      individualEntries,
     };
   }, [allRegistrations]);
 
@@ -703,13 +719,25 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
     const res = await supabaseRegistrationService.updateStatus(regId, 'verify');
     showToast(`Registration ${regId} VERIFIED successfully`);
 
-    // Update local storage instantly for immediate user page reflection
+    const targetReg = allRegistrations.find((r) => r.id === regId || r.registrationCode === regId);
+    const comboGroupId = targetReg?.comboGroupId;
+    const comboId = targetReg?.comboId;
+    const utr = targetReg?.utrNumber;
+
+    const isMatch = (r: RegistrationSubmission) => {
+      if (r.id === regId || r.registrationCode === regId) return true;
+      if (comboGroupId && r.comboGroupId === comboGroupId) return true;
+      if (comboId && utr && r.comboId === comboId && r.utrNumber === utr) return true;
+      return false;
+    };
+
+    // Update local storage instantly for immediate user page reflection across combo batch
     try {
       const saved = localStorage.getItem('celestia26_registrations');
       if (saved) {
         const list: RegistrationSubmission[] = JSON.parse(saved);
         const updated = list.map((r) =>
-          (r.id === regId || r.registrationCode === regId)
+          isMatch(r)
             ? { ...r, paymentStatus: 'Verified' as const, registrationStatus: 'Confirmed', paymentConfirmed: true }
             : r
         );
@@ -725,12 +753,12 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
     loadData();
     setCloudRegistrations((prev) =>
       prev.map((r) =>
-        (r.id === regId || r.registrationCode === regId)
+        isMatch(r)
           ? { ...r, paymentStatus: 'Verified', registrationStatus: 'Confirmed', paymentConfirmed: true }
           : r
       )
     );
-    if (inspectRegistration && (inspectRegistration.id === regId || inspectRegistration.registrationCode === regId)) {
+    if (inspectRegistration && isMatch(inspectRegistration)) {
       setInspectRegistration((prev) => prev ? { ...prev, paymentStatus: 'Verified', registrationStatus: 'Confirmed', paymentConfirmed: true } : null);
     }
   };
@@ -1835,6 +1863,33 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
           <span>🏥 SMCH Host Students</span>
           <span className="px-1.5 py-0.2 rounded-full bg-teal-950/60 text-teal-300 text-[10px] font-mono font-bold">{stats.smchHosts}</span>
         </button>
+
+        {/* Quick Format Filter Pills */}
+        <button
+          type="button"
+          onClick={() => setRegTypeFilter('INDIVIDUAL')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+            regTypeFilter === 'INDIVIDUAL'
+              ? 'bg-blue-500/25 text-blue-300 border border-blue-500/40 font-bold shadow-sm'
+              : 'bg-[#090E26] text-slate-300 hover:text-blue-300 border border-white/10'
+          }`}
+        >
+          <span>👤 Individual Only</span>
+          <span className="px-1.5 py-0.2 rounded-full bg-blue-950/60 text-blue-300 text-[10px] font-mono font-bold">{stats.individualEntries}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setRegTypeFilter('COMBO')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+            regTypeFilter === 'COMBO'
+              ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40 font-bold shadow-sm'
+              : 'bg-[#090E26] text-slate-300 hover:text-amber-300 border border-white/10'
+          }`}
+        >
+          <span>⚡ Combo Packages</span>
+          <span className="px-1.5 py-0.2 rounded-full bg-amber-950/60 text-amber-300 text-[10px] font-mono font-bold">{stats.comboEntries}</span>
+        </button>
       </div>
 
       {/* Operations Toolbar */}
@@ -1846,7 +1901,7 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by Reg ID, Code, Student Name, College, Mobile, UTR, Batch..."
+            placeholder="Search by Reg ID, Code, Student Name, College, Mobile, UTR, Batch, Combo..."
             className="w-full pl-9 pr-4 py-2 rounded-xl bg-black/40 border border-white/15 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-[#D4AF37]"
           />
           {searchTerm && (
@@ -1862,6 +1917,17 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
 
         {/* Filters and Actions */}
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Format (Individual vs Combo) Filter */}
+          <select
+            value={regTypeFilter}
+            onChange={(e) => setRegTypeFilter(e.target.value as any)}
+            className="px-3 py-2 rounded-xl bg-black/40 border border-white/15 text-xs text-slate-200 focus:outline-none focus:border-[#D4AF37] cursor-pointer"
+          >
+            <option value="ALL">All Formats ({allRegistrations.length})</option>
+            <option value="INDIVIDUAL">👤 Individual ({stats.individualEntries})</option>
+            <option value="COMBO">⚡ Combo Packages ({stats.comboEntries})</option>
+          </select>
+
           {/* Status Filter */}
           <select
             value={statusFilter}
@@ -2196,6 +2262,13 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                         <div className="font-bold text-white text-xs">{reg.id}</div>
                         <div className="text-[11px] text-[#E6C57D] font-semibold">{reg.eventCode} · {reg.eventTitle}</div>
                         <div className="text-[10px] text-slate-400">{reg.eventType} · {reg.createdAt}</div>
+                        {(reg.comboName || reg.comboId || reg.comboGroupId) && (
+                          <div className="mt-1">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-extrabold bg-amber-500/25 text-amber-300 border border-amber-400/60 shadow-sm">
+                              ⚡ COMBO CODE: {reg.comboId ? reg.comboId.toUpperCase() : 'COMBO'} ({reg.comboName || 'Combo Offer'})
+                            </span>
+                          </div>
+                        )}
                       </td>
 
                       {/* 2. Primary Captain */}
@@ -2244,7 +2317,7 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                       {/* 4. Roster & ID Proofs */}
                       <td className="py-3 px-3">
                         <div className="font-mono text-white text-xs">
-                          <strong className="text-[#E6C57D]">{reg.participants.length}</strong> member{reg.participants.length !== 1 ? 's' : ''}
+                          <strong className="text-[#E6C57D]">{reg.participantCount || reg.participants.length || 1}</strong> participant{(reg.participantCount || reg.participants.length || 1) !== 1 ? 's' : ''}
                         </div>
                         {reg.teamName && (
                           <div className="text-[10px] text-slate-300 truncate max-w-[130px]" title={reg.teamName}>
@@ -2917,6 +2990,13 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                 <h3 className="font-cinzel text-xl sm:text-2xl font-bold text-white tracking-wide">
                   {inspectRegistration.id} · {inspectRegistration.eventCode} ({inspectRegistration.eventTitle})
                 </h3>
+                {(inspectRegistration.comboName || inspectRegistration.comboId || inspectRegistration.comboGroupId) && (
+                  <div className="mt-1.5">
+                    <span className="inline-flex items-center px-2.5 py-1 rounded text-xs font-mono font-extrabold bg-amber-500/25 text-amber-300 border border-amber-400/60 shadow-md">
+                      ⚡ COMBO CODE: {inspectRegistration.comboId ? inspectRegistration.comboId.toUpperCase() : 'COMBO'} ({inspectRegistration.comboName || 'Combo Offer'})
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center gap-2">
@@ -4242,7 +4322,14 @@ CREATE POLICY "Allow public insert to payment_submissions" ON public.payment_sub
                               return (
                                 <tr key={r.id} className="hover:bg-white/5 transition-colors">
                                   <td className="py-2 px-3 font-bold text-slate-400">#{rIdx + 1}</td>
-                                  <td className="py-2 px-3 font-bold text-[#D4AF37]">{r.id}</td>
+                                  <td className="py-2 px-3 font-bold text-[#D4AF37]">
+                                    {r.id}
+                                    {(r.comboName || r.comboId || r.comboGroupId) && (
+                                      <span className="block text-[10px] font-mono font-extrabold text-amber-300">
+                                        ⚡ COMBO: {r.comboId ? r.comboId.toUpperCase() : 'COMBO'} ({r.comboName || 'Combo Offer'})
+                                      </span>
+                                    )}
+                                  </td>
                                   <td className="py-2 px-3 text-white font-sans font-semibold">
                                     {r.participants[0]?.fullName}
                                     <span className="block text-[10px] text-slate-400 font-mono">{r.participants[0]?.mobile}</span>

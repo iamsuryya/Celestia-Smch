@@ -25,6 +25,15 @@ export interface RegistrationPayload {
   discountPercent?: number;
   discountAmount?: number;
   originalAmount?: number;
+  // Combo offer metadata & Headcount
+  participantCount?: number;
+  comboGroupId?: string;
+  comboId?: string;
+  comboName?: string;
+  comboType?: string;
+  comboDiscountAmount?: number;
+  comboEventIndex?: number;
+  comboTotalEvents?: number;
 }
 
 export interface VerificationResult {
@@ -326,7 +335,7 @@ export const supabaseRegistrationService = {
         college_contact_mobile: payload.collegeDetails?.contactMobile || '',
         college_contact_email: payload.collegeDetails?.contactEmail || '',
         is_college_delegation: Boolean(payload.collegeDetails?.isCollegeDelegation),
-        participant_count: payload.participants?.length || 1,
+        participant_count: payload.participantCount || payload.participants?.length || 1,
         fee_per_unit: Number(payload.selectedEvent?.feeAmount) || 0,
         fee_type: payload.selectedEvent?.feeType || 'per_team',
         total_fee: Number(payload.totalFee) || 0,
@@ -334,6 +343,11 @@ export const supabaseRegistrationService = {
         discount_percent: payload.discountPercent || null,
         discount_amount: payload.discountAmount || null,
         original_amount: payload.originalAmount || null,
+        combo_group_id: payload.comboGroupId || null,
+        combo_id: payload.comboId || null,
+        combo_name: payload.comboName || null,
+        combo_type: payload.comboType || null,
+        combo_discount_amount: payload.comboDiscountAmount || null,
         registration_status: 'Submitted',
         rules_accepted: true,
         rules_version: 'v1.0-celestia26',
@@ -352,7 +366,7 @@ export const supabaseRegistrationService = {
           });
       regInsertData.id = registrationId;
 
-      // Execute insert into registrations with automatic fallback if optional columns (e.g. discount_amount, promo_code, discount_percent, original_amount) are missing in hosted Supabase DB
+      // Execute insert into registrations with automatic fallback if optional columns are missing in hosted Supabase DB
       let { error: regError } = await supabase
         .from('registrations')
         .insert([regInsertData]);
@@ -362,14 +376,18 @@ export const supabaseRegistrationService = {
         regError.message.includes('column') ||
         regError.message.includes('schema cache')
       )) {
-        console.warn('Supabase insert failed due to DB schema variation. Retrying without optional promo/discount columns:', regError.message);
+        console.warn('Supabase insert failed due to DB schema variation. Retrying without optional promo/combo columns:', regError.message);
         
-        // Remove optional promo & discount columns that might not exist in remote DB schema
+        // Remove optional promo, discount & combo columns that might not exist in remote DB schema
         const fallbackRegData = { ...regInsertData };
         delete fallbackRegData.discount_amount;
         delete fallbackRegData.discount_percent;
         delete fallbackRegData.promo_code;
         delete fallbackRegData.original_amount;
+        delete fallbackRegData.combo_id;
+        delete fallbackRegData.combo_name;
+        delete fallbackRegData.combo_type;
+        delete fallbackRegData.combo_discount_amount;
 
         const retryResult = await supabase
           .from('registrations')
@@ -554,6 +572,11 @@ export const supabaseRegistrationService = {
           total_fee,
           registration_status,
           created_at,
+          combo_group_id,
+          combo_id,
+          combo_name,
+          combo_type,
+          combo_discount_amount,
           participants (
             id,
             full_name,
@@ -724,6 +747,7 @@ export const supabaseRegistrationService = {
         feePerUnit: Number(row.fee_per_unit) || 0,
         feeType: row.fee_type || 'per_head',
         totalAmount: Number(row.total_fee) || 0,
+        participantCount: Number(row.participant_count) || roster.length || 1,
         utrNumber: payment?.utr_number || 'N/A',
         paymentScreenshotName: payment?.payment_screenshot_path 
           ? (payment.payment_screenshot_path.startsWith('data:') ? 'Payment_Screenshot_Slip.png' : payment.payment_screenshot_path.split('/').pop() || 'Payment Screenshot') 
@@ -733,6 +757,11 @@ export const supabaseRegistrationService = {
         paymentConfirmed: payment?.payment_status === 'Verified',
         paymentStatus: (payment?.payment_status as any) || 'Submitted',
         registrationStatus: (row.registration_status as any) || 'Submitted',
+        comboGroupId: row.combo_group_id || undefined,
+        comboId: row.combo_id || undefined,
+        comboName: row.combo_name || undefined,
+        comboType: row.combo_type || undefined,
+        comboDiscountAmount: row.combo_discount_amount ? Number(row.combo_discount_amount) : undefined,
         createdAt: new Date(row.created_at).toLocaleDateString('en-US', {
           month: 'short',
           day: 'numeric',
@@ -757,7 +786,7 @@ export const supabaseRegistrationService = {
     try {
       const { data: reg, error: findError } = await supabase
         .from('registrations')
-        .select('id')
+        .select('id, combo_group_id, combo_id')
         .eq('registration_code', registrationCode)
         .maybeSingle();
 
@@ -782,7 +811,36 @@ export const supabaseRegistrationService = {
         regStatus = 'Submitted';
       }
 
-      // Update payment
+      // Check for combo cascade: find all registrations sharing the combo batch
+      let targetRegIds: string[] = [reg.id];
+      if (reg.combo_group_id) {
+        const { data: siblingRegs } = await supabase
+          .from('registrations')
+          .select('id')
+          .eq('combo_group_id', reg.combo_group_id);
+        if (siblingRegs && siblingRegs.length > 0) {
+          targetRegIds = siblingRegs.map((s: any) => s.id);
+        }
+      } else if (reg.combo_id) {
+        // Fallback: look up by utr_number from payment_submissions
+        const { data: payRow } = await supabase
+          .from('payment_submissions')
+          .select('utr_number')
+          .eq('registration_id', reg.id)
+          .maybeSingle();
+
+        if (payRow?.utr_number) {
+          const { data: siblingPays } = await supabase
+            .from('payment_submissions')
+            .select('registration_id')
+            .eq('utr_number', payRow.utr_number);
+          if (siblingPays && siblingPays.length > 0) {
+            targetRegIds = siblingPays.map((p: any) => p.registration_id);
+          }
+        }
+      }
+
+      // 1. Update payment status for all target registrations
       try {
         await supabase
           .from('payment_submissions')
@@ -791,12 +849,12 @@ export const supabaseRegistrationService = {
             verified_at: (action === 'approve' || action === 'verify') ? new Date().toISOString() : null,
             rejection_reason: notes || null,
           })
-          .eq('registration_id', reg.id);
+          .in('registration_id', targetRegIds);
       } catch {
         // Non-fatal if payment table has schema difference
       }
 
-      // Update registration
+      // 2. Update registration status for all target registrations
       try {
         await supabase
           .from('registrations')
@@ -805,23 +863,74 @@ export const supabaseRegistrationService = {
             admin_notes: notes || (action === 'hold' || action === 'not_complete' ? 'Flagged as Not Complete by Admin' : null),
             verified_at: (action === 'approve' || action === 'verify') ? new Date().toISOString() : null,
           })
-          .eq('id', reg.id);
+          .in('id', targetRegIds);
       } catch {
-        // Fallback update without custom columns
         await supabase
           .from('registrations')
           .update({ registration_status: regStatus })
-          .eq('id', reg.id);
+          .in('id', targetRegIds);
       }
+
+      // 3. Sync local storage if present
+      try {
+        const saved = localStorage.getItem('celestia26_registrations');
+        if (saved) {
+          const list = JSON.parse(saved);
+          const updated = list.map((item: any) => {
+            const isMatch = item.registrationCode === registrationCode || 
+              item.id === registrationCode || 
+              (reg.combo_group_id && item.comboGroupId === reg.combo_group_id) ||
+              (reg.combo_id && item.comboId === reg.combo_id && item.utrNumber);
+            if (isMatch) {
+              return {
+                ...item,
+                paymentStatus: payStatus,
+                registrationStatus: regStatus,
+                paymentConfirmed: payStatus === 'Verified'
+              };
+            }
+            return item;
+          });
+          localStorage.setItem('celestia26_registrations', JSON.stringify(updated));
+        }
+      } catch {}
 
       const actionText = 
         (action === 'approve' || action === 'verify') ? 'Verified' :
         (action === 'decline' || action === 'reject') ? 'Rejected' :
         (action === 'hold' || action === 'not_complete') ? 'marked as Registration Not Complete' : 'reset to Pending';
-      return { success: true, message: `Registration ${registrationCode} successfully ${actionText}` };
+      
+      const batchSuffix = targetRegIds.length > 1 ? ` (and all ${targetRegIds.length} events in this combo package)` : '';
+      return { success: true, message: `Registration ${registrationCode}${batchSuffix} successfully ${actionText}` };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Status update failed';
       return { success: false, message: msg };
+    }
+  },
+
+  /**
+   * Fetches latest registrations for a specific participant (by contact email or mobile)
+   */
+  async fetchUserRegistrations(contactEmailOrMobile: string): Promise<RegistrationSubmission[]> {
+    if (!supabase || !contactEmailOrMobile) return [];
+    try {
+      const clean = contactEmailOrMobile.trim();
+      const { data, error } = await supabase
+        .from('registrations')
+        .select(`
+          *,
+          participants (*),
+          payment_submissions (*)
+        `)
+        .or(`college_contact_email.ilike.%${clean}%,college_contact_mobile.eq.${clean}`)
+        .order('created_at', { ascending: false });
+
+      if (error || !data) {
+        return [];
+      }
+      return this.mapSupabaseRowsToSubmissions(data);
+    } catch {
+      return [];
     }
   },
 

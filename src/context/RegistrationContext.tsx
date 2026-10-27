@@ -62,6 +62,8 @@ interface RegistrationContextType {
   
   // Actions
   submitRegistration: () => Promise<RegistrationSubmission | null>;
+  addCompletedRegistrations: (submissions: RegistrationSubmission[]) => void;
+  refreshUserRegistrations: () => Promise<void>;
   deleteRegistration: (id: string) => Promise<boolean>;
   startNewRegistration: (preselectedEventId?: string) => void;
   viewReceiptRegistration: RegistrationSubmission | null;
@@ -433,6 +435,72 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     return true;
   };
 
+  // Add multiple registrations at once (used for combo purchases)
+  const addCompletedRegistrations = (submissions: RegistrationSubmission[]) => {
+    setMyRegistrations((prev) => {
+      const existingKeys = new Set(prev.map((r) => r.registrationCode || r.id));
+      const freshSubmissions = submissions.filter((s) => !existingKeys.has(s.registrationCode || s.id));
+      const updated = [...freshSubmissions, ...prev];
+      try {
+        localStorage.setItem(REGISTRATIONS_STORAGE_KEY, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
+
+  // Real-time synchronization of participant registrations and verification status from cloud
+  const refreshUserRegistrations = async () => {
+    const contactKey = currentUser?.email || currentUser?.mobile;
+    if (!contactKey) return;
+    try {
+      const cloudItems = await supabaseRegistrationService.fetchUserRegistrations(contactKey);
+      if (cloudItems && cloudItems.length > 0) {
+        setMyRegistrations((prev) => {
+          const cloudMap = new Map(cloudItems.map((c) => [c.registrationCode || c.id, c]));
+          const merged = prev.map((localItem) => {
+            const key = localItem.registrationCode || localItem.id;
+            const fromCloud = cloudMap.get(key);
+            if (fromCloud) {
+              return {
+                ...localItem,
+                paymentStatus: fromCloud.paymentStatus,
+                registrationStatus: fromCloud.registrationStatus,
+                paymentConfirmed: fromCloud.paymentConfirmed || fromCloud.paymentStatus === 'Verified',
+              };
+            }
+            return localItem;
+          });
+
+          // Append any cloud registrations not found locally
+          const localKeys = new Set(prev.map((p) => p.registrationCode || p.id));
+          cloudItems.forEach((c) => {
+            if (!localKeys.has(c.registrationCode || c.id)) {
+              merged.push(c);
+            }
+          });
+
+          try {
+            localStorage.setItem(REGISTRATIONS_STORAGE_KEY, JSON.stringify(merged));
+          } catch {}
+          return merged;
+        });
+      }
+    } catch {
+      // Non-fatal
+    }
+  };
+
+  // Active sync timer whenever user is logged in
+  useEffect(() => {
+    if (currentUser?.email || currentUser?.mobile) {
+      refreshUserRegistrations();
+      const syncInterval = setInterval(() => {
+        refreshUserRegistrations();
+      }, 3500);
+      return () => clearInterval(syncInterval);
+    }
+  }, [currentUser?.email, currentUser?.mobile]);
+
   return (
     <RegistrationContext.Provider
       value={{
@@ -468,6 +536,8 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         activeRegistration,
         setActiveRegistration,
         submitRegistration,
+        addCompletedRegistrations,
+        refreshUserRegistrations,
         deleteRegistration,
         startNewRegistration,
         viewReceiptRegistration,
