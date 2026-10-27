@@ -70,7 +70,9 @@ import {
   setAllEventsRegistrationOpen, 
   getEventRegistrationStatusMap,
   getSmchPasscode,
-  setSmchPasscode
+  setSmchPasscode,
+  isAutoApproveEnabled,
+  setAutoApproveEnabled
 } from '../utils/registrationStatus';
 import { 
   isSupabaseConfigured, 
@@ -385,6 +387,24 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
     localStorage.setItem('celestia_event_registration_status', JSON.stringify(current));
     window.dispatchEvent(new CustomEvent('celestia-registration-status-changed'));
     showToast('Registration settings saved and applied successfully across Celestia\'26 portal!');
+  };
+
+  const [autoApproveOn, setAutoApproveOn] = useState<boolean>(() => isAutoApproveEnabled());
+
+  const handleToggleAutoApprove = async () => {
+    const nextState = !autoApproveOn;
+    setAutoApproveOn(nextState);
+    setAutoApproveEnabled(nextState);
+
+    if (nextState) {
+      showToast('AUTO-APPROVE ENABLED! Auto-verifying all existing and incoming registrations...');
+      setLoading(true);
+      await supabaseRegistrationService.autoApproveAllPendingRegistrations();
+      await loadData();
+      setLoading(false);
+    } else {
+      showToast('Auto-Approve Disabled. New registrations require manual admin verification.');
+    }
   };
 
   const handleForgotSubmit = async (e: React.FormEvent) => {
@@ -1474,6 +1494,29 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            type="button"
+            onClick={handleToggleAutoApprove}
+            className={`px-3.5 py-2 rounded-xl border text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              autoApproveOn
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 shadow-lg shadow-emerald-500/20 animate-pulse'
+                : 'bg-white/5 hover:bg-white/10 text-slate-300 border-white/15'
+            }`}
+            title="Toggle Auto-Approve mode. When ON, all new & existing registrations are automatically verified and approved."
+          >
+            {autoApproveOn ? (
+              <>
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <span>Auto-Approve: ON</span>
+              </>
+            ) : (
+              <>
+                <ToggleLeft className="w-4 h-4 text-slate-400" />
+                <span>Auto-Approve: OFF</span>
+              </>
+            )}
+          </button>
+
           <button
             type="button"
             onClick={() => setShowTestGeneratorModal(true)}

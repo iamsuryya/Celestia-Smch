@@ -12,6 +12,7 @@ import { supabaseRegistrationService } from '../services/supabaseRegistrationSer
 import { promoCodeService } from '../services/promoCodeService';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { generateRegistrationCode } from '../utils/registrationCode';
+import { isAutoApproveEnabled } from '../utils/registrationStatus';
 
 interface RegistrationContextType {
   currentStep: RegistrationStep;
@@ -303,9 +304,9 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         : (utrNumber.trim() || 'NOT_SUBMITTED'),
       paymentScreenshotName: isHost ? 'smch_host_waiver.png' : (paymentScreenshotName || 'receipt_screenshot.png'),
       paymentScreenshotData: paymentScreenshotData || undefined,
-      paymentConfirmed: isHost ? true : paymentConfirmed,
-      paymentStatus: 'Submitted',
-      registrationStatus: 'Submitted',
+      paymentConfirmed: isHost ? true : (isAutoApproveEnabled() ? true : paymentConfirmed),
+      paymentStatus: (isHost || isAutoApproveEnabled()) ? 'Verified' : 'Submitted',
+      registrationStatus: (isHost || isAutoApproveEnabled()) ? 'Confirmed' : 'Submitted',
       createdAt: new Date().toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',

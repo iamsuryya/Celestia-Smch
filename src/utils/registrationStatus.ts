@@ -123,3 +123,28 @@ export function setSmchPasscode(code: string): void {
     window.dispatchEvent(new CustomEvent('celestia-smch-passcode-changed'));
   } catch {}
 }
+
+const AUTO_APPROVE_STORAGE_KEY = 'celestia_auto_approve_enabled';
+
+/**
+ * Returns whether Auto-Approve is enabled.
+ */
+export function isAutoApproveEnabled(): boolean {
+  try {
+    const val = localStorage.getItem(AUTO_APPROVE_STORAGE_KEY);
+    return val === 'true';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Sets Auto-Approve state.
+ */
+export function setAutoApproveEnabled(enabled: boolean): void {
+  try {
+    localStorage.setItem(AUTO_APPROVE_STORAGE_KEY, String(enabled));
+    window.dispatchEvent(new CustomEvent('celestia-auto-approve-changed'));
+  } catch {}
+}
+

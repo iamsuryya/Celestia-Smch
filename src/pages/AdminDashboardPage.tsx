@@ -8,6 +8,7 @@ import {
   Eye, 
   Edit3, 
   CheckCircle, 
+  CheckCircle2,
   AlertCircle, 
   Clock, 
   RotateCcw, 
@@ -48,6 +49,7 @@ import {
   UserRole,
   AUTH_PROFILES 
 } from '../lib/authProfiles';
+import { isAutoApproveEnabled, setAutoApproveEnabled } from '../utils/registrationStatus';
 
 interface AdminDashboardPageProps {
   onNavigateToPublicResults: () => void;
@@ -313,6 +315,24 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       }
     } else {
       setAuthError(authResult.error || 'Invalid credentials. Only authorized Admin or Result profiles are permitted.');
+    }
+  };
+
+  const [autoApproveOn, setAutoApproveOn] = useState<boolean>(() => isAutoApproveEnabled());
+
+  const handleToggleAutoApprove = async () => {
+    const nextState = !autoApproveOn;
+    setAutoApproveOn(nextState);
+    setAutoApproveEnabled(nextState);
+
+    if (nextState) {
+      showToast('AUTO-APPROVE ENABLED! Auto-verifying all existing and incoming registrations...');
+      setLoadingRegistrations(true);
+      await supabaseRegistrationService.autoApproveAllPendingRegistrations();
+      await loadCloudRegistrations();
+      setLoadingRegistrations(false);
+    } else {
+      showToast('Auto-Approve Disabled. New registrations require manual verification.');
     }
   };
 
@@ -681,6 +701,29 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         </div>
 
         <div className="flex items-center flex-wrap gap-2.5">
+          <button
+            type="button"
+            onClick={handleToggleAutoApprove}
+            className={`px-3.5 py-2 rounded-xl border text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              autoApproveOn
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 shadow-lg shadow-emerald-500/20 animate-pulse'
+                : 'bg-white/5 hover:bg-white/10 text-slate-300 border-white/15'
+            }`}
+            title="Toggle Auto-Approve mode. When ON, all new & existing registrations are automatically verified and approved."
+          >
+            {autoApproveOn ? (
+              <>
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <span>Auto-Approve: ON</span>
+              </>
+            ) : (
+              <>
+                <ToggleLeft className="w-4 h-4 text-slate-400" />
+                <span>Auto-Approve: OFF</span>
+              </>
+            )}
+          </button>
+
           {onNavigateToAdmin1 && (
             <button
               onClick={onNavigateToAdmin1}
