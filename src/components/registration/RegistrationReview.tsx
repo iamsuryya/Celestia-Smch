@@ -174,27 +174,54 @@ export const RegistrationReview: React.FC = () => {
             </div>
           )}
 
-          <div className="space-y-2.5">
-            {participants.map((m, idx) => (
-              <div key={idx} className="p-3 rounded-lg bg-[#070B1E]/70 border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                <div>
-                  <span className="font-semibold text-white mr-2">
-                    #{idx + 1} {m.fullName}
-                  </span>
-                  <span className="text-slate-400 font-mono">({m.gender}, Age {m.age})</span>
-                  {idx === 0 && m.idCardFileName && (
-                    <span className="text-[#D4AF37] block sm:inline sm:ml-2 font-mono text-[11px]">
-                      · ID Card: {m.idCardFileName}
+          {(() => {
+            // Filter to only show participants who actually have non-empty names entered (always include Captain at index 0)
+            const filledParticipants = participants.filter((m, idx) => idx === 0 || Boolean(m.fullName.trim()));
+            const totalCount = participants.length;
+            const filledCount = filledParticipants.length;
+            const remainingCount = totalCount - filledCount;
+
+            return (
+              <div className="space-y-2.5">
+                {filledParticipants.map((m, idx) => (
+                  <div key={idx} className="p-3 rounded-lg bg-[#070B1E]/70 border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                    <div>
+                      <span className="font-semibold text-white mr-2">
+                        #{idx + 1} {m.fullName || (idx === 0 ? 'Primary Captain / Participant' : `Team Member #${idx + 1}`)}
+                      </span>
+                      <span className="text-slate-400 font-mono">
+                        ({m.gender || 'Male'}{m.age ? `, Age ${m.age}` : ''})
+                      </span>
+                      {idx === 0 && m.idCardFileName && (
+                        <span className="text-[#D4AF37] block sm:inline sm:ml-2 font-mono text-[11px]">
+                          · ID Card: {m.idCardFileName}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-slate-400 font-mono text-[11px]">
+                      {m.mobile && <span>{m.mobile}</span>}
+                      {m.email && <span> · {m.email}</span>}
+                    </div>
+                  </div>
+                ))}
+
+                {/* Summary of total participants registered */}
+                <div className="p-3 rounded-lg bg-[#080D24] border border-[#D4AF37]/30 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-300">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-[#D4AF37] shrink-0"></span>
+                    <span>
+                      Total Participating Members Registered: <strong className="text-white font-mono">{totalCount} Members</strong>
+                    </span>
+                  </div>
+                  {remainingCount > 0 && (
+                    <span className="text-[11px] text-[#E6C57D] font-mono">
+                      ({filledCount} member detail{filledCount === 1 ? '' : 's'} provided; {remainingCount} additional member{remainingCount === 1 ? '' : 's'} verified at Helpdesk)
                     </span>
                   )}
                 </div>
-                <div className="text-slate-400 font-mono text-[11px]">
-                  <span>{m.mobile}</span>
-                  {m.email && <span> · {m.email}</span>}
-                </div>
               </div>
-            ))}
-          </div>
+            );
+          })()}
         </div>
 
         {/* 4. PAYMENT CALCULATION SECTION */}

@@ -59,7 +59,7 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
   const [queueFilter, setQueueFilter] = useState<'all' | 'checked_in' | 'awaiting'>('all');
   const [paymentFilter, setPaymentFilter] = useState<'all' | 'pending' | 'advance_paid' | 'paid_in_full'>('all');
   const [regTypeFilter, setRegTypeFilter] = useState<'all' | 'individual' | 'combo'>('all');
-  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('table');
   const [showRulesDrawer, setShowRulesDrawer] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -976,7 +976,7 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
                 const code = reg.registrationCode || reg.id;
                 const isCheckedIn = Boolean(checkins[code]);
                 const leader = reg.participants?.[0];
-                const members = reg.participants || [];
+                const members = (reg.participants || []).filter((m, i) => i === 0 || Boolean(m.fullName && m.fullName.trim()));
 
                 return (
                   <tr
@@ -1061,7 +1061,7 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
                     {/* Feature 1: Members List with View ID Button */}
                     <td className="py-3 px-3">
                       <div className="text-[10px] text-slate-400 font-mono mb-1">
-                        Headcount: <strong className="text-white">{reg.participantCount || members.length || 1}</strong>
+                        Headcount: <strong className="text-white">{reg.participantCount || reg.participants?.length || 1}</strong>
                       </div>
                       <div className="text-[11px] text-slate-300 space-y-1">
                         {members.map((m, i) => (
@@ -1114,7 +1114,7 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
             const code = reg.registrationCode || reg.id;
             const isCheckedIn = Boolean(checkins[code]);
             const leader = reg.participants?.[0];
-            const members = reg.participants || [];
+            const members = (reg.participants || []).filter((m, i) => i === 0 || Boolean(m.fullName && m.fullName.trim()));
             const college = reg.college;
 
             return (
@@ -1241,7 +1241,7 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
                 <div className="mt-4 pt-4 border-t border-white/10">
                   <div className="flex items-center justify-between text-xs text-slate-400 font-mono mb-2.5">
                     <span className="uppercase tracking-wider font-semibold text-slate-300">
-                      Team Roster ({reg.participantCount || members.length || 1} Student{(reg.participantCount || members.length || 1) !== 1 ? 's' : ''})
+                      Team Roster ({(reg.participantCount || reg.participants?.length || 1)} Student{(reg.participantCount || reg.participants?.length || 1) !== 1 ? 's' : ''})
                     </span>
                     <span className="text-[11px] text-slate-400">
                       Primary Contact: {leader?.fullName || 'N/A'} {leader?.mobile ? `(${leader.mobile})` : ''}

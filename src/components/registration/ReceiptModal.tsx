@@ -118,7 +118,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ registration, onClos
             )}
             <div className="flex justify-between">
               <span className="text-slate-400 print:text-neutral-600">Participants Count:</span>
-              <span className="text-slate-200 print:text-black">{registration.participants.length} member(s)</span>
+              <span className="text-slate-200 print:text-black">{registration.participantCount || registration.participants.length} member(s)</span>
             </div>
           </div>
 
@@ -128,13 +128,21 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ registration, onClos
               Registered Performers
             </span>
             <div className="space-y-1 text-xs">
-              {registration.participants.map((p, idx) => (
+              {registration.participants
+                .filter((p, idx) => idx === 0 || Boolean(p.fullName && p.fullName.trim()))
+                .map((p, idx) => (
                 <div key={idx} className="flex justify-between text-slate-300 print:text-black">
-                  <span>#{idx + 1} {p.fullName} ({p.gender}, Age {p.age})</span>
-                  <span className="font-mono text-slate-400 print:text-neutral-600">{p.mobile}</span>
+                  <span>#{idx + 1} {p.fullName} ({p.gender || 'N/A'}, Age {p.age || 'N/A'})</span>
+                  <span className="font-mono text-slate-400 print:text-neutral-600">{p.mobile || ''}</span>
                 </div>
               ))}
             </div>
+            {(registration.participantCount || registration.participants.length) > 1 && (
+              <div className="mt-2 text-[11px] font-medium text-slate-400 print:text-neutral-600 border-t border-white/5 print:border-neutral-200 pt-1.5 flex justify-between">
+                <span>Total Registered Event Roster:</span>
+                <span className="text-[#E6C57D] font-bold print:text-black">{registration.participantCount || registration.participants.length} Members</span>
+              </div>
+            )}
           </div>
 
           {/* Payment & Verification Box */}

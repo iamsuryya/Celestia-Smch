@@ -1300,21 +1300,97 @@ export const supabaseRegistrationService = {
       captainName?: string;
       captainEmail?: string;
       captainMobile?: string;
+      participantCount?: number;
+      participants?: ParticipantMember[];
     }
   ): Promise<VerificationResult> {
+    // 1. Always update LocalStorage cache first so UI responds immediately
+    try {
+      const saved = localStorage.getItem('celestia26_registrations');
+      if (saved) {
+        const list = JSON.parse(saved);
+        const updated = list.map((item: any) => {
+          const isMatch =
+            item.registrationCode === registrationCode ||
+            item.id === registrationCode ||
+            (item.registrationCode && registrationCode && item.registrationCode.toLowerCase() === registrationCode.toLowerCase()) ||
+            (item.id && registrationCode && item.id.toLowerCase() === registrationCode.toLowerCase());
+
+          if (isMatch) {
+            const count = details.participantCount !== undefined 
+              ? details.participantCount 
+              : (details.participants ? details.participants.length : item.participantCount);
+
+            const updatedParticipants = details.participants || [...(item.participants || [])];
+            if (updatedParticipants[0]) {
+              updatedParticipants[0] = {
+                ...updatedParticipants[0],
+                fullName: details.captainName || updatedParticipants[0].fullName,
+                email: details.captainEmail !== undefined ? details.captainEmail : updatedParticipants[0].email,
+                mobile: details.captainMobile || updatedParticipants[0].mobile,
+              };
+            }
+
+            const perHeadFee = item.feePerUnit || item.feeAmount || 0;
+            const isHost = Boolean(item.isHostCollege || item.college?.isHostCollege);
+            const calculatedTotal = isHost ? 0 : (item.feeType === 'per_head' ? perHeadFee * count : item.totalAmount);
+
+            return {
+              ...item,
+              participantCount: count,
+              participants: updatedParticipants,
+              teamName: details.teamName !== undefined ? details.teamName : item.teamName,
+              utrNumber: details.utrNumber !== undefined ? details.utrNumber : item.utrNumber,
+              totalAmount: calculatedTotal,
+              college: {
+                ...item.college,
+                collegeName: details.collegeName !== undefined ? details.collegeName : item.college?.collegeName,
+                city: details.collegeCity !== undefined ? details.collegeCity : item.college?.city,
+                state: details.collegeState !== undefined ? details.collegeState : item.college?.state,
+                contactPerson: details.contactPerson !== undefined ? details.contactPerson : item.college?.contactPerson,
+                contactMobile: details.contactMobile !== undefined ? details.contactMobile : item.college?.contactMobile,
+                contactEmail: details.contactEmail !== undefined ? details.contactEmail : item.college?.contactEmail,
+              },
+            };
+          }
+          return item;
+        });
+        localStorage.setItem('celestia26_registrations', JSON.stringify(updated));
+      }
+    } catch (e) {
+      console.warn('LocalStorage edit update notice:', e);
+    }
+
+    window.dispatchEvent(new CustomEvent('celestia-registration-status-changed', { detail: { regId: registrationCode } }));
+
     if (!supabase) {
-      return { success: false, message: 'Supabase client not configured' };
+      return { success: true, message: `Registration ${registrationCode} updated locally` };
     }
 
     try {
-      const { data: reg, error: findError } = await supabase
-        .from('registrations')
-        .select('id')
-        .eq('registration_code', registrationCode)
-        .maybeSingle();
+      let reg: { id: string; fee_per_unit?: number; fee_type?: string; total_fee?: number } | null = null;
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(registrationCode);
 
-      if (findError || !reg) {
-        return { success: false, message: 'Registration not found' };
+      if (isUuid) {
+        const { data } = await supabase
+          .from('registrations')
+          .select('id, fee_per_unit, fee_type, total_fee')
+          .eq('id', registrationCode)
+          .maybeSingle();
+        if (data) reg = data;
+      }
+
+      if (!reg) {
+        const { data } = await supabase
+          .from('registrations')
+          .select('id, fee_per_unit, fee_type, total_fee')
+          .eq('registration_code', registrationCode)
+          .maybeSingle();
+        if (data) reg = data;
+      }
+
+      if (!reg) {
+        return { success: true, message: `Registration ${registrationCode} updated locally` };
       }
 
       const updateObj: Record<string, any> = {};
@@ -1326,6 +1402,14 @@ export const supabaseRegistrationService = {
       if (details.contactMobile !== undefined) updateObj.college_contact_mobile = details.contactMobile;
       if (details.contactEmail !== undefined) updateObj.college_contact_email = details.contactEmail;
       if (details.adminNotes !== undefined) updateObj.admin_notes = details.adminNotes;
+
+      if (details.participantCount !== undefined || (details.participants && details.participants.length > 0)) {
+        const newCount = details.participantCount !== undefined ? details.participantCount : details.participants!.length;
+        updateObj.participant_count = newCount;
+        if (reg.fee_type === 'per_head' && reg.fee_per_unit) {
+          updateObj.total_fee = reg.fee_per_unit * newCount;
+        }
+      }
 
       if (Object.keys(updateObj).length > 0) {
         await supabase
@@ -1341,15 +1425,36 @@ export const supabaseRegistrationService = {
           .eq('registration_id', reg.id);
       }
 
-      if (details.captainName || details.captainEmail || details.captainMobile) {
-        const { data: participants } = await supabase
+      // Update participant roster in database if participants list is provided
+      if (details.participants && details.participants.length > 0) {
+        try {
+          // Clean existing participants for this registration ID
+          await supabase.from('participants').delete().eq('registration_id', reg.id);
+
+          const participantRows = details.participants.map((m, idx) => ({
+            registration_id: reg.id,
+            full_name: m.fullName || (idx === 0 ? details.captainName || 'Participant' : `Team Member #${idx + 1}`),
+            gender: m.gender || 'Other',
+            age: parseInt(m.age, 10) || 20,
+            mobile: m.mobile || (idx === 0 ? details.captainMobile || '' : ''),
+            email: m.email || (idx === 0 ? details.captainEmail || '' : ''),
+            role: m.role || (idx === 0 ? 'Primary Contact / Team Captain' : `Team Member #${idx + 1}`),
+            id_card_storage_path: m.idCardFileData || m.idCardStoragePath || null,
+          }));
+
+          await supabase.from('participants').insert(participantRows);
+        } catch (pErr) {
+          console.warn('Notice updating participants roster in DB:', pErr);
+        }
+      } else if (details.captainName || details.captainEmail || details.captainMobile) {
+        const { data: pList } = await supabase
           .from('participants')
           .select('id')
           .eq('registration_id', reg.id)
           .order('created_at', { ascending: true })
           .limit(1);
 
-        if (participants && participants[0]) {
+        if (pList && pList[0]) {
           const partUpdate: Record<string, any> = {};
           if (details.captainName) partUpdate.full_name = details.captainName;
           if (details.captainEmail) partUpdate.email = details.captainEmail;
@@ -1358,11 +1463,11 @@ export const supabaseRegistrationService = {
           await supabase
             .from('participants')
             .update(partUpdate)
-            .eq('id', participants[0].id);
+            .eq('id', pList[0].id);
         }
       }
 
-      return { success: true, message: `Registration ${registrationCode} updated successfully` };
+      return { success: true, message: `Registration ${registrationCode} details updated successfully` };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Update failed';
       return { success: false, message: msg };

@@ -532,7 +532,7 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
     fileName?: string;
   } | null>(null);
 
-  // Edit form state
+  // Edit form state (Main Central Admin Only)
   const [editFormData, setEditFormData] = useState<{
     captainName: string;
     captainEmail: string;
@@ -546,6 +546,8 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
     contactEmail: string;
     utrNumber: string;
     adminNotes: string;
+    participantCount: number;
+    participants: ParticipantMember[];
   }>({
     captainName: '',
     captainEmail: '',
@@ -559,6 +561,8 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
     contactEmail: '',
     utrNumber: '',
     adminNotes: '',
+    participantCount: 1,
+    participants: [],
   });
 
   const showToast = (msg: string) => {
@@ -1012,7 +1016,23 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
   };
 
   const handleOpenEdit = (reg: RegistrationSubmission) => {
+    if (!isMainAdmin) {
+      showToast('Permission Denied: Only Main Central Admin can edit registration details.');
+      return;
+    }
     setEditingRegistration(reg);
+    const count = reg.participantCount || reg.participants.length || 1;
+    const initialParticipants = reg.participants && reg.participants.length > 0 
+      ? JSON.parse(JSON.stringify(reg.participants))
+      : [{
+          fullName: reg.participants[0]?.fullName || '',
+          gender: 'Male',
+          age: '20',
+          mobile: reg.participants[0]?.mobile || '',
+          email: reg.participants[0]?.email || '',
+          role: 'Team Captain / Primary Contact',
+        }];
+
     setEditFormData({
       captainName: reg.participants[0]?.fullName || '',
       captainEmail: reg.participants[0]?.email || '',
@@ -1026,6 +1046,87 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
       contactEmail: reg.college?.contactEmail || '',
       utrNumber: reg.utrNumber || '',
       adminNotes: '',
+      participantCount: count,
+      participants: initialParticipants,
+    });
+  };
+
+  const handleAddEditMember = () => {
+    setEditFormData((prev) => {
+      const nextParts = [...prev.participants];
+      nextParts.push({
+        fullName: '',
+        gender: 'Male',
+        age: '20',
+        mobile: '',
+        email: '',
+        role: `Team Member #${nextParts.length + 1}`,
+      });
+      return {
+        ...prev,
+        participantCount: nextParts.length,
+        participants: nextParts,
+      };
+    });
+  };
+
+  const handleRemoveEditMember = (index: number) => {
+    if (index === 0) return; // Cannot remove captain
+    setEditFormData((prev) => {
+      const nextParts = prev.participants.filter((_, i) => i !== index);
+      return {
+        ...prev,
+        participantCount: Math.max(1, nextParts.length),
+        participants: nextParts,
+      };
+    });
+  };
+
+  const handleEditMemberChange = (index: number, field: keyof ParticipantMember, value: string) => {
+    setEditFormData((prev) => {
+      const nextParts = [...prev.participants];
+      if (!nextParts[index]) return prev;
+      nextParts[index] = { ...nextParts[index], [field]: value };
+      let newCaptainName = prev.captainName;
+      let newCaptainEmail = prev.captainEmail;
+      let newCaptainMobile = prev.captainMobile;
+      if (index === 0) {
+        if (field === 'fullName') newCaptainName = value;
+        if (field === 'email') newCaptainEmail = value;
+        if (field === 'mobile') newCaptainMobile = value;
+      }
+      return {
+        ...prev,
+        captainName: newCaptainName,
+        captainEmail: newCaptainEmail,
+        captainMobile: newCaptainMobile,
+        participants: nextParts,
+      };
+    });
+  };
+
+  const handleEditParticipantCountChange = (newCount: number) => {
+    const target = Math.max(1, Math.min(50, newCount));
+    setEditFormData((prev) => {
+      const nextParts = [...prev.participants];
+      while (nextParts.length < target) {
+        nextParts.push({
+          fullName: '',
+          gender: 'Male',
+          age: '20',
+          mobile: '',
+          email: '',
+          role: `Team Member #${nextParts.length + 1}`,
+        });
+      }
+      if (nextParts.length > target) {
+        nextParts.splice(target);
+      }
+      return {
+        ...prev,
+        participantCount: target,
+        participants: nextParts,
+      };
     });
   };
 
@@ -1033,45 +1134,32 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
     e.preventDefault();
     if (!editingRegistration) return;
 
+    if (!isMainAdmin) {
+      showToast('Permission Denied: Only Main Central Admin can edit registration details.');
+      return;
+    }
+
+    const updatedParticipants = [...editFormData.participants];
+    if (updatedParticipants[0]) {
+      updatedParticipants[0] = {
+        ...updatedParticipants[0],
+        fullName: editFormData.captainName,
+        email: editFormData.captainEmail,
+        mobile: editFormData.captainMobile,
+      };
+    }
+
     const res = await supabaseRegistrationService.updateRegistrationDetails(
       editingRegistration.id,
-      editFormData
+      {
+        ...editFormData,
+        participants: updatedParticipants,
+      }
     );
 
     showToast(res.message);
     setEditingRegistration(null);
     loadData();
-
-    // Local mirror update
-    setCloudRegistrations((prev) =>
-      prev.map((r) => {
-        if (r.id !== editingRegistration.id) return r;
-        const updatedParticipants = [...r.participants];
-        if (updatedParticipants[0]) {
-          updatedParticipants[0] = {
-            ...updatedParticipants[0],
-            fullName: editFormData.captainName,
-            email: editFormData.captainEmail,
-            mobile: editFormData.captainMobile,
-          };
-        }
-        return {
-          ...r,
-          teamName: editFormData.teamName,
-          utrNumber: editFormData.utrNumber,
-          college: {
-            ...r.college,
-            collegeName: editFormData.collegeName,
-            city: editFormData.collegeCity,
-            state: editFormData.collegeState,
-            contactPerson: editFormData.contactPerson,
-            contactMobile: editFormData.contactMobile,
-            contactEmail: editFormData.contactEmail,
-          },
-          participants: updatedParticipants,
-        };
-      })
-    );
   };
 
   // Reusable CSV Generator for any list of registrations
@@ -2931,7 +3019,7 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                                 <div className="space-y-1 text-slate-300">
                                   <div className="font-bold text-white text-sm">{reg.eventTitle}</div>
                                   <div className="text-[11px] text-slate-400">
-                                    Format: <strong className="text-white">{reg.eventType}</strong> ({reg.participants.length} member{reg.participants.length !== 1 ? 's' : ''})
+                                    Format: <strong className="text-white">{reg.eventType}</strong> ({(reg.participantCount || reg.participants.length)} member{(reg.participantCount || reg.participants.length) !== 1 ? 's' : ''})
                                   </div>
                                   <div className="text-[11px] text-slate-400">
                                     Category: <strong className="text-[#E6C57D]">{reg.eventCategory}</strong>
@@ -3051,7 +3139,7 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                               <div className="p-3 bg-white/5 border-b border-white/10 flex items-center justify-between flex-wrap gap-2">
                                 <span className="font-mono text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
                                   <Users className="w-3.5 h-3.5 text-[#D4AF37]" />
-                                  <span>Full Participant Roster ({reg.participants.length} Student{reg.participants.length !== 1 ? 's' : ''})</span>
+                                  <span>Full Participant Roster ({(reg.participantCount || reg.participants.length)} Student{(reg.participantCount || reg.participants.length) !== 1 ? 's' : ''})</span>
                                 </span>
                                 
                                 {reg.participants[0]?.mobile && (
@@ -3090,7 +3178,9 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-white/5">
-                                    {reg.participants.map((m, mIdx) => {
+                                    {reg.participants
+                                      .filter((m, mIdx) => mIdx === 0 || Boolean(m.fullName && m.fullName.trim()))
+                                      .map((m, mIdx) => {
                                       const idProofUrl = getMediaUrl(
                                         m.idCardFileData || m.idCardStoragePath,
                                         'id-cards'
@@ -3950,16 +4040,13 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
         </div>
       )}
 
-      {/* ==================================================================== */}
-      {/* MODAL 4: EDIT REGISTRATION DETAILS */}
-      {/* ==================================================================== */}
       {editingRegistration && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-sm overflow-y-auto">
-          <div className="relative w-full max-w-2xl celestial-glass rounded-2xl p-6 border border-[#D4AF37]/40 shadow-2xl space-y-4 my-8">
+          <div className="relative w-full max-w-3xl celestial-glass rounded-2xl p-6 border border-[#D4AF37]/40 shadow-2xl space-y-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-white/10">
               <h3 className="font-cinzel text-base font-bold text-white flex items-center gap-2">
                 <Edit3 className="w-4 h-4 text-[#D4AF37]" />
-                <span>Edit Registration · {editingRegistration.id}</span>
+                <span>Edit Registration & Roster · {editingRegistration.id}</span>
               </h3>
               <button
                 type="button"
@@ -3971,13 +4058,147 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
             </div>
 
             <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
+              {/* SECTION: PARTICIPANT COUNT & ROSTER EDITING (Main Admin Control) */}
+              <div className="p-4 rounded-xl bg-[#090E28] border border-[#D4AF37]/35 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-[#F5E7C4] text-xs flex items-center gap-1.5 uppercase font-mono">
+                    <Users className="w-4 h-4 text-[#D4AF37]" />
+                    Participant Count & Roster Members (Main Admin Edit)
+                  </span>
+                  <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">
+                    Event: {editingRegistration.eventCode}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-3 pt-1">
+                  <div>
+                    <label className="text-slate-300 text-[11px] font-semibold block mb-1">
+                      Total Number of Participants:
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={editFormData.participantCount}
+                      onChange={(e) => handleEditParticipantCountChange(parseInt(e.target.value, 10) || 1)}
+                      className="w-32 px-3 py-1.5 bg-[#050818] border border-[#D4AF37]/50 rounded-lg text-sm font-bold text-white text-center focus:outline-none"
+                    />
+                  </div>
+                  <div className="text-[11px] text-slate-400 self-end pb-1">
+                    Editing count automatically resizes or creates roster slots below.
+                  </div>
+                </div>
+
+                {/* Editable List of Participants */}
+                <div className="space-y-3 pt-2 border-t border-white/10">
+                  <span className="text-[11px] font-semibold text-slate-300 block">
+                    Participating Members List ({editFormData.participants.length} Members):
+                  </span>
+
+                  {editFormData.participants.map((member, idx) => (
+                    <div 
+                      key={idx} 
+                      className="p-3 rounded-lg bg-[#050818] border border-white/10 space-y-2"
+                    >
+                      <div className="flex items-center justify-between pb-1 border-b border-white/5">
+                        <span className="font-bold text-[#E6C57D] text-[11px] font-mono">
+                          #{idx + 1} {idx === 0 ? 'Primary Captain / Participant' : `Team Member #${idx + 1}`}
+                        </span>
+                        {idx > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveEditMember(idx)}
+                            className="text-[10px] text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 px-2 py-0.5 rounded transition-colors cursor-pointer"
+                          >
+                            Remove Member
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <div className="sm:col-span-2">
+                          <label className="text-[10px] text-slate-400 block mb-0.5">Full Legal Name</label>
+                          <input
+                            type="text"
+                            value={member.fullName}
+                            onChange={(e) => handleEditMemberChange(idx, 'fullName', e.target.value)}
+                            placeholder="Full Name"
+                            className="w-full px-2.5 py-1.5 rounded bg-black/50 border border-white/15 text-white text-xs"
+                            required={idx === 0}
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] text-slate-400 block mb-0.5">Gender</label>
+                          <select
+                            value={member.gender || 'Male'}
+                            onChange={(e) => handleEditMemberChange(idx, 'gender', e.target.value)}
+                            className="w-full px-2 py-1.5 rounded bg-black/50 border border-white/15 text-white text-xs"
+                          >
+                            <option value="Male">Male</option>
+                            <option value="Female">Female</option>
+                            <option value="Other">Other</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] text-slate-400 block mb-0.5">Age</label>
+                          <input
+                            type="number"
+                            value={member.age || ''}
+                            onChange={(e) => handleEditMemberChange(idx, 'age', e.target.value)}
+                            placeholder="Age"
+                            className="w-full px-2.5 py-1.5 rounded bg-black/50 border border-white/15 text-white text-xs font-mono"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] text-slate-400 block mb-0.5">Mobile Number</label>
+                          <input
+                            type="tel"
+                            value={member.mobile || ''}
+                            onChange={(e) => handleEditMemberChange(idx, 'mobile', e.target.value)}
+                            placeholder="Mobile"
+                            className="w-full px-2.5 py-1.5 rounded bg-black/50 border border-white/15 text-white text-xs font-mono"
+                            required={idx === 0}
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] text-slate-400 block mb-0.5">Email ID</label>
+                          <input
+                            type="email"
+                            value={member.email || ''}
+                            onChange={(e) => handleEditMemberChange(idx, 'email', e.target.value)}
+                            placeholder="Email"
+                            className="w-full px-2.5 py-1.5 rounded bg-black/50 border border-white/15 text-white text-xs"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  <div className="pt-1 text-center">
+                    <button
+                      type="button"
+                      onClick={handleAddEditMember}
+                      className="py-1.5 px-3 rounded-lg bg-white/10 hover:bg-white/20 text-xs text-[#E6C57D] border border-[#D4AF37]/30 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5 text-[#D4AF37]" />
+                      <span>+ Add Participant Member Slot</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Primary Contact & Team Info */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-slate-400 block mb-1">Primary Captain / Delegate Name</label>
                   <input
                     type="text"
                     value={editFormData.captainName}
-                    onChange={(e) => setEditFormData({ ...editFormData, captainName: e.target.value })}
+                    onChange={(e) => handleEditMemberChange(0, 'fullName', e.target.value)}
                     className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/15 text-white"
                     required
                   />
@@ -3987,7 +4208,7 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                   <input
                     type="text"
                     value={editFormData.captainMobile}
-                    onChange={(e) => setEditFormData({ ...editFormData, captainMobile: e.target.value })}
+                    onChange={(e) => handleEditMemberChange(0, 'mobile', e.target.value)}
                     className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/15 text-white font-mono"
                     required
                   />
@@ -3997,9 +4218,8 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                   <input
                     type="email"
                     value={editFormData.captainEmail}
-                    onChange={(e) => setEditFormData({ ...editFormData, captainEmail: e.target.value })}
+                    onChange={(e) => handleEditMemberChange(0, 'email', e.target.value)}
                     className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/15 text-white"
-                    required
                   />
                 </div>
                 <div>
@@ -4088,7 +4308,7 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl font-bold text-xs uppercase text-black bg-[#D4AF37] hover:brightness-110 flex items-center gap-1.5 cursor-pointer"
+                  className="px-5 py-2 rounded-xl font-bold text-xs uppercase text-black bg-[#D4AF37] hover:brightness-110 flex items-center gap-1.5 cursor-pointer shadow-md"
                 >
                   <Save className="w-3.5 h-3.5" />
                   <span>Save Changes</span>
