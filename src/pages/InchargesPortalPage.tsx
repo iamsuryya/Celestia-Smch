@@ -57,6 +57,7 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEventId, setSelectedEventId] = useState<string>('ALL');
   const [queueFilter, setQueueFilter] = useState<'all' | 'checked_in' | 'awaiting'>('all');
+  const [paymentFilter, setPaymentFilter] = useState<'all' | 'pending' | 'advance_paid' | 'paid_in_full'>('all');
   const [regTypeFilter, setRegTypeFilter] = useState<'all' | 'individual' | 'combo'>('all');
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
   const [showRulesDrawer, setShowRulesDrawer] = useState(false);
@@ -287,16 +288,66 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
     return { total, checkedIn, awaiting };
   }, [eventFilteredRegistrations, checkins]);
 
-  // Final filtered registrations after applying stage queue arrival filter
+  // Financial & Payment Balance counts for Incharges Desk
+  const paymentCounts = useMemo(() => {
+    let pendingCount = 0;
+    let advanceCount = 0;
+    let fullCount = 0;
+    let totalOutstanding = 0;
+    let totalCollected = 0;
+    const processedCombos = new Set<string>();
+
+    eventFilteredRegistrations.forEach((r) => {
+      const tot = Number(r.totalAmount) || 0;
+      const pd = Number(r.paidAmount !== undefined ? r.paidAmount : tot);
+      const pend = Math.max(0, tot - pd);
+      const st = r.paymentStatus || (pend === 0 && tot > 0 ? 'Paid in Full' : (pd > 0 ? 'Advance Paid' : 'Pending'));
+
+      if (st === 'Paid in Full' || (pd >= tot && tot > 0)) {
+        fullCount++;
+      } else if (st === 'Advance Paid' || pd > 0) {
+        advanceCount++;
+      } else {
+        pendingCount++;
+      }
+
+      if (r.comboGroupId) {
+        if (!processedCombos.has(r.comboGroupId)) {
+          processedCombos.add(r.comboGroupId);
+          totalCollected += pd;
+          totalOutstanding += pend;
+        }
+      } else {
+        totalCollected += pd;
+        totalOutstanding += pend;
+      }
+    });
+
+    return { pendingCount, advanceCount, fullCount, totalOutstanding, totalCollected };
+  }, [eventFilteredRegistrations]);
+
+  // Final filtered registrations after applying stage queue arrival filter AND payment status filter
   const finalRegistrations = useMemo(() => {
-    if (queueFilter === 'checked_in') {
-      return eventFilteredRegistrations.filter((r) => Boolean(checkins[r.registrationCode || r.id]));
-    }
-    if (queueFilter === 'awaiting') {
-      return eventFilteredRegistrations.filter((r) => !checkins[r.registrationCode || r.id]);
-    }
-    return eventFilteredRegistrations;
-  }, [eventFilteredRegistrations, queueFilter, checkins]);
+    return eventFilteredRegistrations.filter((r) => {
+      // Stage arrival queue filter
+      if (queueFilter === 'checked_in' && !checkins[r.registrationCode || r.id]) return false;
+      if (queueFilter === 'awaiting' && checkins[r.registrationCode || r.id]) return false;
+
+      // Payment balance status filter
+      if (paymentFilter !== 'all') {
+        const tot = Number(r.totalAmount) || 0;
+        const pd = Number(r.paidAmount !== undefined ? r.paidAmount : tot);
+        const pend = Math.max(0, tot - pd);
+        const st = r.paymentStatus || (pend === 0 && tot > 0 ? 'Paid in Full' : (pd > 0 ? 'Advance Paid' : 'Pending'));
+
+        if (paymentFilter === 'pending' && st !== 'Pending' && st !== 'Submitted') return false;
+        if (paymentFilter === 'advance_paid' && st !== 'Advance Paid') return false;
+        if (paymentFilter === 'paid_in_full' && st !== 'Paid in Full' && st !== 'Verified') return false;
+      }
+
+      return true;
+    });
+  }, [eventFilteredRegistrations, queueFilter, paymentFilter, checkins]);
 
   // Helper to open Student ID Proof Modal
   const openIdProofModal = (participant: ParticipantMember, reg: RegistrationSubmission) => {
@@ -708,6 +759,67 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
             >
               ⚡ Combo Packages
             </button>
+          </div>
+        </div>
+
+        {/* Payment Balance Status Segmented Filter Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-white/10">
+          <div className="flex items-center gap-1.5 bg-[#050816] p-1 rounded-xl border border-amber-500/40">
+            <span className="text-[10px] text-amber-300 font-mono px-2 uppercase font-bold tracking-wider">Payment Balance:</span>
+            <button
+              type="button"
+              onClick={() => setPaymentFilter('all')}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                paymentFilter === 'all'
+                  ? 'bg-white/20 text-white font-bold shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              All Balances
+            </button>
+            <button
+              type="button"
+              onClick={() => setPaymentFilter('pending')}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                paymentFilter === 'pending'
+                  ? 'bg-rose-500/25 text-rose-300 border border-rose-500/40 font-bold'
+                  : 'text-slate-400 hover:text-rose-300'
+              }`}
+            >
+              🔴 Unpaid ({paymentCounts.pendingCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setPaymentFilter('advance_paid')}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                paymentFilter === 'advance_paid'
+                  ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40 font-bold'
+                  : 'text-slate-400 hover:text-amber-300'
+              }`}
+            >
+              🟡 Advance Paid ({paymentCounts.advanceCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setPaymentFilter('paid_in_full')}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                paymentFilter === 'paid_in_full'
+                  ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 font-bold'
+                  : 'text-slate-400 hover:text-emerald-300'
+              }`}
+            >
+              🟢 Paid in Full ({paymentCounts.fullCount})
+            </button>
+          </div>
+
+          <div className="flex items-center gap-3 text-xs font-mono">
+            <span className="text-emerald-400">
+              Collected: <strong>₹{paymentCounts.totalCollected.toLocaleString('en-IN')}</strong>
+            </span>
+            <span>·</span>
+            <span className="text-amber-300">
+              Outstanding Balance: <strong className="text-amber-400 font-bold">₹{paymentCounts.totalOutstanding.toLocaleString('en-IN')}</strong>
+            </span>
           </div>
         </div>
 

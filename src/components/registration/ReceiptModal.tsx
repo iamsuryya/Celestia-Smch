@@ -139,16 +139,31 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ registration, onClos
 
           {/* Payment & Verification Box */}
           <div className="p-4 rounded-xl bg-[#090E25] print:bg-neutral-100 border border-[#D4AF37]/30 print:border-neutral-300 space-y-2 text-xs">
-            <div className="flex justify-between text-sm font-bold text-white print:text-black">
-              <span>Total Registration Fee Paid:</span>
-              <span className="font-mono font-bold text-[#E6C57D] print:text-black">
-                {registration.college?.isHostCollege ? '₹0 (Host Student Free Waiver)' : `₹${registration.totalAmount.toLocaleString('en-IN')}`}
+            <div className="flex justify-between text-xs font-bold text-slate-300 print:text-black">
+              <span>Total Fee:</span>
+              <span className="font-mono font-bold text-white print:text-black">
+                {registration.college?.isHostCollege ? '₹0 (Host Student Free Waiver)' : `₹${Number(registration.totalAmount).toLocaleString('en-IN')}`}
               </span>
             </div>
+
+            <div className="flex justify-between text-xs font-bold text-emerald-400 print:text-black">
+              <span>Amount Paid:</span>
+              <span className="font-mono font-bold text-emerald-300 print:text-black">
+                ₹{Number(registration.paidAmount !== undefined ? registration.paidAmount : (registration.paymentConfirmed ? registration.totalAmount : 0)).toLocaleString('en-IN')}
+              </span>
+            </div>
+
+            <div className="flex justify-between text-xs font-bold text-amber-300 print:text-black pt-1 border-t border-white/10 print:border-neutral-200">
+              <span>Balance Due / Amount Pending:</span>
+              <span className="font-mono font-bold text-amber-400 print:text-black">
+                ₹{Number(registration.pendingAmount !== undefined ? registration.pendingAmount : Math.max(0, registration.totalAmount - (registration.paidAmount || 0))).toLocaleString('en-IN')}
+              </span>
+            </div>
+
             <div className="flex justify-between text-[11px] text-slate-400 print:text-neutral-600 pt-1 border-t border-white/5 print:border-neutral-200">
-              <span>Ref / UTR: {registration.utrNumber}</span>
-              <span>
-                Status: {registration.college?.isHostCollege ? 'Host Privilege (Physical ID Check Required)' : registration.paymentStatus}
+              <span>Ref / UTR: {registration.utrNumber || 'N/A'}</span>
+              <span className="font-bold text-[#E6C57D] uppercase">
+                Payment Status: {registration.college?.isHostCollege ? 'HOST WAIVER' : (registration.paymentStatus || (registration.pendingAmount === 0 ? 'PAID IN FULL' : 'ADVANCE PAID'))}
               </span>
             </div>
           </div>

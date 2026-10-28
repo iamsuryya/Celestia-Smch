@@ -9,7 +9,7 @@ export type RegistrationStep =
   | 'confirmation'
   | 'dashboard';
 
-export type PaymentStatus = 'Pending' | 'Submitted' | 'Verified' | 'Rejected';
+export type PaymentStatus = 'Pending' | 'Submitted' | 'Verified' | 'Rejected' | 'Advance Paid' | 'Paid in Full';
 export type RegistrationStatus = 'Draft' | 'Submitted' | 'Confirmed' | 'Rejected';
 
 export interface UserAccount {
@@ -53,9 +53,13 @@ export interface ParticipantMember {
 
 export interface PromoCode {
   id: string;
-  code: string;               // e.g. "CELESTIA20" (always stored in uppercase)
-  discountPercent: number;    // e.g. 20 for 20% discount
-  description?: string;       // e.g. "Early Bird Offer 20% Off"
+  code: string;               // e.g. "CELESTIA20" or "AP750" (always stored in uppercase)
+  discountPercent: number;    // e.g. 20 for 20% discount (0 for pure advance codes)
+  applicableScope?: 'individual' | 'combo' | 'all'; // Scope: individual event, combo offers, or all
+  discountType?: 'percentage' | 'advance'; // Discount model: percentage off or fixed advance payment
+  advanceAmount?: number;     // e.g. 750 for AP750 (advance payment amount to pay now)
+  isAdvancePayment?: boolean;  // True if this code is an advance payment code
+  description?: string;       // e.g. "Early Bird Offer 20% Off" or "Advance Pay ₹750"
   isActive: boolean;          // Admin active toggle
   redemptionCount: number;    // Total uses recorded
   createdAt: string;
@@ -88,11 +92,17 @@ export interface RegistrationSubmission {
   discountPercent?: number;
   discountAmount?: number;
   originalAmount?: number;
+  isAdvancePayment?: boolean;
+  advanceAmountPaid?: number;
+  remainingBalance?: number;
   
   // Payment info
   feePerUnit: number;
   feeType: 'per_head' | 'per_team';
   totalAmount: number;
+  paidAmount?: number;
+  pendingAmount?: number;
+  paymentNotes?: string;
   utrNumber?: string;
   paymentScreenshotName?: string;
   paymentScreenshotFile?: File;

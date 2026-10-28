@@ -76,7 +76,7 @@ export const PaymentPage: React.FC = () => {
     setIsValidatingPromo(true);
     setPromoMsg('');
     try {
-      const res = await applyPromoCode(promoInputCode.trim());
+      const res = await applyPromoCode(promoInputCode.trim(), 'individual');
       setPromoMsg(res.message);
       if (res.success) {
         setPromoInputCode('');
@@ -299,7 +299,11 @@ export const PaymentPage: React.FC = () => {
                   {appliedPromoCode ? (
                     <div>
                       <span className="text-xs text-slate-400 line-through block font-mono">₹{baseFee.toLocaleString('en-IN')}</span>
-                      <span className="text-xs font-mono font-bold text-emerald-400 block">-₹{discountAmount.toLocaleString('en-IN')} ({appliedPromoCode.discountPercent}% OFF)</span>
+                      {(appliedPromoCode.isAdvancePayment || appliedPromoCode.discountType === 'advance') ? (
+                        <span className="text-xs font-mono font-bold text-[#E6C57D] block">Advance Pay: ₹{(appliedPromoCode.advanceAmount || 0).toLocaleString('en-IN')}</span>
+                      ) : (
+                        <span className="text-xs font-mono font-bold text-emerald-400 block">-₹{discountAmount.toLocaleString('en-IN')} ({appliedPromoCode.discountPercent}% OFF)</span>
+                      )}
                     </div>
                   ) : (
                     <span className="font-cinzel text-2xl sm:text-3xl font-extrabold gold-gradient-text tabular-nums">
@@ -310,18 +314,27 @@ export const PaymentPage: React.FC = () => {
               </div>
 
               {appliedPromoCode && (
-                <div className="pt-2.5 border-t border-white/10 flex items-center justify-between">
-                  <div>
-                    <span className="text-xs font-mono font-bold text-[#E6C57D] uppercase tracking-wider block">
-                      Revised Amount Payable
-                    </span>
-                    <span className="text-[11px] text-emerald-300 font-mono">
-                      Pay exactly ₹{totalFee.toLocaleString('en-IN')} using the Bank QR code below
-                    </span>
+                <div className="pt-2.5 border-t border-white/10 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-mono font-bold text-[#E6C57D] uppercase tracking-wider block">
+                        {(appliedPromoCode.isAdvancePayment || appliedPromoCode.discountType === 'advance') ? 'Advance Payable Now' : 'Revised Amount Payable'}
+                      </span>
+                      <span className="text-[11px] text-emerald-300 font-mono">
+                        Pay exactly ₹{totalFee.toLocaleString('en-IN')} using the Bank QR code below
+                      </span>
+                    </div>
+                    <div className="font-cinzel text-2xl sm:text-3xl font-extrabold gold-gradient-text tabular-nums">
+                      ₹{totalFee.toLocaleString('en-IN')}
+                    </div>
                   </div>
-                  <div className="font-cinzel text-2xl sm:text-3xl font-extrabold gold-gradient-text tabular-nums">
-                    ₹{totalFee.toLocaleString('en-IN')}
-                  </div>
+
+                  {(appliedPromoCode.isAdvancePayment || appliedPromoCode.discountType === 'advance') && (
+                    <div className="p-2.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-200 text-xs flex items-center justify-between">
+                      <span>Remaining Balance Due on Arrival:</span>
+                      <strong className="font-mono text-sm text-white">₹{Math.max(0, baseFee - totalFee).toLocaleString('en-IN')}</strong>
+                    </div>
+                  )}
                 </div>
               )}
             </>
@@ -338,7 +351,7 @@ export const PaymentPage: React.FC = () => {
               </span>
               {appliedPromoCode && (
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                  {appliedPromoCode.discountPercent}% OFF ACTIVE
+                  {(appliedPromoCode.isAdvancePayment || appliedPromoCode.discountType === 'advance') ? `ADVANCE ₹${appliedPromoCode.advanceAmount}` : `${appliedPromoCode.discountPercent}% OFF ACTIVE`}
                 </span>
               )}
             </div>
@@ -350,14 +363,16 @@ export const PaymentPage: React.FC = () => {
                   <div>
                     <span className="font-bold text-emerald-300 font-mono">{appliedPromoCode.code}</span>
                     <span className="text-slate-300 block text-[11px]">
-                      {appliedPromoCode.description || `${appliedPromoCode.discountPercent}% OFF`} (You save ₹{discountAmount.toLocaleString('en-IN')})
+                      {(appliedPromoCode.isAdvancePayment || appliedPromoCode.discountType === 'advance')
+                        ? `Advance Payment ₹${appliedPromoCode.advanceAmount}. Remaining balance ₹${(baseFee - totalFee).toLocaleString('en-IN')} to be paid on arrival.`
+                        : `${appliedPromoCode.description || `${appliedPromoCode.discountPercent}% OFF`} (You save ₹${discountAmount.toLocaleString('en-IN')})`}
                     </span>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={removePromoCode}
-                  className="px-2.5 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[11px] font-semibold transition-colors cursor-pointer"
+                  className="px-2.5 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[11px] font-semibold transition-colors cursor-pointer shrink-0"
                 >
                   Remove Code
                 </button>
@@ -374,7 +389,7 @@ export const PaymentPage: React.FC = () => {
                       handleApplyPromo();
                     }
                   }}
-                  placeholder="e.g. CELESTIA10 or EARLYBIRD20"
+                  placeholder="e.g. AP750, CELESTIA10, EARLYBIRD20"
                   className="flex-1 px-3.5 py-2 rounded-lg bg-[#080D24] border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white placeholder-slate-500 focus:outline-none uppercase"
                 />
                 <button

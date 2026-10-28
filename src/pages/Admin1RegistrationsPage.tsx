@@ -61,7 +61,7 @@ import {
   ToggleRight
 } from 'lucide-react';
 import { useRegistration } from '../context/RegistrationContext';
-import { RegistrationSubmission, ParticipantMember, PromoCode } from '../types/registration';
+import { RegistrationSubmission, ParticipantMember, PromoCode, PaymentStatus } from '../types/registration';
 import { EVENTS_DATA } from '../data/festivalData';
 import { promoCodeService } from '../services/promoCodeService';
 import { 
@@ -208,6 +208,7 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
   // Search & Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'VERIFIED' | 'REJECTED' | 'NOT_COMPLETE'>('ALL');
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState<'ALL' | 'PENDING' | 'ADVANCE_PAID' | 'PAID_IN_FULL'>('ALL');
   const [regTypeFilter, setRegTypeFilter] = useState<'ALL' | 'INDIVIDUAL' | 'COMBO'>('ALL');
   const [institutionFilter, setInstitutionFilter] = useState<'ALL' | 'DELEGATION' | 'SMCH_HOST' | 'OTHER_COLLEGE'>('ALL');
   const [eventFilter, setEventFilter] = useState<string>('ALL');
@@ -215,6 +216,20 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
 
   // Modals state
   const [inspectRegistration, setInspectRegistration] = useState<RegistrationSubmission | null>(null);
+  const [paymentInputPaid, setPaymentInputPaid] = useState<number>(0);
+  const [paymentInputNotes, setPaymentInputNotes] = useState<string>('');
+  const [isSavingPayment, setIsSavingPayment] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (inspectRegistration) {
+      const tot = Number(inspectRegistration.totalAmount) || 0;
+      const initialPaid = inspectRegistration.paidAmount !== undefined 
+        ? inspectRegistration.paidAmount 
+        : (inspectRegistration.paymentConfirmed ? tot : 0);
+      setPaymentInputPaid(initialPaid);
+      setPaymentInputNotes(inspectRegistration.paymentNotes || '');
+    }
+  }, [inspectRegistration]);
   const [editingRegistration, setEditingRegistration] = useState<RegistrationSubmission | null>(null);
   const [rejectModalRegistration, setRejectModalRegistration] = useState<RegistrationSubmission | null>(null);
   const [rejectReasonInput, setRejectReasonInput] = useState('Payment UTR mismatch or invalid proof');
@@ -234,6 +249,9 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
   const [newCodeName, setNewCodeName] = useState<string>('');
   const [newCodeDiscount, setNewCodeDiscount] = useState<string>('');
   const [newCodeDesc, setNewCodeDesc] = useState<string>('');
+  const [newCodeScope, setNewCodeScope] = useState<'individual' | 'combo' | 'all'>('all');
+  const [newCodeDiscountType, setNewCodeDiscountType] = useState<'percentage' | 'advance'>('percentage');
+  const [newCodeAdvanceAmount, setNewCodeAdvanceAmount] = useState<string>('750');
   const [isCreatingPromo, setIsCreatingPromo] = useState<boolean>(false);
 
   const loadPromoCodes = async () => {
@@ -262,24 +280,42 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
 
   const handleCreatePromo = async (e: React.FormEvent) => {
     e.preventDefault();
-    const discountVal = parseFloat(newCodeDiscount);
+    const discountVal = parseFloat(newCodeDiscount) || 0;
+    const advanceVal = parseFloat(newCodeAdvanceAmount) || 0;
+
     if (!newCodeName.trim()) {
-      showToast('Please enter a promo code string (e.g. CELESTIA20)');
+      showToast('Please enter a promo code string (e.g. CELESTIA20 or AP750)');
       return;
     }
-    if (isNaN(discountVal) || discountVal <= 0 || discountVal > 100) {
-      showToast('Discount percentage must be between 1% and 100%');
-      return;
+
+    if (newCodeDiscountType === 'advance') {
+      if (!advanceVal || advanceVal <= 0) {
+        showToast('Please enter a valid advance payment amount in ₹ (e.g. 750)');
+        return;
+      }
+    } else {
+      if (isNaN(discountVal) || discountVal <= 0 || discountVal > 100) {
+        showToast('Discount percentage must be between 1% and 100%');
+        return;
+      }
     }
 
     setIsCreatingPromo(true);
     try {
-      const res = await promoCodeService.createPromoCode(newCodeName, discountVal, newCodeDesc);
+      const res = await promoCodeService.createPromoCode(
+        newCodeName,
+        discountVal,
+        newCodeDesc,
+        newCodeScope,
+        newCodeDiscountType,
+        advanceVal
+      );
       showToast(res.message);
       if (res.success) {
         setNewCodeName('');
         setNewCodeDiscount('');
         setNewCodeDesc('');
+        setNewCodeAdvanceAmount('750');
         loadPromoCodes();
       }
     } catch {
@@ -332,6 +368,53 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
     setCopiedKey(key);
     showToast(`${label} copied to clipboard!`);
     setTimeout(() => setCopiedKey(null), 2200);
+  };
+
+  const handleSavePaymentDetails = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inspectRegistration) return;
+    const total = Number(inspectRegistration.totalAmount) || 0;
+    const paid = Math.max(0, Number(paymentInputPaid) || 0);
+
+    if (paid > total && total > 0) {
+      if (!window.confirm(`Amount paid (₹${paid}) exceeds total registration fee (₹${total}). Do you wish to proceed?`)) {
+        return;
+      }
+    }
+
+    setIsSavingPayment(true);
+    try {
+      const res = await supabaseRegistrationService.updatePaymentDetails(
+        inspectRegistration.id,
+        paid,
+        paymentInputNotes
+      );
+      if (res.success) {
+        showToast(res.message || 'Payment details updated!');
+        await loadData();
+        setInspectRegistration((prev) => {
+          if (!prev) return null;
+          const pend = Math.max(0, total - paid);
+          let st: PaymentStatus = 'Pending';
+          if (pend === 0 && total > 0) st = 'Paid in Full';
+          else if (paid > 0) st = 'Advance Paid';
+          return {
+            ...prev,
+            paidAmount: paid,
+            pendingAmount: pend,
+            paymentNotes: paymentInputNotes,
+            paymentStatus: st,
+            paymentConfirmed: st === 'Paid in Full' || prev.paymentConfirmed,
+          };
+        });
+      } else {
+        showToast(`Failed to update payment: ${res.message}`);
+      }
+    } catch (err: any) {
+      showToast(`Error saving payment: ${err?.message || 'Unknown error'}`);
+    } finally {
+      setIsSavingPayment(false);
+    }
   };
 
   const getWhatsAppLink = (mobile: string | undefined, captainName: string, eventTitle: string | undefined, regCode: string) => {
@@ -620,6 +703,18 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
         return false;
       }
 
+      // Payment Status Filter (ALL / PENDING / ADVANCE_PAID / PAID_IN_FULL)
+      if (paymentStatusFilter !== 'ALL') {
+        const totalFee = Number(r.totalAmount) || 0;
+        const paid = Number(r.paidAmount !== undefined ? r.paidAmount : totalFee);
+        const pending = Math.max(0, totalFee - paid);
+        let status = r.paymentStatus || (pending === 0 && totalFee > 0 ? 'Paid in Full' : (paid > 0 ? 'Advance Paid' : 'Pending'));
+
+        if (paymentStatusFilter === 'PENDING' && status !== 'Pending' && status !== 'Submitted') return false;
+        if (paymentStatusFilter === 'ADVANCE_PAID' && status !== 'Advance Paid') return false;
+        if (paymentStatusFilter === 'PAID_IN_FULL' && status !== 'Paid in Full' && status !== 'Verified') return false;
+      }
+
       // Institution filter
       if (institutionFilter !== 'ALL') {
         const isHost = Boolean(r.isHostCollege || r.college?.isHostCollege);
@@ -664,7 +759,7 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
       }
       return 0;
     });
-  }, [allRegistrations, searchTerm, statusFilter, regTypeFilter, institutionFilter, eventFilter, sortBy]);
+  }, [allRegistrations, searchTerm, statusFilter, paymentStatusFilter, regTypeFilter, institutionFilter, eventFilter, sortBy]);
 
   // Statistics
   const stats = useMemo(() => {
@@ -681,6 +776,14 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
     let comboEntries = 0;
     let individualEntries = 0;
 
+    // Financial Payment Statistics
+    let countPaidInFull = 0;
+    let countAdvancePaid = 0;
+    let countNoPayment = 0;
+    let totalCollectedAmount = 0;
+    let totalOutstandingBalance = 0;
+    const processedComboGroups = new Set<string>();
+
     allRegistrations.forEach((r) => {
       const status = getDeskStatus(r);
       if (status === 'VERIFIED') {
@@ -692,6 +795,31 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
         notComplete++;
       } else {
         pending++;
+      }
+
+      const totalFee = Number(r.totalAmount) || 0;
+      const paid = Number(r.paidAmount !== undefined ? r.paidAmount : totalFee);
+      const pend = Math.max(0, totalFee - paid);
+      const payStatus = r.paymentStatus || (pend === 0 && totalFee > 0 ? 'Paid in Full' : (paid > 0 ? 'Advance Paid' : 'Pending'));
+
+      if (payStatus === 'Paid in Full' || (paid >= totalFee && totalFee > 0)) {
+        countPaidInFull++;
+      } else if (payStatus === 'Advance Paid' || paid > 0) {
+        countAdvancePaid++;
+      } else {
+        countNoPayment++;
+      }
+
+      // Avoid double counting combo package totals
+      if (r.comboGroupId) {
+        if (!processedComboGroups.has(r.comboGroupId)) {
+          processedComboGroups.add(r.comboGroupId);
+          totalCollectedAmount += paid;
+          totalOutstandingBalance += pend;
+        }
+      } else {
+        totalCollectedAmount += paid;
+        totalOutstandingBalance += pend;
       }
 
       const isHost = Boolean(r.isHostCollege || r.college?.isHostCollege);
@@ -732,6 +860,11 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
       withReceipt,
       comboEntries,
       individualEntries,
+      countPaidInFull,
+      countAdvancePaid,
+      countNoPayment,
+      totalCollectedAmount,
+      totalOutstandingBalance,
     };
   }, [allRegistrations]);
 
@@ -1814,6 +1947,57 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
         </div>
       </div>
 
+      {/* Advance Payment & Financial Balances Summary Bar */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+        <div className="p-3.5 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 celestial-glass">
+          <span className="text-[10px] uppercase font-mono tracking-wider text-emerald-400 block font-bold">Collected Revenue</span>
+          <span className="font-cinzel text-lg sm:text-2xl font-extrabold text-emerald-300 mt-0.5 block font-mono">
+            ₹{stats.totalCollectedAmount.toLocaleString('en-IN')}
+          </span>
+          <span className="text-[10px] text-emerald-400/80 block mt-0.5">Cleared + Advance Paid</span>
+        </div>
+
+        <div className="p-3.5 rounded-2xl bg-amber-950/25 border border-amber-500/40 celestial-glass">
+          <span className="text-[10px] uppercase font-mono tracking-wider text-amber-400 block font-bold">Outstanding Balance</span>
+          <span className="font-cinzel text-lg sm:text-2xl font-extrabold text-amber-300 mt-0.5 block font-mono">
+            ₹{stats.totalOutstandingBalance.toLocaleString('en-IN')}
+          </span>
+          <span className="text-[10px] text-amber-400/80 block mt-0.5">Pending due before event</span>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setPaymentStatusFilter(paymentStatusFilter === 'ADVANCE_PAID' ? 'ALL' : 'ADVANCE_PAID')}
+          className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
+            paymentStatusFilter === 'ADVANCE_PAID'
+              ? 'bg-amber-500/20 border-amber-400 ring-2 ring-amber-400/50'
+              : 'bg-[#090E26] border-amber-500/25 hover:border-amber-500/50'
+          }`}
+        >
+          <span className="text-[10px] uppercase font-mono tracking-wider text-amber-400 block font-bold">Advance Paid</span>
+          <span className="font-cinzel text-lg sm:text-2xl font-extrabold text-amber-300 mt-0.5 block">
+            {stats.countAdvancePaid}
+          </span>
+          <span className="text-[10px] text-amber-400/80 block mt-0.5">Partial deposit received</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setPaymentStatusFilter(paymentStatusFilter === 'PAID_IN_FULL' ? 'ALL' : 'PAID_IN_FULL')}
+          className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
+            paymentStatusFilter === 'PAID_IN_FULL'
+              ? 'bg-emerald-500/20 border-emerald-400 ring-2 ring-emerald-400/50'
+              : 'bg-[#090E26] border-emerald-500/25 hover:border-emerald-500/50'
+          }`}
+        >
+          <span className="text-[10px] uppercase font-mono tracking-wider text-emerald-400 block font-bold">Paid in Full</span>
+          <span className="font-cinzel text-lg sm:text-2xl font-extrabold text-emerald-300 mt-0.5 block">
+            {stats.countPaidInFull}
+          </span>
+          <span className="text-[10px] text-emerald-400/80 block mt-0.5">Zero balance remaining</span>
+        </button>
+      </div>
+
       {/* Quick View Segmented Category Filter Pills */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-2 mb-4 scrollbar-none">
         <button
@@ -1983,6 +2167,18 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
             <option value="VERIFIED">🟢 Verified ({stats.verified})</option>
             <option value="REJECTED">🔴 Rejected ({stats.rejected})</option>
             <option value="NOT_COMPLETE">⚪ Not Complete ({stats.notComplete})</option>
+          </select>
+
+          {/* Payment Balance Filter */}
+          <select
+            value={paymentStatusFilter}
+            onChange={(e) => setPaymentStatusFilter(e.target.value as any)}
+            className="px-3 py-2 rounded-xl bg-black/40 border border-amber-500/35 text-xs text-amber-200 focus:outline-none focus:border-[#D4AF37] cursor-pointer font-medium"
+          >
+            <option value="ALL">All Payment Statuses</option>
+            <option value="PAID_IN_FULL">🟢 Paid in Full ({stats.countPaidInFull})</option>
+            <option value="ADVANCE_PAID">🟡 Advance Paid ({stats.countAdvancePaid})</option>
+            <option value="PENDING">🔴 Unpaid / Pending ({stats.countNoPayment})</option>
           </select>
 
           {/* Institution Filter Dropdown */}
@@ -3242,12 +3438,20 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                 <div>
-                  <span className="text-slate-400 text-[10px] block">TOTAL AMOUNT PAID</span>
-                  <span className="font-bold text-emerald-400 font-mono text-base">₹{inspectRegistration.totalAmount}</span>
+                  <span className="text-slate-400 text-[10px] block">TOTAL REGISTRATION FEE</span>
+                  <span className="font-bold text-white font-mono text-base">₹{inspectRegistration.totalAmount}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 text-[10px] block">FEE STRUCTURE</span>
-                  <span className="text-slate-200 font-mono">₹{inspectRegistration.feePerUnit} ({inspectRegistration.feeType})</span>
+                  <span className="text-slate-400 text-[10px] block">AMOUNT PAID</span>
+                  <span className="font-bold text-emerald-400 font-mono text-base">
+                    ₹{inspectRegistration.paidAmount !== undefined ? inspectRegistration.paidAmount : (inspectRegistration.paymentConfirmed ? inspectRegistration.totalAmount : 0)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block">PENDING BALANCE DUE</span>
+                  <span className="font-bold text-amber-300 font-mono text-base">
+                    ₹{inspectRegistration.pendingAmount !== undefined ? inspectRegistration.pendingAmount : Math.max(0, inspectRegistration.totalAmount - (inspectRegistration.paidAmount || 0))}
+                  </span>
                 </div>
                 <div>
                   <span className="text-slate-400 text-[10px] block">UPI UTR / TRANSACTION ID</span>
@@ -3255,10 +3459,94 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                     {inspectRegistration.utrNumber || 'None'}
                   </span>
                 </div>
-                <div>
-                  <span className="text-slate-400 text-[10px] block">CONFIRMATION CHECK</span>
-                  <span className="text-slate-200">{inspectRegistration.paymentConfirmed ? '✅ Confirmed by student' : '⚠️ Unconfirmed'}</span>
+              </div>
+
+              {/* Payment Details Management (Admin Editable) */}
+              <div className="mt-3 p-4 rounded-xl bg-[#090E26] border border-amber-500/40 space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                  <span className="font-bold text-amber-300 text-xs flex items-center gap-1.5 uppercase font-mono">
+                    <CreditCard className="w-4 h-4 text-[#D4AF37]" />
+                    Advance Payment & Balance Management (Admin Control)
+                  </span>
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono border ${
+                    (inspectRegistration.pendingAmount === 0 || inspectRegistration.paymentStatus === 'Paid in Full')
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      : (inspectRegistration.paidAmount && inspectRegistration.paidAmount > 0) || inspectRegistration.paymentStatus === 'Advance Paid'
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                      : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                  }`}>
+                    {inspectRegistration.pendingAmount === 0 || inspectRegistration.paymentStatus === 'Paid in Full'
+                      ? 'PAID IN FULL'
+                      : (inspectRegistration.paidAmount && inspectRegistration.paidAmount > 0) || inspectRegistration.paymentStatus === 'Advance Paid'
+                      ? 'ADVANCE PAID'
+                      : 'PENDING'}
+                  </span>
                 </div>
+
+                <form onSubmit={handleSavePaymentDetails} className="space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                    <div>
+                      <label className="text-slate-400 text-[10px] uppercase font-mono block mb-1">
+                        Total Registration Fee
+                      </label>
+                      <div className="px-3 py-2 rounded-lg bg-black/50 border border-white/10 font-mono font-bold text-white text-sm">
+                        ₹{Number(inspectRegistration.totalAmount).toLocaleString('en-IN')}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-slate-400 text-[10px] uppercase font-mono block mb-1">
+                        Amount Paid Received (₹)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={paymentInputPaid}
+                        onChange={(e) => setPaymentInputPaid(Math.max(0, Number(e.target.value) || 0))}
+                        className="w-full px-3 py-2 rounded-lg bg-black/60 border border-amber-500/50 font-mono font-bold text-emerald-300 text-sm focus:outline-none focus:border-[#D4AF37]"
+                        placeholder="0"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-slate-400 text-[10px] uppercase font-mono block mb-1">
+                        Calculated Pending Balance
+                      </label>
+                      <div className={`px-3 py-2 rounded-lg bg-black/50 border font-mono font-bold text-sm ${
+                        Math.max(0, Number(inspectRegistration.totalAmount || 0) - Number(paymentInputPaid || 0)) > 0
+                          ? 'border-amber-500/50 text-amber-300'
+                          : 'border-emerald-500/50 text-emerald-300'
+                      }`}>
+                        ₹{Math.max(0, Number(inspectRegistration.totalAmount || 0) - Number(paymentInputPaid || 0)).toLocaleString('en-IN')}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-slate-400 text-[10px] uppercase font-mono block mb-1">
+                      Payment Remittance Notes / Remittance Reference
+                    </label>
+                    <input
+                      type="text"
+                      value={paymentInputNotes}
+                      onChange={(e) => setPaymentInputNotes(e.target.value)}
+                      placeholder="e.g. Paid ₹1000 advance via GPay, balance ₹2000 due at registration desk"
+                      className="w-full px-3 py-1.5 rounded-lg bg-black/50 border border-white/15 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-[#D4AF37]"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-1">
+                    <button
+                      type="submit"
+                      disabled={isSavingPayment}
+                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-400 via-teal-400 to-emerald-500 text-slate-950 font-bold text-xs flex items-center gap-1.5 hover:brightness-110 transition-all cursor-pointer shadow-md disabled:opacity-50"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span>{isSavingPayment ? 'Saving Payment...' : 'Update Payment Details'}</span>
+                    </button>
+                  </div>
+                </form>
               </div>
 
               {/* Uploaded Payment Screenshot Visual Display */}

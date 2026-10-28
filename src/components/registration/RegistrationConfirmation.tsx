@@ -89,11 +89,20 @@ export const RegistrationConfirmation: React.FC = () => {
           </div>
 
           <div className="flex justify-between items-center py-1 border-b border-white/5">
-            <span className="text-slate-400">Amount</span>
+            <span className="text-slate-400">
+              {activeRegistration.isAdvancePayment ? 'Advance Amount Paid' : 'Amount'}
+            </span>
             <span className="font-mono font-bold text-white">
               {activeRegistration.college?.isHostCollege ? '₹0 (Host Free Waiver)' : `₹${activeRegistration.totalAmount}`}
             </span>
           </div>
+
+          {activeRegistration.isAdvancePayment && activeRegistration.remainingBalance !== undefined && (
+            <div className="flex justify-between items-center py-1.5 px-2 bg-amber-500/15 rounded-lg border border-amber-500/30 text-amber-200">
+              <span className="font-semibold">Remaining Balance Due on Arrival:</span>
+              <span className="font-mono font-bold text-white">₹{activeRegistration.remainingBalance}</span>
+            </div>
+          )}
 
           <div className="flex justify-between items-center pt-1">
             <span className="text-slate-400">Status</span>
@@ -103,7 +112,16 @@ export const RegistrationConfirmation: React.FC = () => {
           </div>
         </div>
 
-        {/* Confirmation Email Notice Box (Matching Screen 6) */}
+        {/* Confirmation Email & Advance Payment Notice Box */}
+        {activeRegistration.isAdvancePayment && activeRegistration.remainingBalance !== undefined && (
+          <div className="p-3.5 rounded-xl bg-amber-950/80 border border-amber-500/40 text-xs text-amber-200 text-center mb-4 space-y-1">
+            <p className="font-bold text-white">⚠️ Advance Payment Registration Confirmed</p>
+            <p>
+              Advance paid: ₹{activeRegistration.totalAmount}. Please pay the remaining balance of <strong className="text-amber-300">₹{activeRegistration.remainingBalance}</strong> upon arrival at the fest desk.
+            </p>
+          </div>
+        )}
+
         <div className="p-3.5 rounded-xl bg-[#0F163D]/80 border border-[#D4AF37]/25 text-xs text-slate-300 text-center mb-6">
           You will receive a confirmation email after your payment is verified.
         </div>

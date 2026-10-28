@@ -47,15 +47,22 @@ export const RegistrationCard: React.FC<RegistrationCardProps> = ({
             <span className="text-slate-400">Members:</span>
             <span className="text-slate-200">{registration.participants.length} participant(s)</span>
           </div>
-          <div className="flex justify-between pt-1 border-t border-white/5">
-            <span className="text-slate-400">Amount:</span>
-            <div className="text-right">
-              <span className="font-mono font-bold text-[#F5E7C4]">₹{registration.totalAmount.toLocaleString('en-IN')}</span>
-              {registration.promoCode && (
-                <span className="block text-[10px] text-emerald-400 font-mono">
-                  Code: {registration.promoCode} ({registration.discountPercent}% OFF)
-                </span>
-              )}
+          <div className="pt-2 border-t border-white/5 space-y-1">
+            <div className="flex justify-between">
+              <span className="text-slate-400">Total Fee:</span>
+              <span className="font-mono font-bold text-white">₹{Number(registration.totalAmount).toLocaleString('en-IN')}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Amount Paid:</span>
+              <span className="font-mono font-bold text-emerald-400">
+                ₹{Number(registration.paidAmount !== undefined ? registration.paidAmount : (registration.paymentConfirmed ? registration.totalAmount : 0)).toLocaleString('en-IN')}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Balance Due:</span>
+              <span className="font-mono font-bold text-amber-300">
+                ₹{Number(registration.pendingAmount !== undefined ? registration.pendingAmount : Math.max(0, registration.totalAmount - (registration.paidAmount || 0))).toLocaleString('en-IN')}
+              </span>
             </div>
           </div>
         </div>

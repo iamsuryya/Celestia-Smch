@@ -9,6 +9,8 @@ const DEFAULT_PROMO_CODES: PromoCode[] = [
     id: 'promo-1',
     code: 'CELESTIA10',
     discountPercent: 10,
+    applicableScope: 'all',
+    discountType: 'percentage',
     description: 'General 10% promotional discount',
     isActive: true,
     redemptionCount: 14,
@@ -18,7 +20,9 @@ const DEFAULT_PROMO_CODES: PromoCode[] = [
     id: 'promo-2',
     code: 'EARLYBIRD20',
     discountPercent: 20,
-    description: 'Early bird 20% discount offer',
+    applicableScope: 'individual',
+    discountType: 'percentage',
+    description: 'Early bird 20% discount offer for Individual Events',
     isActive: true,
     redemptionCount: 28,
     createdAt: '2026-10-16',
@@ -27,10 +31,51 @@ const DEFAULT_PROMO_CODES: PromoCode[] = [
     id: 'promo-3',
     code: 'SMCHSPECIAL15',
     discountPercent: 15,
-    description: 'Special 15% discount voucher',
+    applicableScope: 'combo',
+    discountType: 'percentage',
+    description: 'Special 15% discount for Combo Packages',
     isActive: true,
     redemptionCount: 8,
     createdAt: '2026-10-17',
+  },
+  {
+    id: 'promo-ap750',
+    code: 'AP750',
+    discountPercent: 0,
+    applicableScope: 'all',
+    discountType: 'advance',
+    advanceAmount: 750,
+    isAdvancePayment: true,
+    description: 'Advance payment of ₹750 (Balance due on arrival)',
+    isActive: true,
+    redemptionCount: 5,
+    createdAt: '2026-10-20',
+  },
+  {
+    id: 'promo-ap500',
+    code: 'AP500',
+    discountPercent: 0,
+    applicableScope: 'all',
+    discountType: 'advance',
+    advanceAmount: 500,
+    isAdvancePayment: true,
+    description: 'Advance payment of ₹500 (Balance due on arrival)',
+    isActive: true,
+    redemptionCount: 3,
+    createdAt: '2026-10-20',
+  },
+  {
+    id: 'promo-ap2000',
+    code: 'AP2000',
+    discountPercent: 0,
+    applicableScope: 'all',
+    discountType: 'advance',
+    advanceAmount: 2000,
+    isAdvancePayment: true,
+    description: 'Advance payment of ₹2000 (Balance due on arrival)',
+    isActive: true,
+    redemptionCount: 2,
+    createdAt: '2026-10-20',
   },
 ];
 
@@ -76,7 +121,11 @@ class PromoCodeService {
           const mapped: PromoCode[] = data.map((d: any) => ({
             id: d.id,
             code: d.code,
-            discountPercent: d.discount_percent ?? d.discountPercent,
+            discountPercent: d.discount_percent ?? d.discountPercent ?? 0,
+            applicableScope: d.applicable_scope ?? d.applicableScope ?? 'all',
+            discountType: d.discount_type ?? d.discountType ?? (d.is_advance_payment || d.isAdvancePayment ? 'advance' : 'percentage'),
+            advanceAmount: d.advance_amount ?? d.advanceAmount,
+            isAdvancePayment: d.is_advance_payment ?? d.isAdvancePayment ?? (d.discount_type === 'advance'),
             description: d.description,
             isActive: d.is_active ?? d.isActive ?? true,
             redemptionCount: d.redemption_count ?? d.redemptionCount ?? 0,
@@ -95,14 +144,24 @@ class PromoCodeService {
   public async createPromoCode(
     codeRaw: string,
     discountPercent: number,
-    description?: string
+    description?: string,
+    applicableScope: 'individual' | 'combo' | 'all' = 'all',
+    discountType: 'percentage' | 'advance' = 'percentage',
+    advanceAmount?: number
   ): Promise<{ success: boolean; promo?: PromoCode; message: string }> {
     const code = codeRaw.trim().toUpperCase();
     if (!code) {
       return { success: false, message: 'Please provide a valid promo code string.' };
     }
-    if (isNaN(discountPercent) || discountPercent <= 0 || discountPercent > 100) {
-      return { success: false, message: 'Discount percentage must be between 1% and 100%.' };
+
+    if (discountType === 'advance') {
+      if (!advanceAmount || isNaN(advanceAmount) || advanceAmount <= 0) {
+        return { success: false, message: 'Advance payment amount must be a valid positive amount in ₹.' };
+      }
+    } else {
+      if (isNaN(discountPercent) || discountPercent <= 0 || discountPercent > 100) {
+        return { success: false, message: 'Discount percentage must be between 1% and 100%.' };
+      }
     }
 
     const currentCodes = await this.getPromoCodes();
@@ -110,11 +169,16 @@ class PromoCodeService {
       return { success: false, message: `Promo code "${code}" already exists in the system.` };
     }
 
+    const isAdv = discountType === 'advance';
     const newPromo: PromoCode = {
       id: `promo-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       code,
-      discountPercent: Math.round(discountPercent),
-      description: description?.trim() || `${Math.round(discountPercent)}% Off Discount`,
+      discountPercent: isAdv ? 0 : Math.round(discountPercent),
+      applicableScope,
+      discountType,
+      advanceAmount: isAdv ? advanceAmount : undefined,
+      isAdvancePayment: isAdv,
+      description: description?.trim() || (isAdv ? `Advance Payment ₹${advanceAmount}` : `${Math.round(discountPercent)}% Off Discount`),
       isActive: true,
       redemptionCount: 0,
       createdAt: new Date().toISOString().split('T')[0],
@@ -132,6 +196,10 @@ class PromoCodeService {
             id: newPromo.id,
             code: newPromo.code,
             discount_percent: newPromo.discountPercent,
+            applicable_scope: newPromo.applicableScope,
+            discount_type: newPromo.discountType,
+            advance_amount: newPromo.advanceAmount,
+            is_advance_payment: newPromo.isAdvancePayment,
             description: newPromo.description,
             is_active: newPromo.isActive,
             redemption_count: 0,
@@ -143,7 +211,11 @@ class PromoCodeService {
       }
     }
 
-    return { success: true, promo: newPromo, message: `Promo code "${code}" (${newPromo.discountPercent}% OFF) created successfully!` };
+    return {
+      success: true,
+      promo: newPromo,
+      message: `Promo code "${code}" (${isAdv ? `Advance ₹${advanceAmount}` : `${newPromo.discountPercent}% OFF`}) created successfully!`,
+    };
   }
 
   public async togglePromoCodeStatus(
@@ -190,8 +262,19 @@ class PromoCodeService {
   }
 
   public async validatePromoCode(
-    codeRaw: string
-  ): Promise<{ valid: boolean; promo?: PromoCode; message: string }> {
+    codeRaw: string,
+    scopeContext: 'individual' | 'combo' = 'individual',
+    originalAmount?: number
+  ): Promise<{
+    valid: boolean;
+    promo?: PromoCode;
+    message: string;
+    isAdvancePayment?: boolean;
+    advanceAmount?: number;
+    remainingBalance?: number;
+    discountAmount?: number;
+    finalPayable?: number;
+  }> {
     const clean = codeRaw.trim().toUpperCase();
     if (!clean) {
       return { valid: false, message: 'Please enter a promo code.' };
@@ -205,13 +288,68 @@ class PromoCodeService {
     }
 
     if (!match.isActive) {
-      return { valid: false, message: `Promo code "${clean}" is currently deactivated.` };
+      return { valid: false, message: `Promo code "${clean}" is currently deactivated by admin.` };
+    }
+
+    // Check scope
+    const scope = match.applicableScope || 'all';
+    if (scope !== 'all' && scope !== scopeContext) {
+      const scopeName = scope === 'combo' ? 'Combo Offers' : 'Individual Events';
+      return {
+        valid: false,
+        message: `Promo code "${clean}" is applicable only for ${scopeName}.`,
+      };
+    }
+
+    // Check if advance payment code
+    const isAdv = match.isAdvancePayment || match.discountType === 'advance';
+    if (isAdv) {
+      const advAmt = match.advanceAmount || 0;
+      if (originalAmount && originalAmount > 0) {
+        if (advAmt >= originalAmount) {
+          return {
+            valid: false,
+            message: `Advance payment code (${clean} = ₹${advAmt}) exceeds total fee of ₹${originalAmount}. Paying in full is cheaper!`,
+          };
+        }
+        const remaining = originalAmount - advAmt;
+        return {
+          valid: true,
+          promo: match,
+          isAdvancePayment: true,
+          advanceAmount: advAmt,
+          remainingBalance: remaining,
+          finalPayable: advAmt,
+          discountAmount: remaining,
+          message: `Advance code "${match.code}" applied! Pay ₹${advAmt} now. Remaining balance ₹${remaining} to be paid on arrival.`,
+        };
+      }
+      return {
+        valid: true,
+        promo: match,
+        isAdvancePayment: true,
+        advanceAmount: advAmt,
+        finalPayable: advAmt,
+        message: `Advance code "${match.code}" applied! Pay ₹${advAmt} now. Remaining balance due on arrival.`,
+      };
+    }
+
+    // Standard percentage discount
+    const pct = match.discountPercent || 0;
+    let discAmt = 0;
+    let finalPay = originalAmount;
+    if (originalAmount && originalAmount > 0) {
+      discAmt = Math.round((originalAmount * pct) / 100);
+      finalPay = Math.max(0, originalAmount - discAmt);
     }
 
     return {
       valid: true,
       promo: match,
-      message: `Promo code "${match.code}" applied! You get ${match.discountPercent}% OFF.`,
+      isAdvancePayment: false,
+      discountAmount: discAmt,
+      finalPayable: finalPay,
+      message: `Promo code "${match.code}" applied! You get ${pct}% OFF.`,
     };
   }
 

@@ -105,6 +105,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [newCodeName, setNewCodeName] = useState<string>('');
   const [newCodeDiscount, setNewCodeDiscount] = useState<string>('');
   const [newCodeDesc, setNewCodeDesc] = useState<string>('');
+  const [newCodeScope, setNewCodeScope] = useState<'individual' | 'combo' | 'all'>('all');
+  const [newCodeDiscountType, setNewCodeDiscountType] = useState<'percentage' | 'advance'>('percentage');
+  const [newCodeAdvanceAmount, setNewCodeAdvanceAmount] = useState<string>('750');
   const [isCreatingPromo, setIsCreatingPromo] = useState<boolean>(false);
 
   const loadPromoCodes = async () => {
@@ -149,24 +152,42 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
   const handleCreatePromo = async (e: React.FormEvent) => {
     e.preventDefault();
-    const discountVal = parseFloat(newCodeDiscount);
+    const discountVal = parseFloat(newCodeDiscount) || 0;
+    const advanceVal = parseFloat(newCodeAdvanceAmount) || 0;
+
     if (!newCodeName.trim()) {
-      showToast('Please enter a promo code string (e.g. CELESTIA20)');
+      showToast('Please enter a promo code string (e.g. CELESTIA20 or AP750)');
       return;
     }
-    if (isNaN(discountVal) || discountVal <= 0 || discountVal > 100) {
-      showToast('Discount percentage must be between 1% and 100%');
-      return;
+
+    if (newCodeDiscountType === 'advance') {
+      if (!advanceVal || advanceVal <= 0) {
+        showToast('Please enter a valid advance payment amount in ₹ (e.g. 750)');
+        return;
+      }
+    } else {
+      if (isNaN(discountVal) || discountVal <= 0 || discountVal > 100) {
+        showToast('Discount percentage must be between 1% and 100%');
+        return;
+      }
     }
 
     setIsCreatingPromo(true);
     try {
-      const res = await promoCodeService.createPromoCode(newCodeName, discountVal, newCodeDesc);
+      const res = await promoCodeService.createPromoCode(
+        newCodeName,
+        discountVal,
+        newCodeDesc,
+        newCodeScope,
+        newCodeDiscountType,
+        advanceVal
+      );
       showToast(res.message);
       if (res.success) {
         setNewCodeName('');
         setNewCodeDiscount('');
         setNewCodeDesc('');
+        setNewCodeAdvanceAmount('750');
         loadPromoCodes();
       }
     } catch {
@@ -1247,62 +1268,112 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             </div>
 
             {/* Create New Promo Code Form */}
-            <form onSubmit={handleCreatePromo} className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-1">
-              <div>
-                <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
-                  Promo Code String *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newCodeName}
-                  onChange={(e) => setNewCodeName(e.target.value.toUpperCase())}
-                  placeholder="e.g. CELESTIA20"
-                  className="w-full px-3 py-2 rounded-xl bg-[#050714] border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white placeholder-slate-500 uppercase focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
-                  Discount Percentage (%) *
-                </label>
-                <div className="relative">
+            <form onSubmit={handleCreatePromo} className="space-y-4 pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
+                    Promo Code String *
+                  </label>
                   <input
-                    type="number"
-                    min="1"
-                    max="100"
+                    type="text"
                     required
-                    value={newCodeDiscount}
-                    onChange={(e) => setNewCodeDiscount(e.target.value)}
-                    placeholder="e.g. 20"
-                    className="w-full px-3 py-2 pr-8 rounded-xl bg-[#050714] border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white placeholder-slate-500 focus:outline-none"
+                    value={newCodeName}
+                    onChange={(e) => setNewCodeName(e.target.value.toUpperCase())}
+                    placeholder="e.g. CELESTIA20 or AP750"
+                    className="w-full px-3 py-2 rounded-xl bg-[#050714] border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white placeholder-slate-500 uppercase focus:outline-none"
                   />
-                  <Percent className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-2.5" />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
+                    Applicable Scope *
+                  </label>
+                  <select
+                    value={newCodeScope}
+                    onChange={(e) => setNewCodeScope(e.target.value as any)}
+                    className="w-full px-3 py-2 rounded-xl bg-[#050714] border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white focus:outline-none"
+                  >
+                    <option value="all">All Events & Combos (Universal)</option>
+                    <option value="individual">Individual Events Only</option>
+                    <option value="combo">Combo Offers Only</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
+                    Discount Model *
+                  </label>
+                  <select
+                    value={newCodeDiscountType}
+                    onChange={(e) => setNewCodeDiscountType(e.target.value as any)}
+                    className="w-full px-3 py-2 rounded-xl bg-[#050714] border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white focus:outline-none"
+                  >
+                    <option value="percentage">Percentage Discount (% Off)</option>
+                    <option value="advance">Advance Payment Code (AP Code)</option>
+                  </select>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
-                  Campaign Description
-                </label>
-                <input
-                  type="text"
-                  value={newCodeDesc}
-                  onChange={(e) => setNewCodeDesc(e.target.value)}
-                  placeholder="e.g. 20% Early bird discount offer"
-                  className="w-full px-3 py-2 rounded-xl bg-[#050714] border border-white/15 focus:border-[#D4AF37] text-xs text-white placeholder-slate-500 focus:outline-none"
-                />
-              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {newCodeDiscountType === 'advance' ? (
+                  <div>
+                    <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
+                      Advance Amount (₹ Pay Now) *
+                    </label>
+                    <input
+                      type="number"
+                      min="100"
+                      required
+                      value={newCodeAdvanceAmount}
+                      onChange={(e) => setNewCodeAdvanceAmount(e.target.value)}
+                      placeholder="e.g. 750, 500, 2000"
+                      className="w-full px-3 py-2 rounded-xl bg-[#050714] border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white placeholder-slate-500 focus:outline-none"
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
+                      Discount Percentage (%) *
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        required
+                        value={newCodeDiscount}
+                        onChange={(e) => setNewCodeDiscount(e.target.value)}
+                        placeholder="e.g. 20"
+                        className="w-full px-3 py-2 pr-8 rounded-xl bg-[#050714] border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white placeholder-slate-500 focus:outline-none"
+                      />
+                      <Percent className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-2.5" />
+                    </div>
+                  </div>
+                )}
 
-              <div className="flex items-end">
-                <button
-                  type="submit"
-                  disabled={isCreatingPromo || !newCodeName.trim() || !newCodeDiscount}
-                  className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#F5E7C4] via-[#E6C57D] to-[#D4AF37] hover:brightness-110 text-[#050714] font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>{isCreatingPromo ? 'Creating...' : 'Create Code'}</span>
-                </button>
+                <div>
+                  <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
+                    Campaign Description
+                  </label>
+                  <input
+                    type="text"
+                    value={newCodeDesc}
+                    onChange={(e) => setNewCodeDesc(e.target.value)}
+                    placeholder={newCodeDiscountType === 'advance' ? "e.g. Advance Pay ₹750 (Balance due on arrival)" : "e.g. 20% Early bird discount offer"}
+                    className="w-full px-3 py-2 rounded-xl bg-[#050714] border border-white/15 focus:border-[#D4AF37] text-xs text-white placeholder-slate-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex items-end">
+                  <button
+                    type="submit"
+                    disabled={isCreatingPromo || !newCodeName.trim()}
+                    className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#F5E7C4] via-[#E6C57D] to-[#D4AF37] hover:brightness-110 text-[#050714] font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>{isCreatingPromo ? 'Creating...' : 'Create Promo Code'}</span>
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -1314,17 +1385,18 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 <thead>
                   <tr className="border-b border-white/10 bg-black/40 text-[11px] font-mono uppercase tracking-wider text-[#D4AF37]">
                     <th className="py-3 px-4">Code Name</th>
-                    <th className="py-3 px-4">Discount Rate</th>
+                    <th className="py-3 px-4">Applicable Scope</th>
+                    <th className="py-3 px-4">Discount / Advance Rate</th>
                     <th className="py-3 px-4">Campaign Description</th>
                     <th className="py-3 px-4 text-center">Status</th>
-                    <th className="py-3 px-4 text-center">Total Redemptions</th>
+                    <th className="py-3 px-4 text-center">Redemptions</th>
                     <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {promoCodes.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-slate-400">
+                      <td colSpan={7} className="py-8 text-center text-slate-400">
                         No promo codes found. Use the form above to add your first discount code.
                       </td>
                     </tr>
@@ -1334,8 +1406,23 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         <td className="py-3.5 px-4 font-mono font-bold text-base text-[#F5E7C4]">
                           {p.code}
                         </td>
-                        <td className="py-3.5 px-4 font-mono font-bold text-emerald-400 text-sm">
-                          {p.discountPercent}% OFF
+                        <td className="py-3.5 px-4 font-mono uppercase">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            p.applicableScope === 'combo'
+                              ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                              : p.applicableScope === 'individual'
+                              ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                              : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                          }`}>
+                            {p.applicableScope === 'combo' ? 'Combos Only' : p.applicableScope === 'individual' ? 'Individual Events' : 'All Events & Combos'}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 font-mono font-bold text-sm">
+                          {(p.isAdvancePayment || p.discountType === 'advance') ? (
+                            <span className="text-[#E6C57D]">Advance Pay ₹{p.advanceAmount || 0}</span>
+                          ) : (
+                            <span className="text-emerald-400">{p.discountPercent}% OFF</span>
+                          )}
                         </td>
                         <td className="py-3.5 px-4 text-slate-300">
                           {p.description || 'N/A'}

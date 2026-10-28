@@ -1,105 +1,165 @@
-# Implementation Plan: Events Page Reclassification, Combo Auto-Verification, Unified Incharge Entries & AI Assistant
+# Advance Payment & Pending Amount Management System — Celestia’26
 
-Implement the new event classification on the Events Page (`ALL`, `SOLO`, `MINOR`, `MAJOR`, `DIGITAL`), configure Stellar Bid (IPL Auction) for both Solo and Duo/Minor categories, enable multi-event combo cascade verification by Admin, display unified incharge event entries with shared payment proof, sync participant dashboard statuses real-time, and embed the AI Combo Assistant on the Offers page.
+Implementation plan for recording, updating, and displaying advance payments and pending balance amounts across the Celestia’26 registration platform, admin portals, participant passes, registered events views, and event in-charge dashboard.
 
----
+## User Review & Critical Decisions
 
-## 1. User Requirements & Technical Scope
+> [!IMPORTANT]
+> The following key decisions were confirmed during Phase 1 interactive alignment and will govern the database schema, status calculation, and UI presentation:
 
-### A. Events Page Reclassification
-- **Remove Old Categories**: Remove previous category filters (`Music`, `Dance`, `Fashion`, `Entertainment`, `Special Events`, `Digital & Media`).
-- **Implement New Categories**:
-  1. **ALL**: All 14 festival competitions.
-  2. **SOLO**: Seraphia, Symphora, Nrityara, Eclipse, Cosmic Switch, Elaris, and **Stellar Bid (IPL Auction - 1 Person)**.
-  3. **MINOR**: AdBlitz (Adzap), Twin Flare (Duo Dance), and **Stellar Bid (IPL Auction - 2 Persons Duo)**.
-  4. **MAJOR**: Reflexia, Starfusion, Silhouette.
-  5. **DIGITAL**: Mememania (Meme competition) & Cineverse (Movie recreation reel).
-- **Stellar Bid (Mock IPL Auction)**:
-  - Appears in both **SOLO** (single participant entry) and **MINOR** / Duo (2-participant team entry).
-
-### B. Combo Multi-Event Auto-Verification by Admin
-- When Admin verifies/approves a combo registration, **all events in that combo package are automatically verified and confirmed simultaneously** across Supabase and local state.
-- Incharges of the individual events in that combo will immediately see their respective event entries as verified.
-
-### C. Unified Single-Event Entries for Incharges with Shared Payment Proof
-- Every combo event appears as an independent single-event entry under its corresponding event incharge table (e.g., Starfusion under Dance Incharges, Adzap under Entertainment Incharges, Seraphia under Music Incharges).
-- Every single event entry shows the student/captain details, college, exact headcount (e.g., 7 or 10 participants for team entries), and the **same payment screenshot & UTR number**.
-
-### D. Instant Participant Verification Status Sync
-- In `ParticipantDashboard.tsx`, as soon as Admin clicks "Verify", the participant's competition cards immediately update to `Verified` / `Confirmed`, unlocking official passes and receipts without needing manual cache clearing.
-- Combo registrations are automatically populated into the participant's dashboard upon completing checkout.
-
-### E. Quick Filter Tabs in Admin & Incharges Portals
-- Quick filter tabs (`All`, `Individual Only`, `Combo Offers`) with combo package badges and linked event count tags.
-
-### F. AI Combo Recommendation Chatbot on Offer Page
-- Interactive AI advisor on `ComboOffersPage.tsx` recommending packages based on group size, events, and budget, with a 1-click **"Enroll with this Combo"** button.
+- **Confirmed Decision 1 (Schema)**: Payment tracking columns (`paid_amount`, `pending_amount`, `payment_notes`, and `payment_status`) will be stored directly on the `registrations` table in Supabase for high-performance direct querying and real-time synchronization.
+- **Confirmed Decision 2 (Status Automation)**: `payment_status` will calculate automatically (`Pending`, `Advance Paid`, `Paid in Full`) based on `total_amount - paid_amount` without manual status overrides.
+- **Confirmed Decision 3 (UI Presentation)**: Outstanding balances will be highlighted with clear amber badges and filterable tabs (`All`, `Pending`, `Advance Paid`, `Paid in Full`) in both Admin and In-Charge portals.
 
 ---
 
-## 2. Proposed Architecture & Code Changes
+## 1. Overview & Core Concept
 
-### 1. Events Page Classification (`src/pages/EventsPage.tsx` & `src/data/festivalData.ts`)
-- Replace the category filter tabs with:
-  - `ALL`
-  - `SOLO`
-  - `MINOR`
-  - `MAJOR`
-  - `DIGITAL`
-- Helper classification function:
-  - If filter is `SOLO`: matches all events where `type === 'Solo'` PLUS `stellar-bid`.
-  - If filter is `MINOR`: matches `adblitz`, `twin-flare`, and `stellar-bid`.
-  - If filter is `MAJOR`: matches `reflexia`, `starfusion`, `silhouette`.
-  - If filter is `DIGITAL`: matches `mememania`, `cineverse`.
-- Update count badges on the filter buttons to reflect the exact number of events under each new tier.
+### What It Does
+Provides a full-stack advance payment management workflow for Celestia’26. Admins can record partial or full payments received for any individual event, team, combo, or custom registration. The system automatically calculates the pending balance (`Total Fee - Amount Paid`), updates the payment status (`Pending`, `Advance Paid`, `Paid in Full`), and synchronizes this across:
+1. Main Admin Portals (`/admin` and `/admin1`) with a dedicated Payment Details editing modal/drawer and aggregate financial metrics.
+2. Participant Registration Pass (both web modal and PNG/PDF exportable image canvas).
+3. Participant's Registered Events Page (`MyRegistrationsModal`).
+4. Event In-Charge Portal (`/incharges`) with real-time payment status tabs, filtering, search, and balance readouts.
 
-### 2. Database & Service Layer (`src/types/registration.ts` & `src/services/supabaseRegistrationService.ts`)
-- Add `comboGroupId?: string;` and `participantCount?: number;` to `RegistrationPayload` and `RegistrationSubmission`.
-- In `submitRegistrationToSupabase`:
-  - Persist `combo_group_id`, `combo_id`, `combo_name`, `combo_discount_amount`, and `participant_count: payload.participantCount || payload.participants?.length || 1`.
-  - Save the same payment proof and UTR for each event entry.
-- In `updateStatus`:
-  - When verifying/approving a registration, query for all sibling registrations sharing the same `combo_group_id` (or matching `utr_number` + `combo_id`).
-  - Update `payment_status: 'Verified'` and `registration_status: 'Confirmed'` for all linked registrations in the combo batch simultaneously.
-- In `fetchAdminRegistrations`:
-  - Include `combo_group_id`, `combo_id`, `combo_name`, `combo_type`, `combo_discount_amount`, `participant_count` in queries and mapping.
-
-### 3. Combo Submission & Context Sync (`src/components/registration/ComboRegistrationWizard.tsx`)
-- Assign a shared `comboGroupId` across all event payloads in a combo checkout.
-- Pass accurate `participantCount` (e.g. `fashionRoyaleSilhouetteCount` for Silhouette, or `formData.totalParticipants` for team events).
-- Dispatch created registrations into `RegistrationContext` (`myRegistrations`) and `localStorage` so they appear immediately in the participant dashboard.
-
-### 4. Real-Time Participant Dashboard Sync (`src/context/RegistrationContext.tsx`)
-- Add an active sync function that queries Supabase for the current user's registrations periodically and on dashboard mount.
-- Updates local statuses to `Verified` / `Confirmed` in real-time when the Admin verifies them.
-
-### 5. Incharges & Admin Portals Viewing & Filtering (`src/pages/InchargesPortalPage.tsx`, `Admin1RegistrationsPage.tsx`, `AdminDashboardPage.tsx`)
-- Add `regTypeFilter: 'all' | 'individual' | 'combo'` segmented filter tabs.
-- Display combo badges on registrations.
-- Render the shared payment screenshot thumbnail and preview modal for all single entries in the combo.
-- Display exact headcount (`reg.participantCount || reg.participants?.length || 1`).
-
-### 6. AI Combo Chatbot on Offers Page (`src/components/combos/ComboChatAssistant.tsx` & `src/pages/ComboOffersPage.tsx`)
-- Interactive assistant providing tailored recommendations based on group size and interest, with direct one-click selection to launch the combo registration wizard.
+### Target Audience & Persona
+- **Main Admins**: Record payment increments, add payment reference notes, and audit total collected vs. outstanding event revenue.
+- **Event In-Charges**: Check team check-ins at event desks and immediately spot teams with unpaid balances.
+- **Participants**: View transparent receipts showing total fee, advance paid, and balance due prior to stage call.
 
 ---
 
-## 3. Verification & Testing Plan
+## 2. User Experience & Visual Design
 
-1. **Compilation & Linting**:
-   - Run `compile_applet` and `lint_applet` to confirm zero errors.
-2. **Events Page Tabs & Stellar Bid Test**:
-   - Verify `EventsPage.tsx` shows only `ALL`, `SOLO`, `MINOR`, `MAJOR`, `DIGITAL`.
-   - Verify `SOLO` shows Stellar Bid (IPL Auction).
-   - Verify `MINOR` shows Stellar Bid, AdBlitz, and Twin Flare.
-   - Verify `MAJOR` shows Reflexia, Starfusion, and Silhouette.
-   - Verify `DIGITAL` shows Mememania and Cineverse.
-3. **Combo Multi-Event Cascade Verification**:
-   - Register a combo. In Admin console, click "Verify" on one event entry.
-   - Confirm all events in that combo update to `Verified` / `Confirmed` across all incharges.
-4. **Incharge Single-Entry View & Payment Proof**:
-   - Confirm each event appears in its respective incharge portal with the shared payment screenshot viewable.
-5. **Participant Real-Time Status**:
-   - Confirm the participant dashboard immediately shows `Verified` status and unlocked receipt.
-6. **AI Chatbot**:
-   - Test interaction and combo pre-selection on `ComboOffersPage.tsx`.
+### Key User Flows
+
+```
+  ┌─────────────────────────────────────────────────────────┐
+  │                 Admin Dashboard (/admin)                │
+  │  - Overview metrics: Outstanding, Paid in Full, Advance  │
+  │  - Filter registrations by: Pending | Advance | Full    │
+  │  - Click "Update Payment Details" on any registration   │
+  └────────────────────────────┬────────────────────────────┘
+                               │ (Edits Paid Amount & Notes)
+                               ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │         Supabase / Database State Update                │
+  │  - total_amount (Authoritative)                        │
+  │  - paid_amount (Updated)                               │
+  │  - pending_amount = total_amount - paid_amount         │
+  │  - payment_status = Pending | Advance Paid | Paid In Full│
+  └────────────────────────────┬────────────────────────────┘
+                               │ (Syncs Real-Time)
+        ┌──────────────────────┼──────────────────────┐
+        ▼                      ▼                      ▼
+┌───────────────┐     ┌──────────────────┐   ┌──────────────────┐
+│  Participant  │     │  Participant's   │   │ Event In-Charge  │
+│Reg. Pass (PNG)│     │My Registrations  │   │ Dashboard        │
+│               │     │                  │   │                  │
+│ Total: ₹3,000 │     │ Total: ₹3,000    │   │ Team Alpha       │
+│ Paid:  ₹1,000 │     │ Paid:  ₹1,000    │   │ Paid: ₹1,000     │
+│ Due:   ₹2,000 │     │ Due:   ₹2,000    │   │ Due:  ₹2,000     │
+│ ADVANCE PAID  │     │ ADVANCE PAID     │   │ [ADVANCE PAID]   │
+└───────────────┘     └──────────────────┘   └──────────────────┘
+```
+
+### Visual Identity & Theme
+- **Color Tokens**:
+  - `Paid in Full`: Emerald status badge (`bg-emerald-500/10 text-emerald-400 border-emerald-500/20`).
+  - `Advance Paid`: Amber status badge (`bg-amber-500/10 text-amber-400 border-amber-500/20`).
+  - `Pending`: Slate/Rose status badge (`bg-rose-500/10 text-rose-400 border-rose-500/20`).
+- **Typography & Formatting**: Standardized tabular numerals (`font-mono tabular-nums`) for currency amounts (`₹3,000`).
+- **Combos Protection**: Combo registrations display the single overall combo fee and paid balance on the primary combo header, preventing fee replication on individual sub-events.
+
+---
+
+## 3. Key Product Decisions & Trade-Offs
+
+### Decision 1: Single Database Field Schema Integration
+- **Chosen Approach**: Add `paid_amount`, `pending_amount`, `payment_notes`, and `payment_status` directly to `registrations` table in Supabase (with backward-compatible client fallbacks).
+- **Why**: Ensures 100% compatibility with existing queries, avoids complex joins, and supports high-speed RLS policy checks for both Admin and In-Charge desks.
+
+### Decision 2: Automatic Status Assignment Formula
+- **Chosen Approach**:
+  - If `paid_amount <= 0` or undefined ➔ `Pending`
+  - If `0 < paid_amount < total_amount` ➔ `Advance Paid`
+  - If `paid_amount >= total_amount` ➔ `Paid in Full`
+- **Why**: Eliminates manual status discrepancy errors while maintaining deterministic UI state.
+
+### Decision 3: Combo Balance Non-Duplication Logic
+- **Chosen Approach**: Flag registrations with `comboGroupId`. When calculating overall event or dashboard totals, group by `comboGroupId` (or count unique `comboGroupId` once) so combo fees are never multiplied across included events.
+
+---
+
+## 4. Technical Architecture & Data Strategy
+
+### System Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           Celestia'26 React SPA                                 │
+├───────────────────────┬───────────────────────┬─────────────────────────────────┤
+│ Admin Portals         │ In-Charge Dashboard   │ Participant Views               │
+│ - AdminDashboardPage  │ - InchargesPortalPage │ - RegistrationPass              │
+│ - Admin1Registrations │ - Event filter        │ - MyRegistrationsModal          │
+│ - Payment Edit Modal  │ - Status tabs & search│ - Canvas PNG Exporter           │
+└───────────┬───────────┴───────────┬───────────┴────────────────┬────────────────┘
+            │                       │                            │
+            ▼                       ▼                            ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                  supabaseRegistrationService.ts (API Gateway)                   │
+│ - updateRegistrationPaymentDetails(id, paidAmount, notes)                        │
+│ - fetchRegistrationsWithPaymentStatus()                                         │
+└───────────────────────────────────┬─────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           Supabase Database                                     │
+│ - Table: `registrations`                                                       │
+│   - paid_amount (numeric default 0)                                             │
+│   - pending_amount (numeric default total_amount)                               │
+│   - payment_status ('Pending' | 'Advance Paid' | 'Paid in Full')                │
+│   - payment_notes (text)                                                        │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Database Migration SQL (To be provided in report):
+```sql
+ALTER TABLE registrations 
+ADD COLUMN IF NOT EXISTS paid_amount NUMERIC DEFAULT 0,
+ADD COLUMN IF NOT EXISTS pending_amount NUMERIC DEFAULT NULL,
+ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'Pending',
+ADD COLUMN IF NOT EXISTS payment_notes TEXT DEFAULT NULL;
+
+-- Backfill existing verified registrations
+UPDATE registrations 
+SET 
+  paid_amount = COALESCE(total_amount, 0),
+  pending_amount = 0,
+  payment_status = 'Paid in Full'
+WHERE (payment_confirmed = true OR payment_status = 'Verified') 
+  AND (paid_amount IS NULL OR paid_amount = 0);
+```
+
+### Component & State Mapping
+
+1. **`src/types/registration.ts`**:
+   - Update `RegistrationSubmission` interface with `paidAmount?: number`, `pendingAmount?: number`, `paymentNotes?: string`, and expanded `paymentStatus` options (`'Pending' | 'Submitted' | 'Verified' | 'Rejected' | 'Advance Paid' | 'Paid in Full'`).
+
+2. **`src/services/supabaseRegistrationService.ts`**:
+   - Add `updatePaymentDetails(id: string, paidAmount: number, notes?: string)` method to update Supabase row atomically.
+   - Update mapping helpers to parse `paid_amount`, `pending_amount`, `payment_notes`, and `payment_status` from database responses.
+
+3. **`src/pages/AdminDashboardPage.tsx` & `Admin1RegistrationsPage.tsx`**:
+   - Add summary metrics card (Total Outstanding, Advance Paid Count, Paid in Full Count, Pending Count).
+   - Add Payment Details modal/card with input fields for Amount Paid and Notes, auto-calculating Pending Amount.
+
+4. **`src/components/RegistrationPass.tsx`**:
+   - Update UI card and HTML canvas renderer (`html2canvas`) to display Payment Summary (Total Fee, Amount Paid, Balance Due, Payment Status badge).
+
+5. **`src/pages/RegisteredEventsPage.tsx` / `MyRegistrationsModal.tsx`**:
+   - Render Payment Summary card for each individual event and combo group.
+
+6. **`src/pages/InchargesPortalPage.tsx`**:
+   - Add filter tabs (`All`, `Pending`, `Advance Paid`, `Paid in Full`).
+   - Add table columns showing Paid, Pending, and Status badge.

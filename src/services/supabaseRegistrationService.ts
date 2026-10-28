@@ -2,7 +2,8 @@ import { supabase, isSupabaseConfigured, getSupabaseConfigStatus } from '../lib/
 import { 
   RegistrationSubmission, 
   ParticipantMember, 
-  CollegeDetails 
+  CollegeDetails,
+  PaymentStatus 
 } from '../types/registration';
 import { EventItem, EVENTS_DATA } from '../data/festivalData';
 import { generateRegistrationCode } from '../utils/registrationCode';
@@ -748,6 +749,23 @@ export const supabaseRegistrationService = {
         feePerUnit: Number(row.fee_per_unit) || 0,
         feeType: row.fee_type || 'per_head',
         totalAmount: Number(row.total_fee) || 0,
+        paidAmount: (() => {
+          if (row.paid_amount !== undefined && row.paid_amount !== null) return Number(row.paid_amount);
+          if (row.advance_amount_paid) return Number(row.advance_amount_paid);
+          // If admin didn't add any advance amount override, default to full amount paid
+          return Number(row.total_fee) || 0;
+        })(),
+        pendingAmount: (() => {
+          const tot = Number(row.total_fee) || 0;
+          if (row.pending_amount !== undefined && row.pending_amount !== null) return Number(row.pending_amount);
+          const pd = (() => {
+            if (row.paid_amount !== undefined && row.paid_amount !== null) return Number(row.paid_amount);
+            if (row.advance_amount_paid) return Number(row.advance_amount_paid);
+            return tot;
+          })();
+          return Math.max(0, tot - pd);
+        })(),
+        paymentNotes: row.payment_notes || undefined,
         participantCount: Number(row.participant_count) || roster.length || 1,
         utrNumber: payment?.utr_number || 'N/A',
         paymentScreenshotName: payment?.payment_screenshot_path 
@@ -755,8 +773,23 @@ export const supabaseRegistrationService = {
           : undefined,
         paymentScreenshotPath: payment?.payment_screenshot_path || undefined,
         paymentScreenshotData: payment?.payment_screenshot_path?.startsWith('data:') ? payment.payment_screenshot_path : undefined,
-        paymentConfirmed: payment?.payment_status === 'Verified',
-        paymentStatus: (payment?.payment_status as any) || 'Submitted',
+        paymentConfirmed: payment?.payment_status === 'Verified' || row.registration_status === 'Confirmed',
+        paymentStatus: (() => {
+          if (row.payment_status === 'Advance Paid' || row.payment_status === 'Paid in Full') {
+            return row.payment_status as any;
+          }
+          const tot = Number(row.total_fee) || 0;
+          const pd = (() => {
+            if (row.paid_amount !== undefined && row.paid_amount !== null) return Number(row.paid_amount);
+            if (row.advance_amount_paid) return Number(row.advance_amount_paid);
+            return tot;
+          })();
+          const pend = Math.max(0, tot - pd);
+
+          if (pd >= tot && tot > 0) return 'Paid in Full';
+          if (pd > 0 && pend > 0) return 'Advance Paid';
+          return (payment?.payment_status as any) || (row.payment_status as any) || 'Paid in Full';
+        })(),
         registrationStatus: (row.registration_status as any) || 'Submitted',
         comboGroupId: row.combo_group_id || undefined,
         comboId: row.combo_id || undefined,
@@ -978,6 +1011,140 @@ export const supabaseRegistrationService = {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Status update failed';
       return { success: false, message: msg };
+    }
+  },
+
+  /**
+   * Manually records/updates paid amount, pending balance, payment notes, and calculated payment status in Supabase and LocalStorage.
+   */
+  async updatePaymentDetails(
+    registrationCode: string,
+    paidAmountInput: number,
+    notes?: string
+  ): Promise<VerificationResult> {
+    const paidAmount = Math.max(0, Number(paidAmountInput) || 0);
+
+    // 1. Update in LocalStorage first so UI reacts immediately
+    try {
+      const saved = localStorage.getItem('celestia26_registrations');
+      if (saved) {
+        const list = JSON.parse(saved);
+        const updated = list.map((item: any) => {
+          const isMatch =
+            item.registrationCode === registrationCode ||
+            item.id === registrationCode ||
+            (item.registrationCode && registrationCode && item.registrationCode.toLowerCase() === registrationCode.toLowerCase()) ||
+            (item.id && registrationCode && item.id.toLowerCase() === registrationCode.toLowerCase());
+          if (isMatch) {
+            const total = Number(item.totalAmount) || 0;
+            const pending = Math.max(0, total - paidAmount);
+            let status: PaymentStatus = 'Pending';
+            if (pending === 0 && total > 0) {
+              status = 'Paid in Full';
+            } else if (paidAmount > 0) {
+              status = 'Advance Paid';
+            } else {
+              status = 'Pending';
+            }
+            return {
+              ...item,
+              paidAmount,
+              pendingAmount: pending,
+              paymentNotes: notes !== undefined ? notes : item.paymentNotes,
+              paymentStatus: status,
+              paymentConfirmed: status === 'Paid in Full' || item.paymentConfirmed,
+            };
+          }
+          return item;
+        });
+        localStorage.setItem('celestia26_registrations', JSON.stringify(updated));
+      }
+    } catch (e) {
+      console.warn('LocalStorage payment update notice:', e);
+    }
+
+    window.dispatchEvent(new CustomEvent('celestia-registration-status-changed', { detail: { regId: registrationCode } }));
+
+    if (!supabase) {
+      return { success: true, message: 'Payment details updated locally' };
+    }
+
+    try {
+      // Find row in Supabase
+      let reg: { id: string; total_fee?: number; combo_group_id?: string; registration_code?: string } | null = null;
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(registrationCode);
+
+      if (isUuid) {
+        const { data } = await supabase
+          .from('registrations')
+          .select('id, total_fee, combo_group_id, registration_code')
+          .eq('id', registrationCode)
+          .maybeSingle();
+        if (data) reg = data;
+      }
+
+      if (!reg) {
+        const { data } = await supabase
+          .from('registrations')
+          .select('id, total_fee, combo_group_id, registration_code')
+          .eq('registration_code', registrationCode)
+          .maybeSingle();
+        if (data) reg = data;
+      }
+
+      if (!reg) {
+        return { success: false, message: `Registration ${registrationCode} not found in database` };
+      }
+
+      const totalFee = Number(reg.total_fee) || 0;
+      const pendingAmount = Math.max(0, totalFee - paidAmount);
+
+      let calcStatus: PaymentStatus = 'Pending';
+      if (pendingAmount === 0 && totalFee > 0) {
+        calcStatus = 'Paid in Full';
+      } else if (paidAmount > 0) {
+        calcStatus = 'Advance Paid';
+      } else {
+        calcStatus = 'Pending';
+      }
+
+      const updatePayload: Record<string, any> = {
+        paid_amount: paidAmount,
+        pending_amount: pendingAmount,
+        payment_status: calcStatus,
+        payment_notes: notes !== undefined ? (notes || null) : undefined,
+      };
+
+      if (notes === undefined) {
+        delete updatePayload.payment_notes;
+      }
+
+      // If registered as a combo group, update all events in the combo group consistently
+      const targetQuery = reg.combo_group_id 
+        ? supabase.from('registrations').update(updatePayload).eq('combo_group_id', reg.combo_group_id)
+        : supabase.from('registrations').update(updatePayload).eq('id', reg.id);
+
+      let { error: updateErr } = await targetQuery;
+
+      if (updateErr && (updateErr.message.includes('column') || updateErr.message.includes('schema cache'))) {
+        console.warn('Supabase DB column paid_amount missing, trying fallback without paid_amount column:', updateErr.message);
+        const fallbackQuery = reg.combo_group_id
+          ? supabase.from('registrations').update({ payment_status: calcStatus }).eq('combo_group_id', reg.combo_group_id)
+          : supabase.from('registrations').update({ payment_status: calcStatus }).eq('id', reg.id);
+        const { error: fbErr } = await fallbackQuery;
+        if (fbErr) {
+          return { success: false, message: `Failed to update payment in database: ${fbErr.message}` };
+        }
+      } else if (updateErr) {
+        return { success: false, message: `Failed to update payment: ${updateErr.message}` };
+      }
+
+      return {
+        success: true,
+        message: `Payment updated successfully! Amount Paid: ₹${paidAmount.toLocaleString('en-IN')}, Balance Due: ₹${pendingAmount.toLocaleString('en-IN')}`,
+      };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Failed to update payment details' };
     }
   },
 

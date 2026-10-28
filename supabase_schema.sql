@@ -42,6 +42,26 @@ ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS discount_percent NUMER
 ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS discount_amount NUMERIC DEFAULT 0;
 ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS original_amount NUMERIC;
 
+-- Advance Payment & Pending Amount Management Columns
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS paid_amount NUMERIC DEFAULT NULL;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS pending_amount NUMERIC DEFAULT NULL;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'Paid in Full';
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS payment_notes TEXT DEFAULT NULL;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS combo_group_id TEXT DEFAULT NULL;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS combo_id TEXT DEFAULT NULL;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS combo_name TEXT DEFAULT NULL;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS combo_type TEXT DEFAULT NULL;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS combo_discount_amount NUMERIC DEFAULT NULL;
+
+-- Backfill Existing Verified Registrations to Paid in Full
+UPDATE public.registrations 
+SET 
+  paid_amount = COALESCE(total_fee, 0),
+  pending_amount = 0,
+  payment_status = 'Paid in Full'
+WHERE (registration_status = 'Confirmed' OR payment_status = 'Verified' OR payment_status IS NULL) 
+  AND (paid_amount IS NULL);
+
 -- 3. Create Participants Table
 CREATE TABLE IF NOT EXISTS public.participants (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

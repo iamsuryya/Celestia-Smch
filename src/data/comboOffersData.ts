@@ -99,9 +99,9 @@ export const COMBO_OFFERS: ComboOffer[] = [
     categoryTitle: 'Digital Event Combos',
     shortDescription: 'Both Mememania (Meme) & Cineverse (Reels).',
     fullDescription: 'Dominate the online space by entering both Meme & Movie Recreation Reel competitions.',
-    comboPrice: 250,
-    originalEstimatedValue: 350,
-    savingsAmount: 100,
+    comboPrice: 75,
+    originalEstimatedValue: 100,
+    savingsAmount: 25,
     priceType: 'fixed_price',
     buttonText: 'Choose Both Digital Events',
     eligibleCategoryType: 'digital',
@@ -111,7 +111,7 @@ export const COMBO_OFFERS: ComboOffer[] = [
     eligibilityConditions: [
       'Includes both Mememania and Cineverse entries.',
       'Online submission before Nov 1, 2026.',
-      'Combined combo price: ₹250.'
+      'Combined combo price: ₹75.'
     ]
   },
 

@@ -11,7 +11,9 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ type, status }) => {
     switch (status) {
       case 'Confirmed':
       case 'Verified':
+      case 'Paid in Full':
         return 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
+      case 'Advance Paid':
       case 'Submitted':
       case 'Pending':
         return 'bg-amber-500/15 text-amber-300 border-amber-500/30';
@@ -25,6 +27,8 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ type, status }) => {
   };
 
   const getLabel = () => {
+    if (status === 'Paid in Full') return 'Paid in Full';
+    if (status === 'Advance Paid') return 'Advance Paid';
     if (status === 'Verified' || status === 'Confirmed') return 'Verified';
     if (status === 'Rejected') return 'Rejected';
     if (status === 'Draft') return 'Not Complete';

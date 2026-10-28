@@ -28,9 +28,9 @@ import {
 import { ComboOffer, getEventComboType } from '../../data/comboOffersData';
 import { EventItem, EVENTS_DATA, FESTIVAL_METADATA } from '../../data/festivalData';
 import { useRegistration } from '../../context/RegistrationContext';
-import { RegistrationSubmission } from '../../types/registration';
-import { ParticipantMember } from '../../types/registration';
+import { RegistrationSubmission, PromoCode, ParticipantMember } from '../../types/registration';
 import { supabaseRegistrationService } from '../../services/supabaseRegistrationService';
+import { promoCodeService } from '../../services/promoCodeService';
 
 interface ComboRegistrationWizardProps {
   combo: ComboOffer;
@@ -186,6 +186,12 @@ export const ComboRegistrationWizard: React.FC<ComboRegistrationWizardProps> = (
     }
   }, [fullName, mobile]);
 
+  // Combo Promo Code States
+  const [comboAppliedPromo, setComboAppliedPromo] = useState<PromoCode | null>(null);
+  const [comboPromoInput, setComboPromoInput] = useState<string>('');
+  const [comboPromoMsg, setComboPromoMsg] = useState<string>('');
+  const [isValidatingComboPromo, setIsValidatingComboPromo] = useState<boolean>(false);
+
   // Payment state
   const [utrNumber, setUtrNumber] = useState('');
   const [paymentFile, setPaymentFile] = useState<File | null>(null);
@@ -319,43 +325,76 @@ export const ComboRegistrationWizard: React.FC<ComboRegistrationWizardProps> = (
 
   // Compute pricing accurately based on package rules
   const calculatePricing = () => {
-    // 1. Fashion Royale: No. of participants for Fashion Parade (Silhouette) * 300 = total payable amount
-    if (combo.id === 'fashion-royale') {
-      const silCount = (fashionRoyaleSilhouetteCount !== '' ? Number(fashionRoyaleSilhouetteCount) : 7) || 7;
-      const finalFee = silCount * 300;
-      const originalTotal = finalFee + (3 * 250);
-      const discountVal = 750;
-      return {
-        originalTotal,
-        finalFee,
-        discountVal
-      };
-    }
-
-    // 2. General / Package calculation for all combos (including Celestia All-Access, Power Trio, Spotlight Squad)
     let baseTotalOriginal = 0;
     orderedChosenEvents.forEach((evt, idx) => {
       baseTotalOriginal += getEventOriginalCost(evt, idx);
     });
 
-    let finalFee = combo.comboPrice;
-    let discountVal = 0;
-
-    if (combo.priceType === 'discount_percentage' && combo.discountPercentage) {
-      discountVal = Math.round((baseTotalOriginal * combo.discountPercentage) / 100);
-      finalFee = Math.max(0, baseTotalOriginal - discountVal);
-    } else {
-      discountVal = Math.max(0, baseTotalOriginal - combo.comboPrice);
+    let defaultComboFee = combo.comboPrice;
+    if (combo.id === 'fashion-royale') {
+      const silCount = (fashionRoyaleSilhouetteCount !== '' ? Number(fashionRoyaleSilhouetteCount) : 7) || 7;
+      defaultComboFee = silCount * 300;
+      baseTotalOriginal = defaultComboFee + (3 * 250);
+    } else if (combo.priceType === 'discount_percentage' && combo.discountPercentage) {
+      const discountVal = Math.round((baseTotalOriginal * combo.discountPercentage) / 100);
+      defaultComboFee = Math.max(0, baseTotalOriginal - discountVal);
     }
+
+    let finalFee = defaultComboFee;
+    let isAdv = false;
+    let advanceAmount = 0;
+    let remainingBalance = 0;
+
+    if (comboAppliedPromo) {
+      if (comboAppliedPromo.isAdvancePayment || comboAppliedPromo.discountType === 'advance') {
+        isAdv = true;
+        advanceAmount = comboAppliedPromo.advanceAmount || 0;
+        finalFee = Math.min(defaultComboFee, advanceAmount);
+        remainingBalance = Math.max(0, defaultComboFee - finalFee);
+      } else if (comboAppliedPromo.discountPercent) {
+        const promoDiscount = Math.round((defaultComboFee * comboAppliedPromo.discountPercent) / 100);
+        finalFee = Math.max(0, defaultComboFee - promoDiscount);
+      }
+    }
+
+    const totalDiscountVal = Math.max(0, baseTotalOriginal - finalFee);
 
     return {
       originalTotal: baseTotalOriginal > 0 ? baseTotalOriginal : (combo.originalEstimatedValue || combo.comboPrice),
+      unDiscountedComboFee: defaultComboFee,
       finalFee: Math.max(0, finalFee),
-      discountVal: Math.max(0, discountVal)
+      discountVal: totalDiscountVal,
+      isAdvancePayment: isAdv,
+      advanceAmountPaid: isAdv ? finalFee : undefined,
+      remainingBalance: isAdv ? remainingBalance : undefined,
+      appliedPromo: comboAppliedPromo
     };
   };
 
   const pricing = calculatePricing();
+
+  const handleApplyComboPromo = async () => {
+    if (!comboPromoInput.trim()) return;
+    setIsValidatingComboPromo(true);
+    setComboPromoMsg('');
+    try {
+      const res = await promoCodeService.validatePromoCode(comboPromoInput.trim(), 'combo', pricing.unDiscountedComboFee);
+      setComboPromoMsg(res.message);
+      if (res.valid && res.promo) {
+        setComboAppliedPromo(res.promo);
+        setComboPromoInput('');
+      }
+    } catch {
+      setComboPromoMsg('Failed to validate promo code.');
+    } finally {
+      setIsValidatingComboPromo(false);
+    }
+  };
+
+  const handleRemoveComboPromo = () => {
+    setComboAppliedPromo(null);
+    setComboPromoMsg('');
+  };
 
   // Validate current step navigation
   const validateCurrentStep = (): boolean => {
@@ -1857,10 +1896,93 @@ export const ComboRegistrationWizard: React.FC<ComboRegistrationWizardProps> = (
           <span className="text-xs font-bold text-amber-400 uppercase tracking-wider bg-amber-950 px-3 py-1 rounded-full border border-amber-500/30">
             Final Step: Remittance Gateway
           </span>
-          <h3 className="text-2xl font-extrabold text-white mt-2">Scan & Pay ₹{pricing.finalFee.toLocaleString()}</h3>
+          <h3 className="text-2xl font-extrabold text-white mt-2">
+            {pricing.isAdvancePayment ? `Pay Advance Amount ₹${pricing.finalFee.toLocaleString()}` : `Scan & Pay ₹${pricing.finalFee.toLocaleString()}`}
+          </h3>
           <p className="text-xs text-slate-300 mt-1">
             Official UPI ID: <span className="text-amber-300 font-mono font-bold">{FESTIVAL_METADATA.paymentUpiIdPlaceholder}</span>
           </p>
+        </div>
+
+        {/* COMBO PROMO CODE INPUT CARD */}
+        <div className="max-w-md mx-auto p-4 rounded-xl bg-slate-950 border border-amber-500/30 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-amber-300 flex items-center gap-1.5 font-mono">
+              <Tag className="w-3.5 h-3.5 text-amber-400" />
+              <span>Have a Combo Promo Code or Advance Payment Code?</span>
+            </span>
+            {comboAppliedPromo && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                {comboAppliedPromo.isAdvancePayment ? `ADVANCE ₹${comboAppliedPromo.advanceAmount}` : `${comboAppliedPromo.discountPercent}% OFF`}
+              </span>
+            )}
+          </div>
+
+          {comboAppliedPromo ? (
+            <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <div>
+                  <span className="font-bold text-emerald-300 font-mono">{comboAppliedPromo.code}</span>
+                  <span className="text-slate-300 block text-[11px]">
+                    {comboAppliedPromo.isAdvancePayment
+                      ? `Advance Pay ₹${comboAppliedPromo.advanceAmount}. Remaining balance ₹${pricing.remainingBalance?.toLocaleString()} due on arrival.`
+                      : `${comboAppliedPromo.description || `${comboAppliedPromo.discountPercent}% OFF`}`}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleRemoveComboPromo}
+                className="px-2.5 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[11px] font-semibold transition-colors cursor-pointer shrink-0"
+              >
+                Remove
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={comboPromoInput}
+                onChange={(e) => setComboPromoInput(e.target.value.toUpperCase())}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleApplyComboPromo();
+                  }
+                }}
+                placeholder="e.g. AP750, SMCHSPECIAL15"
+                className="flex-1 px-3.5 py-2 rounded-lg bg-slate-900 border border-slate-700 focus:border-amber-400 text-xs font-mono text-white placeholder-slate-500 focus:outline-none uppercase"
+              />
+              <button
+                type="button"
+                onClick={handleApplyComboPromo}
+                disabled={isValidatingComboPromo || !comboPromoInput.trim()}
+                className="px-4 py-2 rounded-lg bg-gradient-to-r from-[#F5E7C4] to-[#D4AF37] hover:brightness-110 text-[#050714] font-bold text-xs transition-all disabled:opacity-50 cursor-pointer shrink-0"
+              >
+                {isValidatingComboPromo ? 'Checking...' : 'Apply Code'}
+              </button>
+            </div>
+          )}
+
+          {comboPromoMsg && (
+            <p className={`text-[11px] font-mono ${comboPromoMsg.includes('applied') || comboPromoMsg.includes('OFF') ? 'text-emerald-400' : 'text-rose-300'}`}>
+              {comboPromoMsg}
+            </p>
+          )}
+
+          {pricing.isAdvancePayment && (
+            <div className="p-3 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-200 text-xs space-y-1">
+              <div className="font-bold flex items-center justify-between text-white">
+                <span>Advance Payment Applied:</span>
+                <span className="font-mono text-amber-300">Pay ₹{pricing.finalFee} Now</span>
+              </div>
+              <div className="flex items-center justify-between text-slate-300 text-[11px]">
+                <span>Remaining Balance Due on Arrival:</span>
+                <strong className="font-mono text-amber-400">₹{pricing.remainingBalance?.toLocaleString()}</strong>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* QR Code Container */}

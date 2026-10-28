@@ -49,7 +49,7 @@ interface RegistrationContextType {
   
   // Promo Code State & Actions
   appliedPromoCode: PromoCode | null;
-  applyPromoCode: (codeStr: string) => Promise<{ success: boolean; message: string; promo?: PromoCode }>;
+  applyPromoCode: (codeStr: string, scopeContext?: 'individual' | 'combo') => Promise<{ success: boolean; message: string; promo?: PromoCode }>;
   removePromoCode: () => void;
   
   // Fee Calculation
@@ -220,8 +220,14 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   };
 
-  const applyPromoCode = async (codeStr: string) => {
-    const res = await promoCodeService.validatePromoCode(codeStr);
+  const applyPromoCode = async (codeStr: string, scopeContext: 'individual' | 'combo' = 'individual') => {
+    let originalAmt = 0;
+    if (selectedEvent) {
+      originalAmt = selectedEvent.feeType === 'per_head'
+        ? selectedEvent.feeAmount * Math.max(participants.length, 1)
+        : selectedEvent.feeAmount;
+    }
+    const res = await promoCodeService.validatePromoCode(codeStr, scopeContext, originalAmt);
     if (res.valid && res.promo) {
       // Single code constraint: Overwrite any existing promo code rather than compounding
       setAppliedPromoCode(res.promo);
@@ -241,12 +247,18 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   ): number => {
     if (!event || collegeDetails?.isHostCollege) return 0;
     const promo = customPromo !== undefined ? customPromo : appliedPromoCode;
-    if (!promo || !promo.discountPercent) return 0;
+    if (!promo) return 0;
 
     const baseFee = event.feeType === 'per_head'
       ? event.feeAmount * Math.max(participantCount, 1)
       : event.feeAmount;
 
+    if (promo.isAdvancePayment || promo.discountType === 'advance') {
+      const adv = promo.advanceAmount || 0;
+      return Math.max(0, baseFee - adv);
+    }
+
+    if (!promo.discountPercent) return 0;
     return Math.round(baseFee * (promo.discountPercent / 100));
   };
 
@@ -262,6 +274,12 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       ? event.feeAmount * Math.max(participantCount, 1)
       : event.feeAmount;
 
+    const promo = customPromo !== undefined ? customPromo : appliedPromoCode;
+    if (promo && (promo.isAdvancePayment || promo.discountType === 'advance')) {
+      const adv = promo.advanceAmount || 0;
+      return Math.min(baseFee, adv);
+    }
+
     const discount = calculateDiscountAmount(event, participantCount, customPromo);
     return Math.max(baseFee - discount, 0);
   };
@@ -273,8 +291,10 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     const isHost = Boolean(collegeDetails.isHostCollege);
     
     const baseFee = isHost ? 0 : (selectedEvent.feeType === 'per_head' ? selectedEvent.feeAmount * Math.max(participants.length, 1) : selectedEvent.feeAmount);
+    const isAdv = !isHost && Boolean(appliedPromoCode?.isAdvancePayment || appliedPromoCode?.discountType === 'advance');
     const discountAmount = isHost ? 0 : calculateDiscountAmount(selectedEvent, participants.length);
-    const totalAmount = isHost ? 0 : Math.max(baseFee - discountAmount, 0);
+    const totalAmount = isHost ? 0 : calculateTotalFee(selectedEvent, participants.length);
+    const remainingBalance = isAdv ? Math.max(0, baseFee - totalAmount) : 0;
 
     const newSubmission: RegistrationSubmission = {
       id: submissionId,
@@ -298,6 +318,9 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       discountPercent: !isHost && appliedPromoCode ? appliedPromoCode.discountPercent : undefined,
       discountAmount: !isHost ? discountAmount : 0,
       originalAmount: !isHost ? baseFee : 0,
+      isAdvancePayment: isAdv,
+      advanceAmountPaid: isAdv ? totalAmount : undefined,
+      remainingBalance: isAdv ? remainingBalance : undefined,
       totalAmount,
       utrNumber: isHost 
         ? (utrNumber.trim() || 'SMCH-HOST-FREE') 
