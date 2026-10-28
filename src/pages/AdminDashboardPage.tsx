@@ -150,8 +150,21 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     }
   }, [isAuthenticated]);
 
+  const isMainAdmin = activeRole === 'admin';
+
+  useEffect(() => {
+    if (!isMainAdmin && activeTab === 'promocodes') {
+      setActiveTab('registrations');
+    }
+  }, [isMainAdmin, activeTab]);
+
   const handleCreatePromo = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isMainAdmin) {
+      showToast('Permission Denied: Only Main Central Admin can create promo codes.');
+      return;
+    }
+
     const discountVal = parseFloat(newCodeDiscount) || 0;
     const advanceVal = parseFloat(newCodeAdvanceAmount) || 0;
 
@@ -198,6 +211,10 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   };
 
   const handleTogglePromoStatus = async (id: string, currentActive: boolean) => {
+    if (!isMainAdmin) {
+      showToast('Permission Denied: Only Main Central Admin can activate or deactivate promo codes.');
+      return;
+    }
     const nextActive = !currentActive;
     const res = await promoCodeService.togglePromoCodeStatus(id, nextActive);
     showToast(res.message);
@@ -205,6 +222,10 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   };
 
   const handleDeletePromo = async (id: string) => {
+    if (!isMainAdmin) {
+      showToast('Permission Denied: Only Main Central Admin can delete promo codes.');
+      return;
+    }
     if (window.confirm('Delete this promo code permanently?')) {
       const res = await promoCodeService.deletePromoCode(id);
       showToast(res.message);
@@ -841,20 +862,22 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           <span>Registrations Audit ({registrations.length})</span>
         </button>
 
-        <button
-          onClick={() => setActiveTab('promocodes')}
-          className={`pb-3 text-xs sm:text-sm font-semibold tracking-wide cursor-pointer transition-all flex items-center gap-2 border-b-2 ${
-            activeTab === 'promocodes'
-              ? 'border-[#D4AF37] text-[#F5E7C4]'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Tag className="w-4 h-4 text-[#D4AF37]" />
-          <span>Promo Codes & Discounts</span>
-          <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#D4AF37]/20 text-[#F5E7C4] border border-[#D4AF37]/40">
-            {promoCodes.length}
-          </span>
-        </button>
+        {isMainAdmin && (
+          <button
+            onClick={() => setActiveTab('promocodes')}
+            className={`pb-3 text-xs sm:text-sm font-semibold tracking-wide cursor-pointer transition-all flex items-center gap-2 border-b-2 ${
+              activeTab === 'promocodes'
+                ? 'border-[#D4AF37] text-[#F5E7C4]'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Tag className="w-4 h-4 text-[#D4AF37]" />
+            <span>Promo Codes & Discounts</span>
+            <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#D4AF37]/20 text-[#F5E7C4] border border-[#D4AF37]/40">
+              {promoCodes.length}
+            </span>
+          </button>
+        )}
 
         <button
           onClick={() => setActiveTab('overview')}
@@ -1236,8 +1259,18 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       )}
 
       {/* ================= TAB 3: PROMO CODES & DISCOUNTS ================= */}
-      {activeTab === 'promocodes' && (
+      {isMainAdmin && activeTab === 'promocodes' && (
         <div className="space-y-6">
+          {!isMainAdmin && (
+            <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex items-center gap-3 shadow-md">
+              <Lock className="w-5 h-5 text-amber-400 shrink-0" />
+              <div>
+                <strong className="block text-amber-300 font-bold">Main Central Admin Privilege Required</strong>
+                <span>Only the Central Main Admin can add, change, edit, activate, deactivate, or delete promo codes. Event incharges and result editors are in read-only mode.</span>
+              </div>
+            </div>
+          )}
+
           {/* Header & Create Card */}
           <div className="p-5 rounded-2xl bg-[#090E26] border border-[#D4AF37]/30 celestial-glass shadow-xl space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-white/10 flex-wrap gap-2">
@@ -1269,112 +1302,114 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
             {/* Create New Promo Code Form */}
             <form onSubmit={handleCreatePromo} className="space-y-4 pt-1">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
-                    Promo Code String *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newCodeName}
-                    onChange={(e) => setNewCodeName(e.target.value.toUpperCase())}
-                    placeholder="e.g. CELESTIA20 or AP750"
-                    className="w-full px-3 py-2 rounded-xl bg-[#050714] border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white placeholder-slate-500 uppercase focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
-                    Applicable Scope *
-                  </label>
-                  <select
-                    value={newCodeScope}
-                    onChange={(e) => setNewCodeScope(e.target.value as any)}
-                    className="w-full px-3 py-2 rounded-xl bg-[#050714] border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white focus:outline-none"
-                  >
-                    <option value="all">All Events & Combos (Universal)</option>
-                    <option value="individual">Individual Events Only</option>
-                    <option value="combo">Combo Offers Only</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
-                    Discount Model *
-                  </label>
-                  <select
-                    value={newCodeDiscountType}
-                    onChange={(e) => setNewCodeDiscountType(e.target.value as any)}
-                    className="w-full px-3 py-2 rounded-xl bg-[#050714] border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white focus:outline-none"
-                  >
-                    <option value="percentage">Percentage Discount (% Off)</option>
-                    <option value="advance">Advance Payment Code (AP Code)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {newCodeDiscountType === 'advance' ? (
+              <fieldset disabled={!isMainAdmin} className={!isMainAdmin ? 'opacity-50 pointer-events-none' : ''}>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
-                      Advance Amount (₹ Pay Now) *
+                      Promo Code String *
                     </label>
                     <input
-                      type="number"
-                      min="100"
+                      type="text"
                       required
-                      value={newCodeAdvanceAmount}
-                      onChange={(e) => setNewCodeAdvanceAmount(e.target.value)}
-                      placeholder="e.g. 750, 500, 2000"
-                      className="w-full px-3 py-2 rounded-xl bg-[#050714] border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white placeholder-slate-500 focus:outline-none"
+                      value={newCodeName}
+                      onChange={(e) => setNewCodeName(e.target.value.toUpperCase())}
+                      placeholder="e.g. CELESTIA20 or AP750"
+                      className="w-full px-3 py-2 rounded-xl bg-[#050714] border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white placeholder-slate-500 uppercase focus:outline-none"
                     />
                   </div>
-                ) : (
+
                   <div>
                     <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
-                      Discount Percentage (%) *
+                      Applicable Scope *
                     </label>
-                    <div className="relative">
+                    <select
+                      value={newCodeScope}
+                      onChange={(e) => setNewCodeScope(e.target.value as any)}
+                      className="w-full px-3 py-2 rounded-xl bg-[#050714] border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white focus:outline-none"
+                    >
+                      <option value="all">All Events & Combos (Universal)</option>
+                      <option value="individual">Individual Events Only</option>
+                      <option value="combo">Combo Offers Only</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
+                      Discount Model *
+                    </label>
+                    <select
+                      value={newCodeDiscountType}
+                      onChange={(e) => setNewCodeDiscountType(e.target.value as any)}
+                      className="w-full px-3 py-2 rounded-xl bg-[#050714] border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white focus:outline-none"
+                    >
+                      <option value="percentage">Percentage Discount (% Off)</option>
+                      <option value="advance">Advance Payment Code (AP Code)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                  {newCodeDiscountType === 'advance' ? (
+                    <div>
+                      <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
+                        Advance Amount (₹ Pay Now) *
+                      </label>
                       <input
                         type="number"
-                        min="1"
-                        max="100"
+                        min="100"
                         required
-                        value={newCodeDiscount}
-                        onChange={(e) => setNewCodeDiscount(e.target.value)}
-                        placeholder="e.g. 20"
-                        className="w-full px-3 py-2 pr-8 rounded-xl bg-[#050714] border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white placeholder-slate-500 focus:outline-none"
+                        value={newCodeAdvanceAmount}
+                        onChange={(e) => setNewCodeAdvanceAmount(e.target.value)}
+                        placeholder="e.g. 750, 500, 2000"
+                        className="w-full px-3 py-2 rounded-xl bg-[#050714] border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white placeholder-slate-500 focus:outline-none"
                       />
-                      <Percent className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-2.5" />
                     </div>
+                  ) : (
+                    <div>
+                      <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
+                        Discount Percentage (%) *
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          min="1"
+                          max="100"
+                          required
+                          value={newCodeDiscount}
+                          onChange={(e) => setNewCodeDiscount(e.target.value)}
+                          placeholder="e.g. 20"
+                          className="w-full px-3 py-2 pr-8 rounded-xl bg-[#050714] border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white placeholder-slate-500 focus:outline-none"
+                        />
+                        <Percent className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-2.5" />
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
+                      Campaign Description
+                    </label>
+                    <input
+                      type="text"
+                      value={newCodeDesc}
+                      onChange={(e) => setNewCodeDesc(e.target.value)}
+                      placeholder={newCodeDiscountType === 'advance' ? "e.g. Advance Pay ₹750 (Balance due on arrival)" : "e.g. 20% Early bird discount offer"}
+                      className="w-full px-3 py-2 rounded-xl bg-[#050714] border border-white/15 focus:border-[#D4AF37] text-xs text-white placeholder-slate-500 focus:outline-none"
+                    />
                   </div>
-                )}
 
-                <div>
-                  <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
-                    Campaign Description
-                  </label>
-                  <input
-                    type="text"
-                    value={newCodeDesc}
-                    onChange={(e) => setNewCodeDesc(e.target.value)}
-                    placeholder={newCodeDiscountType === 'advance' ? "e.g. Advance Pay ₹750 (Balance due on arrival)" : "e.g. 20% Early bird discount offer"}
-                    className="w-full px-3 py-2 rounded-xl bg-[#050714] border border-white/15 focus:border-[#D4AF37] text-xs text-white placeholder-slate-500 focus:outline-none"
-                  />
+                  <div className="flex items-end">
+                    <button
+                      type="submit"
+                      disabled={!isMainAdmin || isCreatingPromo || !newCodeName.trim()}
+                      className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#F5E7C4] via-[#E6C57D] to-[#D4AF37] hover:brightness-110 text-[#050714] font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>{isCreatingPromo ? 'Creating...' : 'Create Promo Code'}</span>
+                    </button>
+                  </div>
                 </div>
-
-                <div className="flex items-end">
-                  <button
-                    type="submit"
-                    disabled={isCreatingPromo || !newCodeName.trim()}
-                    className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#F5E7C4] via-[#E6C57D] to-[#D4AF37] hover:brightness-110 text-[#050714] font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>{isCreatingPromo ? 'Creating...' : 'Create Promo Code'}</span>
-                  </button>
-                </div>
-              </div>
+              </fieldset>
             </form>
           </div>
 
@@ -1442,35 +1477,41 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           {p.redemptionCount} use(s)
                         </td>
                         <td className="py-3.5 px-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleTogglePromoStatus(p.id, p.isActive)}
-                              className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1 ${
-                                p.isActive
-                                  ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40'
-                                  : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40'
-                              }`}
-                            >
-                              {p.isActive ? (
-                                <>
-                                  <ToggleRight className="w-3.5 h-3.5" /> Deactivate
-                                </>
-                              ) : (
-                                <>
-                                  <ToggleLeft className="w-3.5 h-3.5" /> Activate
-                                </>
-                              )}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeletePromo(p.id)}
-                              className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 cursor-pointer transition-colors"
-                              title="Delete promo code"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
+                          {isMainAdmin ? (
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleTogglePromoStatus(p.id, p.isActive)}
+                                className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1 ${
+                                  p.isActive
+                                    ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40'
+                                    : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40'
+                                }`}
+                              >
+                                {p.isActive ? (
+                                  <>
+                                    <ToggleRight className="w-3.5 h-3.5" /> Deactivate
+                                  </>
+                                ) : (
+                                  <>
+                                    <ToggleLeft className="w-3.5 h-3.5" /> Activate
+                                  </>
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeletePromo(p.id)}
+                                className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 cursor-pointer transition-colors"
+                                title="Delete promo code"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">
+                              Read Only
+                            </span>
+                          )}
                         </td>
                       </tr>
                     ))

@@ -278,8 +278,15 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
     }
   }, [isAuthenticated]);
 
+  const isMainAdmin = activeRole === 'admin';
+
   const handleCreatePromo = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isMainAdmin) {
+      showToast('Permission Denied: Only Main Central Admin can create promo codes.');
+      return;
+    }
+
     const discountVal = parseFloat(newCodeDiscount) || 0;
     const advanceVal = parseFloat(newCodeAdvanceAmount) || 0;
 
@@ -326,6 +333,10 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
   };
 
   const handleTogglePromoStatus = async (id: string, currentActive: boolean) => {
+    if (!isMainAdmin) {
+      showToast('Permission Denied: Only Main Central Admin can activate or deactivate promo codes.');
+      return;
+    }
     const nextActive = !currentActive;
     const res = await promoCodeService.togglePromoCodeStatus(id, nextActive);
     showToast(res.message);
@@ -333,6 +344,10 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
   };
 
   const handleDeletePromo = async (id: string) => {
+    if (!isMainAdmin) {
+      showToast('Permission Denied: Only Main Central Admin can delete promo codes.');
+      return;
+    }
     if (window.confirm('Delete this promo code permanently?')) {
       const res = await promoCodeService.deletePromoCode(id);
       showToast(res.message);
@@ -1661,15 +1676,17 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
             <span>Test Suite (25 Records)</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => setShowPromoCodeModal(true)}
-            className="px-3.5 py-2 rounded-xl bg-[#D4AF37]/20 hover:bg-[#D4AF37]/30 border border-[#D4AF37]/50 text-xs font-semibold text-[#F5E7C4] transition-all flex items-center gap-1.5 cursor-pointer shadow-lg shadow-[#D4AF37]/10"
-            title="Manage Promo Codes & Discounts"
-          >
-            <Tag className="w-3.5 h-3.5 text-[#D4AF37]" />
-            <span>Promo Codes ({promoCodes.length})</span>
-          </button>
+          {isMainAdmin && (
+            <button
+              type="button"
+              onClick={() => setShowPromoCodeModal(true)}
+              className="px-3.5 py-2 rounded-xl bg-[#D4AF37]/20 hover:bg-[#D4AF37]/30 border border-[#D4AF37]/50 text-xs font-semibold text-[#F5E7C4] transition-all flex items-center gap-1.5 cursor-pointer shadow-lg shadow-[#D4AF37]/10"
+              title="Manage Promo Codes & Discounts"
+            >
+              <Tag className="w-3.5 h-3.5 text-[#D4AF37]" />
+              <span>Promo Codes ({promoCodes.length})</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -4794,7 +4811,7 @@ CREATE POLICY "Allow public insert to payment_submissions" ON public.payment_sub
       )}
 
       {/* MODAL 10: PROMO CODE & DISCOUNT MANAGEMENT MODAL */}
-      {showPromoCodeModal && (
+      {isMainAdmin && showPromoCodeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
           <div className="relative w-full max-w-4xl celestial-glass rounded-2xl p-5 sm:p-6 border border-[#D4AF37]/40 shadow-2xl space-y-5 my-8 max-h-[90vh] overflow-y-auto">
             {/* Modal Header */}
@@ -4827,6 +4844,15 @@ CREATE POLICY "Allow public insert to payment_submissions" ON public.payment_sub
               </div>
             </div>
 
+            {!isMainAdmin && (
+              <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex items-center gap-2.5">
+                <Lock className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>
+                  <strong>Main Admin Privileges Required:</strong> Only Central Main Admin can add, edit, deactivate, or delete promo codes. Incharges are in Read-Only mode.
+                </span>
+              </div>
+            )}
+
             {/* Create New Promo Code Form */}
             <div className="p-4 rounded-xl bg-[#070B1C] border border-white/10">
               <h4 className="text-xs font-mono uppercase text-[#D4AF37] font-bold mb-3 flex items-center gap-1.5">
@@ -4834,62 +4860,64 @@ CREATE POLICY "Allow public insert to payment_submissions" ON public.payment_sub
                 <span>Create New Discount Code</span>
               </h4>
               <form onSubmit={handleCreatePromo} className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                <div>
-                  <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
-                    Promo Code String *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newCodeName}
-                    onChange={(e) => setNewCodeName(e.target.value.toUpperCase())}
-                    placeholder="e.g. CELESTIA20"
-                    className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white placeholder-slate-500 uppercase focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
-                    Discount Percentage (%) *
-                  </label>
-                  <div className="relative">
+                <fieldset disabled={!isMainAdmin} className={`col-span-full grid grid-cols-1 sm:grid-cols-4 gap-3 ${!isMainAdmin ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <div>
+                    <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
+                      Promo Code String *
+                    </label>
                     <input
-                      type="number"
-                      min="1"
-                      max="100"
+                      type="text"
                       required
-                      value={newCodeDiscount}
-                      onChange={(e) => setNewCodeDiscount(e.target.value)}
-                      placeholder="e.g. 20"
-                      className="w-full px-3 py-2 pr-8 rounded-xl bg-black/60 border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white placeholder-slate-500 focus:outline-none"
+                      value={newCodeName}
+                      onChange={(e) => setNewCodeName(e.target.value.toUpperCase())}
+                      placeholder="e.g. CELESTIA20"
+                      className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white placeholder-slate-500 uppercase focus:outline-none"
                     />
-                    <Percent className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-2.5" />
                   </div>
-                </div>
 
-                <div>
-                  <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
-                    Campaign Description
-                  </label>
-                  <input
-                    type="text"
-                    value={newCodeDesc}
-                    onChange={(e) => setNewCodeDesc(e.target.value)}
-                    placeholder="e.g. 20% Early bird offer"
-                    className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/15 focus:border-[#D4AF37] text-xs text-white placeholder-slate-500 focus:outline-none"
-                  />
-                </div>
+                  <div>
+                    <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
+                      Discount Percentage (%) *
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        required
+                        value={newCodeDiscount}
+                        onChange={(e) => setNewCodeDiscount(e.target.value)}
+                        placeholder="e.g. 20"
+                        className="w-full px-3 py-2 pr-8 rounded-xl bg-black/60 border border-white/15 focus:border-[#D4AF37] text-xs font-mono text-white placeholder-slate-500 focus:outline-none"
+                      />
+                      <Percent className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-2.5" />
+                    </div>
+                  </div>
 
-                <div className="flex items-end">
-                  <button
-                    type="submit"
-                    disabled={isCreatingPromo || !newCodeName.trim() || !newCodeDiscount}
-                    className="w-full py-2 px-4 rounded-xl bg-gradient-to-r from-[#F5E7C4] via-[#E6C57D] to-[#D4AF37] hover:brightness-110 text-[#050714] font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>{isCreatingPromo ? 'Creating...' : 'Create Code'}</span>
-                  </button>
-                </div>
+                  <div>
+                    <label className="block text-[11px] font-mono text-slate-300 uppercase mb-1">
+                      Campaign Description
+                    </label>
+                    <input
+                      type="text"
+                      value={newCodeDesc}
+                      onChange={(e) => setNewCodeDesc(e.target.value)}
+                      placeholder="e.g. 20% Early bird offer"
+                      className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/15 focus:border-[#D4AF37] text-xs text-white placeholder-slate-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="flex items-end">
+                    <button
+                      type="submit"
+                      disabled={!isMainAdmin || isCreatingPromo || !newCodeName.trim() || !newCodeDiscount}
+                      className="w-full py-2 px-4 rounded-xl bg-gradient-to-r from-[#F5E7C4] via-[#E6C57D] to-[#D4AF37] hover:brightness-110 text-[#050714] font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>{isCreatingPromo ? 'Creating...' : 'Create Code'}</span>
+                    </button>
+                  </div>
+                </fieldset>
               </form>
             </div>
 
@@ -4956,35 +4984,41 @@ CREATE POLICY "Allow public insert to payment_submissions" ON public.payment_sub
                             {p.redemptionCount}
                           </td>
                           <td className="py-3 px-3 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => handleTogglePromoStatus(p.id, p.isActive)}
-                                className={`px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1 ${
-                                  p.isActive
-                                    ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40'
-                                    : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40'
-                                }`}
-                              >
-                                {p.isActive ? (
-                                  <>
-                                    <ToggleRight className="w-3.5 h-3.5" /> Deactivate
-                                  </>
-                                ) : (
-                                  <>
-                                    <ToggleLeft className="w-3.5 h-3.5" /> Activate
-                                  </>
-                                )}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeletePromo(p.id)}
-                                className="p-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 cursor-pointer"
-                                title="Delete promo code"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
+                            {isMainAdmin ? (
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleTogglePromoStatus(p.id, p.isActive)}
+                                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1 ${
+                                    p.isActive
+                                      ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40'
+                                      : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40'
+                                  }`}
+                                >
+                                  {p.isActive ? (
+                                    <>
+                                      <ToggleRight className="w-3.5 h-3.5" /> Deactivate
+                                    </>
+                                  ) : (
+                                    <>
+                                      <ToggleLeft className="w-3.5 h-3.5" /> Activate
+                                    </>
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeletePromo(p.id)}
+                                  className="p-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 cursor-pointer"
+                                  title="Delete promo code"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">
+                                Read Only
+                              </span>
+                            )}
                           </td>
                         </tr>
                       ))

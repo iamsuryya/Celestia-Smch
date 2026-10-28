@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useRegistration } from '../../context/RegistrationContext';
 import { ParticipantMember } from '../../types/registration';
+import { isEventRegistrationOpen } from '../../utils/registrationStatus';
 
 export const ParticipantForm: React.FC = () => {
   const { 
@@ -242,6 +243,10 @@ export const ParticipantForm: React.FC = () => {
 
   const handleProceed = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isEventRegistrationOpen(selectedEvent.id) || !isEventRegistrationOpen(selectedEvent.code)) {
+      alert(`Registration for ${selectedEvent.title} (${selectedEvent.code}) has been stopped by the Admin.`);
+      return;
+    }
     if (!validate()) return;
     goToStep('review');
   };
@@ -316,6 +321,16 @@ export const ParticipantForm: React.FC = () => {
           </span>
         </div>
       </div>
+
+      {(!isEventRegistrationOpen(selectedEvent.id) || !isEventRegistrationOpen(selectedEvent.code)) && (
+        <div className="p-4 rounded-xl bg-rose-950/80 border-2 border-rose-500 text-rose-200 text-xs sm:text-sm font-semibold flex items-center gap-3">
+          <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
+          <div>
+            <strong className="block text-white text-sm">Registration Stopped by Admin</strong>
+            <span>Registration for {selectedEvent.title} ({selectedEvent.code}) has been closed by festival management. You cannot proceed or submit new entries.</span>
+          </div>
+        </div>
+      )}
 
       {/* College Notice Bar */}
       {collegeDetails && (

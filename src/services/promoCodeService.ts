@@ -1,5 +1,6 @@
 import { PromoCode } from '../types/registration';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { getCurrentAuthRole } from '../lib/authProfiles';
 
 const PROMO_STORAGE_KEY = 'celestia26_promo_codes';
 
@@ -110,6 +111,8 @@ class PromoCodeService {
 
   public async getPromoCodes(): Promise<PromoCode[]> {
     const local = this.getLocalCodes();
+    let remoteMapped: PromoCode[] = [];
+
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase
@@ -117,9 +120,9 @@ class PromoCodeService {
           .select('*')
           .order('created_at', { ascending: false });
 
-        if (!error && data && data.length > 0) {
-          const mapped: PromoCode[] = data.map((d: any) => ({
-            id: d.id,
+        if (!error && data && Array.isArray(data)) {
+          remoteMapped = data.map((d: any) => ({
+            id: d.id || `promo-${d.code}`,
             code: d.code,
             discountPercent: d.discount_percent ?? d.discountPercent ?? 0,
             applicableScope: d.applicable_scope ?? d.applicableScope ?? 'all',
@@ -131,14 +134,45 @@ class PromoCodeService {
             redemptionCount: d.redemption_count ?? d.redemptionCount ?? 0,
             createdAt: d.created_at ?? d.createdAt ?? new Date().toISOString(),
           }));
-          this.saveLocalCodes(mapped);
-          return mapped;
         }
       } catch (err) {
         console.warn('Supabase getPromoCodes error, fallback to local:', err);
       }
     }
-    return local;
+
+    // Merge remote and local promo codes by unique UPPERCASE code to ensure no local promo codes are lost
+    const mergedMap = new Map<string, PromoCode>();
+
+    // 1. Populate with local promo codes
+    local.forEach((codeObj) => {
+      if (codeObj && codeObj.code) {
+        mergedMap.set(codeObj.code.toUpperCase(), codeObj);
+      }
+    });
+
+    // 2. Merge remote promo codes (overwriting synced fields, retaining local fields if missing)
+    remoteMapped.forEach((remoteObj) => {
+      if (!remoteObj || !remoteObj.code) return;
+      const key = remoteObj.code.toUpperCase();
+      const existingLocal = mergedMap.get(key);
+      if (existingLocal) {
+        mergedMap.set(key, {
+          ...existingLocal,
+          ...remoteObj,
+          id: existingLocal.id || remoteObj.id,
+          discountType: remoteObj.discountType || existingLocal.discountType,
+          advanceAmount: remoteObj.advanceAmount ?? existingLocal.advanceAmount,
+          isAdvancePayment: remoteObj.isAdvancePayment ?? existingLocal.isAdvancePayment,
+          description: remoteObj.description || existingLocal.description,
+        });
+      } else {
+        mergedMap.set(key, remoteObj);
+      }
+    });
+
+    const mergedList = Array.from(mergedMap.values());
+    this.saveLocalCodes(mergedList);
+    return mergedList;
   }
 
   public async createPromoCode(
@@ -149,6 +183,14 @@ class PromoCodeService {
     discountType: 'percentage' | 'advance' = 'percentage',
     advanceAmount?: number
   ): Promise<{ success: boolean; promo?: PromoCode; message: string }> {
+    const currentRole = getCurrentAuthRole();
+    if (currentRole !== 'admin') {
+      return {
+        success: false,
+        message: 'Permission Denied: Only Main Central Admin can create promo codes. Event incharges are restricted.',
+      };
+    }
+
     const code = codeRaw.trim().toUpperCase();
     if (!code) {
       return { success: false, message: 'Please provide a valid promo code string.' };
@@ -164,7 +206,7 @@ class PromoCodeService {
       }
     }
 
-    const currentCodes = await this.getPromoCodes();
+    const currentCodes = this.getLocalCodes();
     if (currentCodes.some((p) => p.code.toUpperCase() === code)) {
       return { success: false, message: `Promo code "${code}" already exists in the system.` };
     }
@@ -184,28 +226,34 @@ class PromoCodeService {
       createdAt: new Date().toISOString().split('T')[0],
     };
 
-    // Update LocalStorage
+    // Update LocalStorage immediately
     const updated = [newPromo, ...currentCodes];
     this.saveLocalCodes(updated);
 
-    // Save to Supabase if available
+    // Save to Supabase if available (with fallback safety)
     if (isSupabaseConfigured && supabase) {
       try {
-        await supabase.from('celestia_promo_codes').insert([
-          {
-            id: newPromo.id,
-            code: newPromo.code,
-            discount_percent: newPromo.discountPercent,
-            applicable_scope: newPromo.applicableScope,
-            discount_type: newPromo.discountType,
-            advance_amount: newPromo.advanceAmount,
-            is_advance_payment: newPromo.isAdvancePayment,
-            description: newPromo.description,
-            is_active: newPromo.isActive,
-            redemption_count: 0,
-            created_at: newPromo.createdAt,
-          },
-        ]);
+        const { error } = await supabase.from('celestia_promo_codes').upsert(
+          [
+            {
+              id: newPromo.id,
+              code: newPromo.code,
+              discount_percent: newPromo.discountPercent,
+              applicable_scope: newPromo.applicableScope,
+              discount_type: newPromo.discountType,
+              advance_amount: newPromo.advanceAmount,
+              is_advance_payment: newPromo.isAdvancePayment,
+              description: newPromo.description,
+              is_active: newPromo.isActive,
+              redemption_count: 0,
+              created_at: newPromo.createdAt,
+            },
+          ],
+          { onConflict: 'code' }
+        );
+        if (error) {
+          console.warn('Supabase promo insert notice:', error.message);
+        }
       } catch (e) {
         console.warn('Could not persist new promo code to Supabase:', e);
       }
@@ -222,6 +270,14 @@ class PromoCodeService {
     id: string,
     isActive: boolean
   ): Promise<{ success: boolean; message: string }> {
+    const currentRole = getCurrentAuthRole();
+    if (currentRole !== 'admin') {
+      return {
+        success: false,
+        message: 'Permission Denied: Only Main Central Admin can activate or deactivate promo codes.',
+      };
+    }
+
     const codes = await this.getPromoCodes();
     const updated = codes.map((p) => (p.id === id ? { ...p, isActive } : p));
     this.saveLocalCodes(updated);
@@ -245,6 +301,14 @@ class PromoCodeService {
   }
 
   public async deletePromoCode(id: string): Promise<{ success: boolean; message: string }> {
+    const currentRole = getCurrentAuthRole();
+    if (currentRole !== 'admin') {
+      return {
+        success: false,
+        message: 'Permission Denied: Only Main Central Admin can delete promo codes.',
+      };
+    }
+
     const codes = await this.getPromoCodes();
     const target = codes.find((p) => p.id === id);
     const updated = codes.filter((p) => p.id !== id);

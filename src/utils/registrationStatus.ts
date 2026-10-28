@@ -57,9 +57,28 @@ export function isEventRegistrationOpen(eventCodeOrId: string | undefined): bool
   const map = getEventRegistrationStatusMap();
   const normalized = eventCodeOrId.toLowerCase().trim();
 
+  // 1. Direct exact key lookup
+  if (map[eventCodeOrId] !== undefined) {
+    if (map[eventCodeOrId] === false) return false;
+  }
+
+  // 2. Case-insensitive key lookup in map
   for (const [key, val] of Object.entries(map)) {
     if (key.toLowerCase().trim() === normalized) {
-      return val !== false;
+      if (val === false) return false;
+    }
+  }
+
+  // 3. Match against EVENTS_DATA by ID or Code
+  const found = EVENTS_DATA.find(
+    (e) => e.id.toLowerCase() === normalized || e.code.toLowerCase() === normalized
+  );
+  if (found) {
+    if (map[found.id] === false || map[found.code] === false) {
+      return false;
+    }
+    if (map[found.id.toLowerCase()] === false || map[found.code.toLowerCase()] === false) {
+      return false;
     }
   }
 
@@ -73,17 +92,25 @@ export function isEventRegistrationOpen(eventCodeOrId: string | undefined): bool
 export function setEventRegistrationOpen(eventCodeOrId: string, isOpen: boolean): void {
   try {
     const map = getEventRegistrationStatusMap();
+    const normalized = eventCodeOrId.toLowerCase().trim();
+    
     map[eventCodeOrId] = isOpen;
+    map[normalized] = isOpen;
+
     // Also save under both ID and Code if matched in EVENTS_DATA
     const found = EVENTS_DATA.find(
-      (e) => e.id.toLowerCase() === eventCodeOrId.toLowerCase() || e.code.toLowerCase() === eventCodeOrId.toLowerCase()
+      (e) => e.id.toLowerCase() === normalized || e.code.toLowerCase() === normalized
     );
     if (found) {
       map[found.id] = isOpen;
       map[found.code] = isOpen;
+      map[found.id.toLowerCase()] = isOpen;
+      map[found.code.toLowerCase()] = isOpen;
     }
+
     localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(map));
-    window.dispatchEvent(new CustomEvent('celestia-registration-status-changed'));
+    window.dispatchEvent(new CustomEvent('celestia-registration-status-changed', { detail: { eventCodeOrId, isOpen } }));
+    window.dispatchEvent(new Event('storage'));
   } catch {}
 }
 
@@ -96,10 +123,13 @@ export function setAllEventsRegistrationOpen(isOpen: boolean): void {
     EVENTS_DATA.forEach((ev) => {
       map[ev.id] = isOpen;
       map[ev.code] = isOpen;
+      map[ev.id.toLowerCase()] = isOpen;
+      map[ev.code.toLowerCase()] = isOpen;
     });
     localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(map));
     localStorage.setItem(GLOBAL_STATUS_STORAGE_KEY, String(isOpen));
-    window.dispatchEvent(new CustomEvent('celestia-registration-status-changed'));
+    window.dispatchEvent(new CustomEvent('celestia-registration-status-changed', { detail: { isOpen } }));
+    window.dispatchEvent(new Event('storage'));
   } catch {}
 }
 

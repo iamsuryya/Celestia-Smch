@@ -31,6 +31,7 @@ import { useRegistration } from '../../context/RegistrationContext';
 import { RegistrationSubmission, PromoCode, ParticipantMember } from '../../types/registration';
 import { supabaseRegistrationService } from '../../services/supabaseRegistrationService';
 import { promoCodeService } from '../../services/promoCodeService';
+import { isEventRegistrationOpen } from '../../utils/registrationStatus';
 
 interface ComboRegistrationWizardProps {
   combo: ComboOffer;
@@ -400,6 +401,14 @@ export const ComboRegistrationWizard: React.FC<ComboRegistrationWizardProps> = (
   const validateCurrentStep = (): boolean => {
     const errs: Record<string, string> = {};
 
+    // Global Check: Verify none of the selected combo events are stopped by Admin
+    const stoppedEvent = orderedChosenEvents.find(e => !isEventRegistrationOpen(e.id) || !isEventRegistrationOpen(e.code));
+    if (stoppedEvent) {
+      errs.stoppedEvent = `Registration for ${stoppedEvent.title} (${stoppedEvent.code}) has been stopped by the Admin. Please select an active event.`;
+      setErrors(errs);
+      return false;
+    }
+
     // Step 1: Event Selection Step
     if (wizardStep === 1) {
       if (combo.id === 'celestia-all-access') {
@@ -593,6 +602,13 @@ export const ComboRegistrationWizard: React.FC<ComboRegistrationWizardProps> = (
   // Final Registration Submission with double-click guard & Supabase recording
   const handleSubmitComboRegistrations = async () => {
     if (isSubmitting) return;
+
+    const stoppedEvt = orderedChosenEvents.find(e => !isEventRegistrationOpen(e.id) || !isEventRegistrationOpen(e.code));
+    if (stoppedEvt) {
+      setSubmissionError(`Registration for ${stoppedEvt.title} (${stoppedEvt.code}) has been stopped by the Admin. No new entries can be submitted.`);
+      scrollToTop();
+      return;
+    }
 
     if (!utrNumber.trim() || utrNumber.length < 6) {
       setSubmissionError('Please enter a valid UPI Reference / UTR Number (min 6 digits).');

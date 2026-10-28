@@ -22,6 +22,7 @@ import { ComboOffersPage } from './pages/ComboOffersPage';
 import { ComboRegistrationWizard } from './components/registration/ComboRegistrationWizard';
 import { ComboOffer } from './data/comboOffersData';
 import { EventItem, CategoryInfo } from './data/festivalData';
+import { isEventRegistrationOpen } from './utils/registrationStatus';
 
 function AppContent() {
   const [currentPage, setCurrentPage] = useState<NavigationPage>(() => {
@@ -104,6 +105,12 @@ function AppContent() {
   };
 
   const handleOpenRegister = (event?: EventItem) => {
+    if (event) {
+      if (!isEventRegistrationOpen(event.id) || !isEventRegistrationOpen(event.code)) {
+        alert(`Registration for ${event.title} (${event.code}) has been stopped by the Admin.`);
+        return;
+      }
+    }
     setActiveModalEvent(null);
     setActiveComboWizard(null);
     startNewRegistration(event?.id);

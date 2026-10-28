@@ -12,7 +12,7 @@ import { supabaseRegistrationService } from '../services/supabaseRegistrationSer
 import { promoCodeService } from '../services/promoCodeService';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { generateRegistrationCode } from '../utils/registrationCode';
-import { isAutoApproveEnabled } from '../utils/registrationStatus';
+import { isAutoApproveEnabled, isEventRegistrationOpen, isGlobalRegistrationOpen } from '../utils/registrationStatus';
 
 interface RegistrationContextType {
   currentStep: RegistrationStep;
@@ -177,6 +177,11 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   };
 
   const selectEvent = (event: EventItem) => {
+    if (!isEventRegistrationOpen(event.id) || !isEventRegistrationOpen(event.code)) {
+      alert(`Registration for ${event.title} (${event.code}) has been stopped by the Admin.`);
+      return;
+    }
+
     setSelectedEvent(event);
     setTeamName('');
     
@@ -286,6 +291,10 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const submitRegistration = async (): Promise<RegistrationSubmission | null> => {
     if (!selectedEvent || !collegeDetails || !currentUser) return null;
+
+    if (!isGlobalRegistrationOpen() || !isEventRegistrationOpen(selectedEvent.id) || !isEventRegistrationOpen(selectedEvent.code)) {
+      throw new Error(`Registration for ${selectedEvent.title} (${selectedEvent.code}) has been stopped by the Admin. New entries are currently blocked.`);
+    }
 
     const submissionId = generateRegistrationCode(selectedEvent.id);
     const isHost = Boolean(collegeDetails.isHostCollege);
@@ -401,10 +410,17 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   };
 
   const startNewRegistration = (preselectedEventId?: string) => {
+    let successfullyPreselected = false;
     if (preselectedEventId) {
-      const found = EVENTS_DATA.find((e) => e.id === preselectedEventId);
+      const found = EVENTS_DATA.find((e) => e.id.toLowerCase() === preselectedEventId.toLowerCase() || e.code.toLowerCase() === preselectedEventId.toLowerCase());
       if (found) {
-        selectEvent(found);
+        if (!isEventRegistrationOpen(found.id) || !isEventRegistrationOpen(found.code)) {
+          alert(`Registration for ${found.title} (${found.code}) has been stopped by the Admin.`);
+          setSelectedEvent(null);
+        } else {
+          selectEvent(found);
+          successfullyPreselected = true;
+        }
       }
     } else {
       setSelectedEvent(null);
@@ -417,9 +433,9 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     setPaymentConfirmed(false);
     setAppliedPromoCode(null);
 
-    // If user is already logged in and has college details, jump straight to event or participants
+    // If user is already logged in and has college details, jump to participants if preselected, else event selector
     if (currentUser && collegeDetails) {
-      if (preselectedEventId) {
+      if (successfullyPreselected) {
         setCurrentStep('participants');
       } else {
         setCurrentStep('event');
