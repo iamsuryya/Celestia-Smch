@@ -80,6 +80,13 @@ export const ComboRegistrationWizard: React.FC<ComboRegistrationWizardProps> = (
     return 1;
   });
 
+  // Always scroll to top when step changes in combo wizard
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [wizardStep]);
+
   // Selected events state (array of EventItem objects, supporting duplicate selections e.g. 2 AdBlitz teams)
   const [chosenEvents, setChosenEvents] = useState<EventItem[]>(() => {
     if (initialSelectedEvents && initialSelectedEvents.length > 0) {
@@ -404,7 +411,7 @@ export const ComboRegistrationWizard: React.FC<ComboRegistrationWizardProps> = (
     // Global Check: Verify none of the selected combo events are stopped by Admin
     const stoppedEvent = orderedChosenEvents.find(e => !isEventRegistrationOpen(e.id) || !isEventRegistrationOpen(e.code));
     if (stoppedEvent) {
-      errs.stoppedEvent = `Registration for ${stoppedEvent.title} (${stoppedEvent.code}) has been stopped by the Admin. Please select an active event.`;
+      errs.stoppedEvent = `Registration for ${stoppedEvent.title} (${stoppedEvent.code}) has been closed. Please select an active event.`;
       setErrors(errs);
       return false;
     }

@@ -31,6 +31,13 @@ export const RegistrationWizard: React.FC<RegistrationWizardProps> = ({ onExit }
     logoutUser
   } = useRegistration();
 
+  // Always scroll to top when changing registration step
+  React.useEffect(() => {
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [currentStep]);
+
   const canNavigateTo = (step: RegistrationStep): boolean => {
     switch (step) {
       case 'landing':

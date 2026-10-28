@@ -32,6 +32,13 @@ export const ParticipantForm: React.FC = () => {
   } = useRegistration();
 
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const [memberCountStr, setMemberCountStr] = useState<string>(() => String(participants.length));
+  const [showMemberDetails, setShowMemberDetails] = useState<boolean>(false);
+
+  // Sync memberCountStr whenever participants.length changes externally
+  React.useEffect(() => {
+    setMemberCountStr(String(participants.length));
+  }, [participants.length]);
 
   if (!selectedEvent) {
     return (
@@ -52,6 +59,61 @@ export const ParticipantForm: React.FC = () => {
   const isTeam = selectedEvent.type === 'Team';
 
   const maxCount = selectedEvent.maxParticipants;
+
+  const isTwinFlare = selectedEvent.id === 'twin-flare' || selectedEvent.code === 'TWIN-FLARE';
+
+  // Ensure Twin Flare is always initialized with exactly 2 participants
+  React.useEffect(() => {
+    if (isTwinFlare && participants.length !== 2) {
+      setParticipants((prev) => {
+        const leader = prev[0] || {
+          fullName: '',
+          gender: 'Male',
+          age: '',
+          mobile: '',
+          email: '',
+          role: 'Team Captain / Participant 1',
+        };
+        const member2 = prev[1] || {
+          fullName: '',
+          gender: 'Male',
+          age: '',
+          mobile: '',
+          email: '',
+          role: 'Participant 2',
+        };
+        return [{ ...leader, role: 'Team Captain / Participant 1' }, { ...member2, role: 'Participant 2' }];
+      });
+    }
+  }, [isTwinFlare]);
+
+  // Adjust team roster size based on user input
+  const handleParticipantCountChange = (count: number) => {
+    if (isTwinFlare) return; // Locked at 2 for Twin Flare
+    const min = selectedEvent?.minParticipants || 1;
+    const max = selectedEvent?.maxParticipants || 30;
+    const targetCount = Math.max(min, Math.min(max, count));
+
+    setParticipants((prev) => {
+      if (targetCount === prev.length) return prev;
+      if (targetCount < prev.length) {
+        return prev.slice(0, targetCount);
+      } else {
+        const next = [...prev];
+        while (next.length < targetCount) {
+          next.push({
+            fullName: '',
+            gender: 'Male',
+            age: '',
+            mobile: '',
+            email: '',
+            role: `Team Member #${next.length + 1}`,
+          });
+        }
+        return next;
+      }
+    });
+  };
 
   // Handle input text changes for a participant
   const handleMemberChange = (index: number, field: keyof ParticipantMember, value: string) => {
@@ -127,6 +189,7 @@ export const ParticipantForm: React.FC = () => {
 
   // Add another team member (optional)
   const addMember = () => {
+    if (isTwinFlare) return;
     if (maxCount !== null && participants.length >= maxCount) return;
     setParticipants((prev) => [
       ...prev,
@@ -136,7 +199,7 @@ export const ParticipantForm: React.FC = () => {
         age: '',
         mobile: '',
         email: '',
-        role: isDuo ? 'Participant 2' : `Team Member #${prev.length + 1}`,
+        role: `Team Member #${prev.length + 1}`,
       },
     ]);
   };
@@ -144,6 +207,7 @@ export const ParticipantForm: React.FC = () => {
   // Remove a specific team member
   const removeMember = (index: number) => {
     if (index === 0) return; // Cannot remove captain
+    if (isTwinFlare && index === 1) return; // Cannot remove duo partner for Twin Flare
     setParticipants((prev) => prev.filter((_, idx) => idx !== index));
     // Clean up any errors for this index
     setErrors((prev) => {
@@ -203,39 +267,35 @@ export const ParticipantForm: React.FC = () => {
       }
     }
 
-    // 2. Validate other team members (index >= 1) IF they were added
-    // For other team members:
-    // REQUIRED: Full Name, Gender, Age, Mobile
-    // OPTIONAL: Email
-    // NO ID card upload required
-    // NO College Roll Number
-    participants.slice(1).forEach((m, offset) => {
-      const idx = offset + 1;
+    // 2. Validate other team members (index >= 1) IF showMemberDetails is enabled
+    if (showMemberDetails) {
+      participants.slice(1).forEach((m, offset) => {
+        const idx = offset + 1;
 
-      // Full Name (REQUIRED)
-      if (!m.fullName.trim() || m.fullName.trim().length < 2) {
-        errs[`name_${idx}`] = `Full name is required for team member #${idx + 1}.`;
-      }
+        // If member details section is open and fields are touched or required when open
+        if (m.fullName.trim() || m.mobile.trim() || m.age) {
+          if (!m.fullName.trim() || m.fullName.trim().length < 2) {
+            errs[`name_${idx}`] = `Full name is required for team member #${idx + 1}.`;
+          }
 
-      // Age (REQUIRED)
-      if (!m.age || isNaN(Number(m.age)) || Number(m.age) < 15 || Number(m.age) > 60) {
-        errs[`age_${idx}`] = `Valid age required for member #${idx + 1}.`;
-      }
+          if (!m.age || isNaN(Number(m.age)) || Number(m.age) < 15 || Number(m.age) > 60) {
+            errs[`age_${idx}`] = `Valid age required for member #${idx + 1}.`;
+          }
 
-      // Mobile (REQUIRED)
-      const phoneClean = m.mobile.replace(/\D/g, '');
-      if (phoneClean.length < 10) {
-        errs[`mobile_${idx}`] = `Valid 10-digit mobile required for member #${idx + 1}.`;
-      }
+          const phoneClean = m.mobile.replace(/\D/g, '');
+          if (phoneClean.length < 10) {
+            errs[`mobile_${idx}`] = `Valid 10-digit mobile required for member #${idx + 1}.`;
+          }
 
-      // Email (OPTIONAL: validate format only if provided)
-      if (m.email.trim()) {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(m.email.trim())) {
-          errs[`email_${idx}`] = `Invalid email format for member #${idx + 1}. Leave blank if not available.`;
+          if (m.email.trim()) {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(m.email.trim())) {
+              errs[`email_${idx}`] = `Invalid email format for member #${idx + 1}.`;
+            }
+          }
         }
-      }
-    });
+      });
+    }
 
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -326,8 +386,8 @@ export const ParticipantForm: React.FC = () => {
         <div className="p-4 rounded-xl bg-rose-950/80 border-2 border-rose-500 text-rose-200 text-xs sm:text-sm font-semibold flex items-center gap-3">
           <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
           <div>
-            <strong className="block text-white text-sm">Registration Stopped by Admin</strong>
-            <span>Registration for {selectedEvent.title} ({selectedEvent.code}) has been closed by festival management. You cannot proceed or submit new entries.</span>
+            <strong className="block text-white text-sm">Registration Closed</strong>
+            <span>Registration for {selectedEvent.title} ({selectedEvent.code}) has been closed. You cannot proceed or submit new entries.</span>
           </div>
         </div>
       )}
@@ -601,206 +661,254 @@ export const ParticipantForm: React.FC = () => {
             </div>
           </div>
         </div>
-
         {/* =========================================================================
-            SECTION: ADDITIONAL TEAM MEMBERS (OPTIONAL)
-            Only for Duo / Team events
-            Details are OPTIONAL to add.
-            If added:
-              REQUIRED: Full Name, Gender, Age, Mobile
-              OPTIONAL: Email ID
-              NO ID card upload
-              NO College Roll Number
-            User can SKIP adding team members and continue!
+            SECTION: PARTICIPANT COUNT SELECTION
+            For all Team and Duo events (Reflexia, Stellar Bid, Starfusion, ELARIS, Silhouette, AdBlitz, Twin Flare, etc.)
+            Ask for total number of participating members after captain details.
         ========================================================================= */}
         {!isSolo && (
-          <div className="space-y-4">
-            
-            {/* Header banner indicating Optional status */}
-            <div className="p-4 rounded-xl bg-[#0B1028] border border-[#D4AF37]/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-start gap-2.5">
-                <Info className="w-4 h-4 text-[#D4AF37] shrink-0 mt-0.5" />
-                <div>
-                  <h3 className="text-xs sm:text-sm font-semibold text-white flex items-center gap-2">
-                    <span>Add Team Members — Optional</span>
-                    <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                      Optional
-                    </span>
-                  </h3>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    You can add team member details now or skip this step. Additional roster members can be verified at the registration desk.
-                  </p>
-                </div>
-              </div>
-
-              {/* Quick Skip button if members are present or user wants to proceed */}
-              {additionalMembers.length > 0 && (
-                <button
-                  type="button"
-                  onClick={handleSkipTeamMembers}
-                  className="shrink-0 text-xs text-[#E6C57D] hover:text-[#F5E7C4] hover:underline flex items-center gap-1 cursor-pointer self-end sm:self-center"
-                >
-                  <span>Skip Members & Continue</span>
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
+          <div className="celestial-glass rounded-xl p-5 border border-[#D4AF37]/30 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold text-white flex items-center gap-2">
+                <Users className="w-4 h-4 text-[#D4AF37]" />
+                <span>Number of Participating Members in {selectedEvent.title}</span>
+                <span className="text-rose-400">*</span>
+              </label>
+              {isTwinFlare && (
+                <span className="text-[10px] font-mono font-bold uppercase px-2.5 py-0.5 rounded bg-[#D4AF37]/20 text-[#E6C57D] border border-[#D4AF37]/40">
+                  Fixed 2 Participants
+                </span>
               )}
             </div>
 
-            {/* List of added team members */}
-            {additionalMembers.map((member, subIdx) => {
-              const index = subIdx + 1;
-              const memberLabel = isDuo ? 'Participant 2' : `Team Member #${index + 1}`;
-
-              return (
-                <div 
-                  key={index} 
-                  className="celestial-glass rounded-xl p-5 sm:p-6 border border-white/10 space-y-4 relative"
-                >
-                  <div className="flex items-center justify-between pb-3 border-b border-white/5">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full bg-[#121B3D] border border-white/20 flex items-center justify-center text-xs font-bold text-slate-300">
-                        {index + 1}
-                      </div>
-                      <span className="font-semibold text-sm text-white">
-                        {memberLabel}
-                      </span>
-                      <span className="text-[10px] text-slate-400 font-mono">
-                        (Optional Member)
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => removeMember(index)}
-                      className="text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 px-2 py-1 rounded flex items-center gap-1 cursor-pointer transition-colors"
-                      title="Remove member"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Remove</span>
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {/* Full Name (REQUIRED if member added) */}
-                    <div className="sm:col-span-2">
-                      <label className="block text-xs font-medium text-slate-300 mb-1">
-                        Full Legal Name <span className="text-rose-400">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={member.fullName}
-                        onChange={(e) => handleMemberChange(index, 'fullName', e.target.value)}
-                        placeholder="e.g. Arun Kumar"
-                        className="w-full px-3.5 py-2 bg-[#080D24] border border-white/10 focus:border-[#D4AF37] rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none transition-colors"
-                      />
-                      {errors[`name_${index}`] && (
-                        <p className="text-[11px] text-rose-400 mt-1 flex items-center gap-1">
-                          <AlertCircle className="w-3 h-3" /> {errors[`name_${index}`]}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Gender (REQUIRED if member added) */}
-                    <div>
-                      <label className="block text-xs font-medium text-slate-300 mb-1">
-                        Gender <span className="text-rose-400">*</span>
-                      </label>
-                      <select
-                        value={member.gender}
-                        onChange={(e) => handleMemberChange(index, 'gender', e.target.value as any)}
-                        className="w-full px-3.5 py-2 bg-[#080D24] border border-white/10 focus:border-[#D4AF37] rounded-lg text-sm text-white focus:outline-none transition-colors"
-                      >
-                        <option value="Male">Male</option>
-                        <option value="Female">Female</option>
-                        <option value="Other">Other</option>
-                        <option value="Prefer not to say">Prefer not to say</option>
-                      </select>
-                    </div>
-
-                    {/* Age (REQUIRED if member added) */}
-                    <div>
-                      <label className="block text-xs font-medium text-slate-300 mb-1">
-                        Age <span className="text-rose-400">*</span>
-                      </label>
-                      <input
-                        type="number"
-                        min={15}
-                        max={60}
-                        required
-                        value={member.age}
-                        onChange={(e) => handleMemberChange(index, 'age', e.target.value)}
-                        placeholder="e.g. 21"
-                        className="w-full px-3.5 py-2 bg-[#080D24] border border-white/10 focus:border-[#D4AF37] rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none transition-colors"
-                      />
-                      {errors[`age_${index}`] && (
-                        <p className="text-[11px] text-rose-400 mt-1 flex items-center gap-1">
-                          <AlertCircle className="w-3 h-3" /> {errors[`age_${index}`]}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Mobile (REQUIRED if member added) */}
-                    <div>
-                      <label className="block text-xs font-medium text-slate-300 mb-1">
-                        Mobile Number <span className="text-rose-400">*</span>
-                      </label>
-                      <input
-                        type="tel"
-                        required
-                        value={member.mobile}
-                        onChange={(e) => handleMemberChange(index, 'mobile', e.target.value)}
-                        placeholder="+91 98765 43210"
-                        className="w-full px-3.5 py-2 bg-[#080D24] border border-white/10 focus:border-[#D4AF37] rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none transition-colors"
-                      />
-                      {errors[`mobile_${index}`] && (
-                        <p className="text-[11px] text-rose-400 mt-1 flex items-center gap-1">
-                          <AlertCircle className="w-3 h-3" /> {errors[`mobile_${index}`]}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Email (OPTIONAL for other team members) */}
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="block text-xs font-medium text-slate-300">
-                          Email ID
-                        </label>
-                        <span className="text-[10px] text-slate-500 font-mono">Optional</span>
-                      </div>
-                      <input
-                        type="email"
-                        value={member.email}
-                        onChange={(e) => handleMemberChange(index, 'email', e.target.value)}
-                        placeholder="optional@college.edu.in"
-                        className="w-full px-3.5 py-2 bg-[#080D24] border border-white/10 focus:border-[#D4AF37] rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none transition-colors"
-                      />
-                      {errors[`email_${index}`] && (
-                        <p className="text-[11px] text-rose-400 mt-1 flex items-center gap-1">
-                          <AlertCircle className="w-3 h-3" /> {errors[`email_${index}`]}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* Clear button: + Add Team Member */}
-            {(maxCount === null || participants.length < maxCount) && (
-              <div className="pt-1 text-center">
-                <button
-                  type="button"
-                  onClick={addMember}
-                  className="py-2.5 px-5 text-xs font-semibold text-[#F5E7C4] hover:text-white bg-[#0F173C] hover:bg-[#162152] border border-[#D4AF37]/35 rounded-lg transition-all inline-flex items-center gap-2 cursor-pointer shadow-sm hover:border-[#D4AF37]"
-                >
-                  <UserPlus className="w-4 h-4 text-[#D4AF37]" />
-                  <span>+ Add Team Member {additionalMembers.length > 0 ? `(${participants.length} added)` : ''}</span>
-                </button>
+            {isTwinFlare ? (
+              <div className="p-3 bg-[#080D24] border border-white/10 rounded-lg flex items-center justify-between text-xs text-slate-300">
+                <span>Duo Event Requirement:</span>
+                <strong className="text-white font-mono">Exactly 2 Participants (Captain + Partner)</strong>
+              </div>
+            ) : (
+              <div>
+                <input
+                  type="number"
+                  min={selectedEvent.minParticipants || 1}
+                  max={selectedEvent.maxParticipants || 30}
+                  value={memberCountStr}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setMemberCountStr(val);
+                    if (val === '') return;
+                    const parsed = parseInt(val, 10);
+                    if (!isNaN(parsed)) {
+                      handleParticipantCountChange(parsed);
+                    }
+                  }}
+                  onBlur={() => {
+                    if (memberCountStr === '' || isNaN(parseInt(memberCountStr, 10))) {
+                      setMemberCountStr(String(participants.length));
+                    } else {
+                      const parsed = parseInt(memberCountStr, 10);
+                      const min = selectedEvent.minParticipants || 1;
+                      const max = selectedEvent.maxParticipants || 30;
+                      const clamped = Math.max(min, Math.min(max, parsed));
+                      handleParticipantCountChange(clamped);
+                      setMemberCountStr(String(clamped));
+                    }
+                  }}
+                  className="w-32 px-3.5 py-2 bg-[#080D24] border border-white/10 focus:border-[#D4AF37] rounded-lg text-sm font-bold text-white text-center focus:outline-none transition-colors"
+                />
               </div>
             )}
           </div>
         )}
+
+        {/* =========================================================================
+            SECTION: ADDITIONAL TEAM MEMBERS DETAILS (OPTIONAL)
+            Hidden by default behind "+ Add Other Team Members (Optional)" button.
+        ========================================================================= */}
+        {!isSolo && (
+          <div className="space-y-4">
+            {/* Toggle button to expand/collapse team member name inputs */}
+            <div className="text-center pt-1">
+              <button
+                type="button"
+                onClick={() => setShowMemberDetails((prev) => !prev)}
+                className="py-3 px-5 text-xs font-semibold text-[#F5E7C4] hover:text-white bg-[#0F173C] hover:bg-[#162152] border border-[#D4AF37]/40 hover:border-[#D4AF37] rounded-xl transition-all inline-flex items-center gap-2 cursor-pointer shadow-md"
+              >
+                <UserPlus className="w-4 h-4 text-[#D4AF37]" />
+                <span>
+                  {showMemberDetails
+                    ? 'Hide Team Member Details'
+                    : '+ Add Other Team Members (Optional)'}
+                </span>
+                {additionalMembers.length > 0 && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/10 text-slate-300">
+                    {additionalMembers.length} Slot{additionalMembers.length === 1 ? '' : 's'}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* List of added team member detail cards (rendered only when user clicks to show) */}
+            {showMemberDetails && (
+              <div className="space-y-4 pt-2">
+                <div className="p-3.5 rounded-xl bg-[#0B1028] border border-[#D4AF37]/20 flex items-center justify-between gap-3 text-xs text-slate-300">
+                  <div className="flex items-center gap-2">
+                    <Info className="w-4 h-4 text-[#D4AF37] shrink-0" />
+                    <span>Enter names and details for additional team members below (optional):</span>
+                  </div>
+                </div>
+
+                {additionalMembers.map((member, subIdx) => {
+                  const index = subIdx + 1;
+                  const memberLabel = isDuo ? 'Participant 2' : `Team Member #${index + 1}`;
+
+                  return (
+                    <div 
+                      key={index} 
+                      className="celestial-glass rounded-xl p-5 sm:p-6 border border-white/10 space-y-4 relative"
+                    >
+                      <div className="flex items-center justify-between pb-3 border-b border-white/5">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full bg-[#121B3D] border border-white/20 flex items-center justify-center text-xs font-bold text-slate-300">
+                            {index + 1}
+                          </div>
+                          <span className="font-semibold text-sm text-white">
+                            {memberLabel}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            (Optional)
+                          </span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => removeMember(index)}
+                          className="text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 px-2 py-1 rounded flex items-center gap-1 cursor-pointer transition-colors"
+                          title="Remove member"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Remove</span>
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {/* Full Name */}
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-medium text-slate-300 mb-1">
+                            Full Legal Name
+                          </label>
+                          <input
+                            type="text"
+                            value={member.fullName}
+                            onChange={(e) => handleMemberChange(index, 'fullName', e.target.value)}
+                            placeholder="e.g. Arun Kumar"
+                            className="w-full px-3.5 py-2 bg-[#080D24] border border-white/10 focus:border-[#D4AF37] rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none transition-colors"
+                          />
+                          {errors[`name_${index}`] && (
+                            <p className="text-[11px] text-rose-400 mt-1 flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3" /> {errors[`name_${index}`]}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Gender */}
+                        <div>
+                          <label className="block text-xs font-medium text-slate-300 mb-1">
+                            Gender
+                          </label>
+                          <select
+                            value={member.gender}
+                            onChange={(e) => handleMemberChange(index, 'gender', e.target.value as any)}
+                            className="w-full px-3.5 py-2 bg-[#080D24] border border-white/10 focus:border-[#D4AF37] rounded-lg text-sm text-white focus:outline-none transition-colors"
+                          >
+                            <option value="Male">Male</option>
+                            <option value="Female">Female</option>
+                            <option value="Other">Other</option>
+                            <option value="Prefer not to say">Prefer not to say</option>
+                          </select>
+                        </div>
+
+                        {/* Age */}
+                        <div>
+                          <label className="block text-xs font-medium text-slate-300 mb-1">
+                            Age
+                          </label>
+                          <input
+                            type="number"
+                            min={15}
+                            max={60}
+                            value={member.age}
+                            onChange={(e) => handleMemberChange(index, 'age', e.target.value)}
+                            placeholder="e.g. 21"
+                            className="w-full px-3.5 py-2 bg-[#080D24] border border-white/10 focus:border-[#D4AF37] rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none transition-colors"
+                          />
+                          {errors[`age_${index}`] && (
+                            <p className="text-[11px] text-rose-400 mt-1 flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3" /> {errors[`age_${index}`]}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Mobile */}
+                        <div>
+                          <label className="block text-xs font-medium text-slate-300 mb-1">
+                            Mobile Number
+                          </label>
+                          <input
+                            type="tel"
+                            value={member.mobile}
+                            onChange={(e) => handleMemberChange(index, 'mobile', e.target.value)}
+                            placeholder="+91 98765 43210"
+                            className="w-full px-3.5 py-2 bg-[#080D24] border border-white/10 focus:border-[#D4AF37] rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none transition-colors"
+                          />
+                          {errors[`mobile_${index}`] && (
+                            <p className="text-[11px] text-rose-400 mt-1 flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3" /> {errors[`mobile_${index}`]}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Email */}
+                        <div>
+                          <label className="block text-xs font-medium text-slate-300 mb-1">
+                            Email ID
+                          </label>
+                          <input
+                            type="email"
+                            value={member.email}
+                            onChange={(e) => handleMemberChange(index, 'email', e.target.value)}
+                            placeholder="optional@college.edu.in"
+                            className="w-full px-3.5 py-2 bg-[#080D24] border border-white/10 focus:border-[#D4AF37] rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none transition-colors"
+                          />
+                          {errors[`email_${index}`] && (
+                            <p className="text-[11px] text-rose-400 mt-1 flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3" /> {errors[`email_${index}`]}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* + Add Another Member Slot button */}
+                {(maxCount === null || participants.length < maxCount) && (
+                  <div className="pt-1 text-center">
+                    <button
+                      type="button"
+                      onClick={addMember}
+                      className="py-2.5 px-5 text-xs font-semibold text-[#F5E7C4] hover:text-white bg-[#0F173C] hover:bg-[#162152] border border-[#D4AF37]/35 rounded-lg transition-all inline-flex items-center gap-2 cursor-pointer shadow-sm hover:border-[#D4AF37]"
+                    >
+                      <UserPlus className="w-4 h-4 text-[#D4AF37]" />
+                      <span>+ Add Another Team Member Slot</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
 
         {/* Form Bottom Controls */}
         <div className="pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4">

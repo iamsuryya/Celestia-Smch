@@ -227,7 +227,7 @@ export const EventSelector: React.FC = () => {
                     className="w-full py-2.5 px-4 text-xs font-bold tracking-wider uppercase rounded-lg bg-rose-950/40 text-rose-300 border border-rose-500/30 flex items-center justify-center gap-1.5 cursor-not-allowed opacity-80"
                   >
                     <AlertCircle className="w-4 h-4 text-rose-400" />
-                    <span>Registration Closed by Admin</span>
+                    <span>Registration Closed</span>
                   </button>
                 ) : (
                   <button

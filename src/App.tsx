@@ -53,6 +53,13 @@ function AppContent() {
 
   const { currentUser, startNewRegistration, goToStep, logoutUser } = useRegistration();
 
+  // Always scroll to top when page view or wizard changes
+  React.useEffect(() => {
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [currentPage, isRegisteringView, activeComboWizard]);
+
   // Listen to popstate / hashchange to allow direct route /admin, /admin1, /incharges typing
   React.useEffect(() => {
     const handleUrlChange = () => {

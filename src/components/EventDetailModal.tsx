@@ -343,7 +343,7 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 disabled
                 className="py-2.5 px-6 text-xs font-bold tracking-wider uppercase text-rose-300 bg-rose-950/40 border border-rose-500/30 rounded-md cursor-not-allowed opacity-80"
               >
-                Registration Closed by Admin
+                Registration Closed
               </button>
             ) : (
               <button

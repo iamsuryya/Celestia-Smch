@@ -80,6 +80,15 @@ const REGISTRATIONS_STORAGE_KEY = 'celestia26_registrations';
 export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentStep, setCurrentStep] = useState<RegistrationStep>('landing');
   
+  const goToStep = (step: RegistrationStep) => {
+    setCurrentStep(step);
+    if (typeof window !== 'undefined') {
+      window.scrollTo(0, 0);
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    }
+  };
+  
   // Load persisted user if any
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
     try {
@@ -189,40 +198,35 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     const cleanName = currentUser?.fullName && currentUser.fullName !== 'Collegiate Delegate' ? currentUser.fullName : '';
     const cleanMobile = currentUser?.mobile && currentUser.mobile !== '9876543210' ? currentUser.mobile : '';
 
-    if (event.type === 'Solo') {
-      setParticipants([
-        {
+    const initialCount = event.type === 'Solo' 
+      ? 1 
+      : (event.maxParticipants || event.minParticipants || 2);
+
+    const initialParticipants: ParticipantMember[] = [];
+    for (let i = 0; i < initialCount; i++) {
+      if (i === 0) {
+        initialParticipants.push({
           fullName: cleanName,
           gender: 'Male',
           age: '',
           mobile: cleanMobile,
           email: currentUser?.email || '',
-          role: 'Individual Participant',
-        }
-      ]);
-    } else if (event.type === 'Duo') {
-      setParticipants([
-        {
-          fullName: cleanName,
+          role: event.type === 'Solo' 
+            ? 'Individual Participant' 
+            : (event.id === 'twin-flare' || event.code === 'TWIN-FLARE' || event.type === 'Duo' ? 'Team Captain / Participant 1' : 'Team Captain / Primary Contact'),
+        });
+      } else {
+        initialParticipants.push({
+          fullName: '',
           gender: 'Male',
           age: '',
-          mobile: cleanMobile,
-          email: currentUser?.email || '',
-          role: 'Team Captain / Participant 1',
-        }
-      ]);
-    } else {
-      setParticipants([
-        {
-          fullName: cleanName,
-          gender: 'Male',
-          age: '',
-          mobile: cleanMobile,
-          email: currentUser?.email || '',
-          role: 'Team Captain / Primary Contact',
-        }
-      ]);
+          mobile: '',
+          email: '',
+          role: event.id === 'twin-flare' || event.code === 'TWIN-FLARE' || event.type === 'Duo' ? `Participant ${i + 1}` : `Team Member #${i + 1}`,
+        });
+      }
     }
+    setParticipants(initialParticipants);
   };
 
   const applyPromoCode = async (codeStr: string, scopeContext: 'individual' | 'combo' = 'individual') => {
@@ -545,7 +549,7 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     <RegistrationContext.Provider
       value={{
         currentStep,
-        goToStep: setCurrentStep,
+        goToStep,
         currentUser,
         loginUser,
         logoutUser,
