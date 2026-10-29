@@ -714,13 +714,16 @@ export const supabaseRegistrationService = {
         dateStr: 'November 3-5, 2026',
         duration,
         isHostCollege: (() => {
+          if (typeof row.is_host_college === 'boolean') return row.is_host_college;
           const cName = (row.college_name || '').toLowerCase();
-          return Boolean(row.is_host_college) || cName.includes('srinivasan') || (Boolean(row.host_register_number) && !cName.includes('medical') && !cName.includes('college'));
+          return (cName.includes('srinivasan medical') && !cName.includes('dhanalakshmi')) || (Boolean(row.host_register_number) && row.host_register_number !== 'SMCH-STUDENT' && !cName.includes('dhanalakshmi'));
         })(),
         college: (() => {
           const rawCollegeName = (row.college_name || '').trim();
           const cNameLower = rawCollegeName.toLowerCase();
-          const isHost = Boolean(row.is_host_college) || cNameLower.includes('srinivasan');
+          const isHost = typeof row.is_host_college === 'boolean' 
+            ? row.is_host_college 
+            : ((cNameLower.includes('srinivasan medical') && !cNameLower.includes('dhanalakshmi')) || (Boolean(row.host_register_number) && row.host_register_number !== 'SMCH-STUDENT' && !cNameLower.includes('dhanalakshmi')));
           const isDelegation = !isHost && Boolean(row.is_college_delegation);
 
           return {
@@ -1306,7 +1309,7 @@ export const supabaseRegistrationService = {
   },
 
   /**
-   * Edits core registration details
+   * Edits core registration details including SMCH host status, participant count, and recalculates financials
    */
   async updateRegistrationDetails(
     registrationCode: string,
@@ -1325,8 +1328,19 @@ export const supabaseRegistrationService = {
       captainMobile?: string;
       participantCount?: number;
       participants?: ParticipantMember[];
+      isHostCollege?: boolean;
+      totalAmount?: number;
+      paidAmount?: number;
+      pendingAmount?: number;
+      paymentStatus?: PaymentStatus;
+      feePerUnit?: number;
+      feeType?: 'per_head' | 'per_team';
     }
   ): Promise<VerificationResult> {
+    let computedTotalForMsg = 0;
+    let computedPaidForMsg = 0;
+    let computedPendingForMsg = 0;
+
     // 1. Always update LocalStorage cache first so UI responds immediately
     try {
       const saved = localStorage.getItem('celestia26_registrations');
@@ -1342,7 +1356,7 @@ export const supabaseRegistrationService = {
           if (isMatch) {
             const count = details.participantCount !== undefined 
               ? details.participantCount 
-              : (details.participants ? details.participants.length : item.participantCount);
+              : (details.participants ? details.participants.length : (item.participantCount || 1));
 
             const updatedParticipants = details.participants || [...(item.participants || [])];
             if (updatedParticipants[0]) {
@@ -1354,9 +1368,42 @@ export const supabaseRegistrationService = {
               };
             }
 
-            const perHeadFee = item.feePerUnit || item.feeAmount || 0;
-            const isHost = Boolean(item.isHostCollege || item.college?.isHostCollege);
-            const calculatedTotal = isHost ? 0 : (item.feeType === 'per_head' ? perHeadFee * count : item.totalAmount);
+            const isHost = details.isHostCollege !== undefined ? details.isHostCollege : Boolean(item.isHostCollege || item.college?.isHostCollege);
+            
+            // Canonical fee lookup from master EVENTS_DATA
+            const matchedEvent = EVENTS_DATA.find((e) =>
+              e.code.toLowerCase() === (item.eventCode || '').toLowerCase() ||
+              e.id.toLowerCase() === (item.eventId || '').toLowerCase() ||
+              e.title.toLowerCase() === (item.eventTitle || '').toLowerCase()
+            );
+
+            const canonicalFeePerUnit = details.feePerUnit !== undefined 
+              ? details.feePerUnit 
+              : (matchedEvent ? matchedEvent.feeAmount : (item.feePerUnit || 0));
+
+            const canonicalFeeType: 'per_head' | 'per_team' = details.feeType !== undefined 
+              ? details.feeType 
+              : (matchedEvent ? matchedEvent.feeType : (item.feeType || 'per_head'));
+
+            let finalTotal = details.totalAmount !== undefined 
+              ? Number(details.totalAmount) 
+              : (isHost ? 0 : (canonicalFeeType === 'per_head' ? canonicalFeePerUnit * count : canonicalFeePerUnit));
+
+            let finalPaid = details.paidAmount !== undefined 
+              ? Number(details.paidAmount) 
+              : (item.paidAmount !== undefined ? Number(item.paidAmount) : (item.paymentConfirmed ? finalTotal : 0));
+
+            let finalPending = details.pendingAmount !== undefined 
+              ? Number(details.pendingAmount) 
+              : Math.max(0, finalTotal - finalPaid);
+
+            let finalPaymentStatus: PaymentStatus = details.paymentStatus || (
+              isHost ? 'Paid in Full' : (finalPending === 0 && finalTotal > 0 ? 'Paid in Full' : (finalPaid > 0 ? 'Advance Paid' : 'Pending'))
+            );
+
+            computedTotalForMsg = finalTotal;
+            computedPaidForMsg = finalPaid;
+            computedPendingForMsg = finalPending;
 
             return {
               ...item,
@@ -1364,9 +1411,18 @@ export const supabaseRegistrationService = {
               participants: updatedParticipants,
               teamName: details.teamName !== undefined ? details.teamName : item.teamName,
               utrNumber: details.utrNumber !== undefined ? details.utrNumber : item.utrNumber,
-              totalAmount: calculatedTotal,
+              feePerUnit: canonicalFeePerUnit,
+              feeType: canonicalFeeType,
+              totalAmount: finalTotal,
+              paidAmount: finalPaid,
+              pendingAmount: finalPending,
+              paymentStatus: finalPaymentStatus,
+              paymentNotes: details.adminNotes !== undefined ? details.adminNotes : item.paymentNotes,
+              paymentConfirmed: finalPaymentStatus === 'Paid in Full' || finalPaymentStatus === 'Verified' || isHost,
+              isHostCollege: isHost,
               college: {
                 ...item.college,
+                isHostCollege: isHost,
                 collegeName: details.collegeName !== undefined ? details.collegeName : item.college?.collegeName,
                 city: details.collegeCity !== undefined ? details.collegeCity : item.college?.city,
                 state: details.collegeState !== undefined ? details.collegeState : item.college?.state,
@@ -1387,17 +1443,31 @@ export const supabaseRegistrationService = {
     window.dispatchEvent(new CustomEvent('celestia-registration-status-changed', { detail: { regId: registrationCode } }));
 
     if (!supabase) {
-      return { success: true, message: `Registration ${registrationCode} updated locally` };
+      return { 
+        success: true, 
+        message: `Registration ${registrationCode} updated locally (Fee: ₹${computedTotalForMsg}, Paid: ₹${computedPaidForMsg}, Due: ₹${computedPendingForMsg})` 
+      };
     }
 
     try {
-      let reg: { id: string; fee_per_unit?: number; fee_type?: string; total_fee?: number } | null = null;
+      let reg: { 
+        id: string; 
+        fee_per_unit?: number; 
+        fee_type?: string; 
+        total_fee?: number; 
+        event_code?: string;
+        event_id?: string;
+        paid_amount?: number;
+        pending_amount?: number;
+        combo_group_id?: string;
+        registration_code?: string;
+      } | null = null;
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(registrationCode);
 
       if (isUuid) {
         const { data } = await supabase
           .from('registrations')
-          .select('id, fee_per_unit, fee_type, total_fee')
+          .select('id, fee_per_unit, fee_type, total_fee, event_code, event_id, paid_amount, pending_amount, combo_group_id, registration_code')
           .eq('id', registrationCode)
           .maybeSingle();
         if (data) reg = data;
@@ -1406,7 +1476,7 @@ export const supabaseRegistrationService = {
       if (!reg) {
         const { data } = await supabase
           .from('registrations')
-          .select('id, fee_per_unit, fee_type, total_fee')
+          .select('id, fee_per_unit, fee_type, total_fee, event_code, event_id, paid_amount, pending_amount, combo_group_id, registration_code')
           .eq('registration_code', registrationCode)
           .maybeSingle();
         if (data) reg = data;
@@ -1416,7 +1486,58 @@ export const supabaseRegistrationService = {
         return { success: true, message: `Registration ${registrationCode} updated locally` };
       }
 
-      const updateObj: Record<string, any> = {};
+      const count = details.participantCount !== undefined 
+        ? details.participantCount 
+        : (details.participants ? details.participants.length : 1);
+
+      const isHost = details.isHostCollege !== undefined ? details.isHostCollege : false;
+
+      // Canonical event lookup
+      const matchedEvent = EVENTS_DATA.find((e) =>
+        e.code.toLowerCase() === (reg?.event_code || '').toLowerCase() ||
+        e.id.toLowerCase() === (reg?.event_code || '').toLowerCase() ||
+        e.id.toLowerCase() === (reg?.event_id || '').toLowerCase()
+      );
+
+      const canonicalFeePerUnit = details.feePerUnit !== undefined 
+        ? details.feePerUnit 
+        : (matchedEvent ? matchedEvent.feeAmount : (reg.fee_per_unit || 0));
+
+      const canonicalFeeType: 'per_head' | 'per_team' = details.feeType !== undefined 
+        ? details.feeType 
+        : (matchedEvent ? matchedEvent.feeType : ((reg.fee_type as any) || 'per_head'));
+
+      const targetTotalFee = details.totalAmount !== undefined 
+        ? Number(details.totalAmount) 
+        : (isHost ? 0 : (canonicalFeeType === 'per_head' ? canonicalFeePerUnit * count : canonicalFeePerUnit));
+
+      const targetPaidAmount = details.paidAmount !== undefined 
+        ? Number(details.paidAmount) 
+        : (reg.paid_amount !== undefined ? Number(reg.paid_amount) : 0);
+
+      const targetPendingAmount = details.pendingAmount !== undefined 
+        ? Number(details.pendingAmount) 
+        : Math.max(0, targetTotalFee - targetPaidAmount);
+
+      let targetPaymentStatus: PaymentStatus = details.paymentStatus || (
+        isHost ? 'Paid in Full' : (targetPendingAmount === 0 && targetTotalFee > 0 ? 'Paid in Full' : (targetPaidAmount > 0 ? 'Advance Paid' : 'Pending'))
+      );
+
+      computedTotalForMsg = targetTotalFee;
+      computedPaidForMsg = targetPaidAmount;
+      computedPendingForMsg = targetPendingAmount;
+
+      const updateObj: Record<string, any> = {
+        is_host_college: isHost,
+        total_fee: targetTotalFee,
+        paid_amount: targetPaidAmount,
+        pending_amount: targetPendingAmount,
+        payment_status: targetPaymentStatus,
+        fee_per_unit: canonicalFeePerUnit,
+        fee_type: canonicalFeeType,
+        participant_count: count,
+      };
+
       if (details.teamName !== undefined) updateObj.team_name = details.teamName;
       if (details.collegeName !== undefined) updateObj.college_name = details.collegeName;
       if (details.collegeCity !== undefined) updateObj.college_city = details.collegeCity;
@@ -1426,26 +1547,42 @@ export const supabaseRegistrationService = {
       if (details.contactEmail !== undefined) updateObj.college_contact_email = details.contactEmail;
       if (details.adminNotes !== undefined) updateObj.admin_notes = details.adminNotes;
 
-      if (details.participantCount !== undefined || (details.participants && details.participants.length > 0)) {
-        const newCount = details.participantCount !== undefined ? details.participantCount : details.participants!.length;
-        updateObj.participant_count = newCount;
-        if (reg.fee_type === 'per_head' && reg.fee_per_unit) {
-          updateObj.total_fee = reg.fee_per_unit * newCount;
+      // Update parent registration row with schema resilience
+      let { error: regErr } = await supabase
+        .from('registrations')
+        .update(updateObj)
+        .eq('id', reg.id);
+
+      if (regErr && (regErr.message.includes('column') || regErr.message.includes('schema cache'))) {
+        console.warn('Retrying update without optional paid_amount/pending_amount columns:', regErr.message);
+        const resilientUpdate = { ...updateObj };
+        delete resilientUpdate.paid_amount;
+        delete resilientUpdate.pending_amount;
+        delete resilientUpdate.payment_status;
+        const { error: retryErr } = await supabase
+          .from('registrations')
+          .update(resilientUpdate)
+          .eq('id', reg.id);
+        if (retryErr) {
+          console.error('Resilient update error:', retryErr.message);
         }
       }
 
-      if (Object.keys(updateObj).length > 0) {
-        await supabase
-          .from('registrations')
-          .update(updateObj)
-          .eq('id', reg.id);
-      }
-
-      if (details.utrNumber !== undefined) {
+      // Update payment_submissions table
+      try {
+        const payUpdate: Record<string, any> = {
+          amount_paid: targetPaidAmount,
+          payment_status: targetPaymentStatus,
+        };
+        if (details.utrNumber !== undefined) {
+          payUpdate.utr_number = details.utrNumber || 'NOT_SUBMITTED';
+        }
         await supabase
           .from('payment_submissions')
-          .update({ utr_number: details.utrNumber })
+          .update(payUpdate)
           .eq('registration_id', reg.id);
+      } catch (paySyncErr) {
+        console.warn('Notice syncing payment_submissions:', paySyncErr);
       }
 
       // Update participant roster in database if participants list is provided
@@ -1490,7 +1627,10 @@ export const supabaseRegistrationService = {
         }
       }
 
-      return { success: true, message: `Registration ${registrationCode} details updated successfully` };
+      return { 
+        success: true, 
+        message: `Registration ${reg.registration_code || registrationCode} saved! Total Fee: ₹${computedTotalForMsg.toLocaleString('en-IN')}, Amount Paid: ₹${computedPaidForMsg.toLocaleString('en-IN')}, Balance Due: ₹${computedPendingForMsg.toLocaleString('en-IN')}` 
+      };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Update failed';
       return { success: false, message: msg };

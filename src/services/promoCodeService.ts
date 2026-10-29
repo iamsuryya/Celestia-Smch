@@ -10,7 +10,7 @@ export const DEFAULT_PROMO_CODES: PromoCode[] = [
     id: 'promo-dsu40',
     code: 'DSU40',
     discountPercent: 40,
-    applicableScope: 'all',
+    applicableScope: 'individual',
     discountType: 'percentage',
     description: '40% Special Promotional Discount',
     isActive: true,
@@ -21,7 +21,7 @@ export const DEFAULT_PROMO_CODES: PromoCode[] = [
     id: 'promo-duo50',
     code: 'DUO50',
     discountPercent: 50,
-    applicableScope: 'all',
+    applicableScope: 'individual',
     discountType: 'percentage',
     description: '50% Special Promotional Discount',
     isActive: true,
@@ -32,7 +32,7 @@ export const DEFAULT_PROMO_CODES: PromoCode[] = [
     id: 'promo-ipl50',
     code: 'IPL50',
     discountPercent: 50,
-    applicableScope: 'all',
+    applicableScope: 'individual',
     discountType: 'percentage',
     description: '50% Special Promotional Discount',
     isActive: true,
@@ -620,8 +620,15 @@ class PromoCodeService {
       return { valid: false, message: `Promo code "${clean}" is currently deactivated by admin.` };
     }
 
-    // Check scope
-    const scope = match.applicableScope || 'all';
+    // Check scope - Promo codes are strictly restricted to normal individual registrations
+    if (scopeContext === 'combo') {
+      return {
+        valid: false,
+        message: 'Promo codes are only valid for normal individual event registrations, not combo events.',
+      };
+    }
+
+    const scope = match.applicableScope || 'individual';
     if (scope !== 'all' && scope !== scopeContext) {
       const scopeName = scope === 'combo' ? 'Combo Offers' : 'Individual Events';
       return {

@@ -252,7 +252,7 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
   const [newCodeName, setNewCodeName] = useState<string>('');
   const [newCodeDiscount, setNewCodeDiscount] = useState<string>('');
   const [newCodeDesc, setNewCodeDesc] = useState<string>('');
-  const [newCodeScope, setNewCodeScope] = useState<'individual' | 'combo' | 'all'>('all');
+  const [newCodeScope, setNewCodeScope] = useState<'individual' | 'combo' | 'all'>('individual');
   const [newCodeDiscountType, setNewCodeDiscountType] = useState<'percentage' | 'advance'>('percentage');
   const [newCodeAdvanceAmount, setNewCodeAdvanceAmount] = useState<string>('750');
   const [isCreatingPromo, setIsCreatingPromo] = useState<boolean>(false);
@@ -613,6 +613,13 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
     adminNotes: string;
     participantCount: number;
     participants: ParticipantMember[];
+    isHostCollege: boolean;
+    totalAmount: number;
+    paidAmount: number;
+    pendingAmount: number;
+    paymentStatus: PaymentStatus;
+    feePerUnit: number;
+    feeType: 'per_head' | 'per_team';
   }>({
     captainName: '',
     captainEmail: '',
@@ -628,6 +635,13 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
     adminNotes: '',
     participantCount: 1,
     participants: [],
+    isHostCollege: false,
+    totalAmount: 0,
+    paidAmount: 0,
+    pendingAmount: 0,
+    paymentStatus: 'Pending',
+    feePerUnit: 0,
+    feeType: 'per_head',
   });
 
   const showToast = (msg: string) => {
@@ -711,10 +725,12 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
       const collegeNameLower = collegeName.toLowerCase();
       
       const isSmchHost = 
-        Boolean(r.isHostCollege) || 
-        Boolean(r.college?.isHostCollege) ||
-        collegeNameLower.includes('srinivasan') ||
-        (Boolean(r.college?.hostRegisterNumber) && !collegeNameLower.includes('medical') && !collegeNameLower.includes('college'));
+        typeof r.college?.isHostCollege === 'boolean'
+          ? r.college.isHostCollege
+          : typeof r.isHostCollege === 'boolean'
+          ? r.isHostCollege
+          : ((collegeNameLower.includes('srinivasan medical') && !collegeNameLower.includes('dhanalakshmi')) || 
+             (Boolean(r.college?.hostRegisterNumber) && r.college?.hostRegisterNumber !== 'SMCH-STUDENT' && !collegeNameLower.includes('dhanalakshmi')));
 
       const isOfficialDelegation = !isSmchHost && Boolean(r.college?.isCollegeDelegation);
 
@@ -1117,6 +1133,42 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
           role: 'Team Captain / Primary Contact',
         }];
 
+    // Canonical event lookup from master EVENTS_DATA
+    const matchedEvent = EVENTS_DATA.find((e) =>
+      e.id.toLowerCase() === reg.eventId?.toLowerCase() ||
+      e.code.toLowerCase() === reg.eventCode?.toLowerCase() ||
+      e.title.toLowerCase() === reg.eventTitle?.toLowerCase()
+    );
+
+    const isHost = Boolean(reg.isHostCollege || reg.college?.isHostCollege);
+    const canonicalFeePerUnit = matchedEvent ? matchedEvent.feeAmount : (reg.feePerUnit || 0);
+    const canonicalFeeType: 'per_head' | 'per_team' = matchedEvent ? matchedEvent.feeType : ((reg.feeType as any) || 'per_head');
+
+    // Canonical calculation if totalAmount was 0 or missing, but student is NOT an SMCH host
+    let currentTotal = Number(reg.totalAmount) || 0;
+    if (isHost) {
+      currentTotal = 0;
+    } else if (currentTotal === 0 && canonicalFeePerUnit > 0) {
+      currentTotal = canonicalFeeType === 'per_head' ? canonicalFeePerUnit * count : canonicalFeePerUnit;
+    }
+
+    const currentPaid = reg.paidAmount !== undefined 
+      ? Number(reg.paidAmount) 
+      : (reg.paymentConfirmed ? currentTotal : 0);
+    
+    const currentPending = reg.pendingAmount !== undefined 
+      ? Number(reg.pendingAmount) 
+      : Math.max(0, currentTotal - currentPaid);
+
+    let initialPaymentStatus: PaymentStatus = reg.paymentStatus || 'Pending';
+    if (isHost) {
+      initialPaymentStatus = 'Paid in Full';
+    } else if (currentPending === 0 && currentTotal > 0) {
+      initialPaymentStatus = 'Paid in Full';
+    } else if (currentPaid > 0) {
+      initialPaymentStatus = 'Advance Paid';
+    }
+
     setEditFormData({
       captainName: reg.participants[0]?.fullName || '',
       captainEmail: reg.participants[0]?.email || '',
@@ -1129,9 +1181,54 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
       contactMobile: reg.college?.contactMobile || '',
       contactEmail: reg.college?.contactEmail || '',
       utrNumber: reg.utrNumber || '',
-      adminNotes: '',
+      adminNotes: reg.paymentNotes || '',
       participantCount: count,
       participants: initialParticipants,
+      isHostCollege: isHost,
+      totalAmount: currentTotal,
+      paidAmount: currentPaid,
+      pendingAmount: currentPending,
+      paymentStatus: initialPaymentStatus,
+      feePerUnit: canonicalFeePerUnit,
+      feeType: canonicalFeeType,
+    });
+  };
+
+  const handleToggleHostStatus = (newIsHost: boolean) => {
+    setEditFormData((prev) => {
+      let nextTotal = prev.totalAmount;
+      let nextPaid = prev.paidAmount;
+      let nextStatus = prev.paymentStatus;
+
+      if (newIsHost) {
+        nextTotal = 0;
+        nextStatus = 'Paid in Full';
+      } else {
+        // Look up canonical event fee from EVENTS_DATA
+        const matched = EVENTS_DATA.find((e) =>
+          e.id.toLowerCase() === editingRegistration?.eventId?.toLowerCase() ||
+          e.code.toLowerCase() === editingRegistration?.eventCode?.toLowerCase() ||
+          e.title.toLowerCase() === editingRegistration?.eventTitle?.toLowerCase()
+        );
+        const perUnit = matched ? matched.feeAmount : (prev.feePerUnit || 0);
+        const feeType = matched ? matched.feeType : (prev.feeType || 'per_head');
+        nextTotal = feeType === 'per_head' ? perUnit * prev.participantCount : perUnit;
+        
+        const pend = Math.max(0, nextTotal - nextPaid);
+        if (pend === 0 && nextTotal > 0) nextStatus = 'Paid in Full';
+        else if (nextPaid > 0) nextStatus = 'Advance Paid';
+        else nextStatus = 'Pending';
+      }
+
+      const nextPending = Math.max(0, nextTotal - nextPaid);
+
+      return {
+        ...prev,
+        isHostCollege: newIsHost,
+        totalAmount: nextTotal,
+        pendingAmount: nextPending,
+        paymentStatus: nextStatus,
+      };
     });
   };
 
@@ -1146,10 +1243,20 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
         email: '',
         role: `Team Member #${nextParts.length + 1}`,
       });
+      const targetCount = nextParts.length;
+
+      let nextTotal = prev.totalAmount;
+      if (!prev.isHostCollege && prev.feeType === 'per_head' && prev.feePerUnit > 0) {
+        nextTotal = prev.feePerUnit * targetCount;
+      }
+      const nextPending = Math.max(0, nextTotal - prev.paidAmount);
+
       return {
         ...prev,
-        participantCount: nextParts.length,
+        participantCount: targetCount,
         participants: nextParts,
+        totalAmount: nextTotal,
+        pendingAmount: nextPending,
       };
     });
   };
@@ -1158,10 +1265,20 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
     if (index === 0) return; // Cannot remove captain
     setEditFormData((prev) => {
       const nextParts = prev.participants.filter((_, i) => i !== index);
+      const targetCount = Math.max(1, nextParts.length);
+
+      let nextTotal = prev.totalAmount;
+      if (!prev.isHostCollege && prev.feeType === 'per_head' && prev.feePerUnit > 0) {
+        nextTotal = prev.feePerUnit * targetCount;
+      }
+      const nextPending = Math.max(0, nextTotal - prev.paidAmount);
+
       return {
         ...prev,
-        participantCount: Math.max(1, nextParts.length),
+        participantCount: targetCount,
         participants: nextParts,
+        totalAmount: nextTotal,
+        pendingAmount: nextPending,
       };
     });
   };
@@ -1206,10 +1323,53 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
       if (nextParts.length > target) {
         nextParts.splice(target);
       }
+
+      let nextTotal = prev.totalAmount;
+      if (!prev.isHostCollege && prev.feeType === 'per_head' && prev.feePerUnit > 0) {
+        nextTotal = prev.feePerUnit * target;
+      }
+      const nextPending = Math.max(0, nextTotal - prev.paidAmount);
+
       return {
         ...prev,
         participantCount: target,
         participants: nextParts,
+        totalAmount: nextTotal,
+        pendingAmount: nextPending,
+      };
+    });
+  };
+
+  const handleEditTotalAmountChange = (newTotal: number) => {
+    const val = Math.max(0, Number(newTotal) || 0);
+    setEditFormData((prev) => {
+      const pend = Math.max(0, val - prev.paidAmount);
+      let st = prev.paymentStatus;
+      if (pend === 0 && val > 0) st = 'Paid in Full';
+      else if (prev.paidAmount > 0) st = 'Advance Paid';
+      else st = 'Pending';
+      return {
+        ...prev,
+        totalAmount: val,
+        pendingAmount: pend,
+        paymentStatus: st,
+      };
+    });
+  };
+
+  const handleEditPaidAmountChange = (newPaid: number) => {
+    const val = Math.max(0, Number(newPaid) || 0);
+    setEditFormData((prev) => {
+      const pend = Math.max(0, prev.totalAmount - val);
+      let st = prev.paymentStatus;
+      if (pend === 0 && prev.totalAmount > 0) st = 'Paid in Full';
+      else if (val > 0) st = 'Advance Paid';
+      else st = 'Pending';
+      return {
+        ...prev,
+        paidAmount: val,
+        pendingAmount: pend,
+        paymentStatus: st,
       };
     });
   };
@@ -1243,7 +1403,43 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
 
     showToast(res.message);
     setEditingRegistration(null);
-    loadData();
+
+    // Optimistically update cloud & local list state
+    const pend = Math.max(0, editFormData.totalAmount - editFormData.paidAmount);
+    setCloudRegistrations((prev) =>
+      prev.map((r) => {
+        if (r.id === editingRegistration.id || r.registrationCode === editingRegistration.registrationCode) {
+          return {
+            ...r,
+            teamName: editFormData.teamName,
+            participantCount: editFormData.participantCount,
+            participants: updatedParticipants,
+            isHostCollege: editFormData.isHostCollege,
+            totalAmount: editFormData.totalAmount,
+            paidAmount: editFormData.paidAmount,
+            pendingAmount: pend,
+            paymentStatus: editFormData.paymentStatus,
+            paymentNotes: editFormData.adminNotes,
+            utrNumber: editFormData.utrNumber,
+            feePerUnit: editFormData.feePerUnit,
+            feeType: editFormData.feeType,
+            college: {
+              ...r.college,
+              collegeName: editFormData.collegeName,
+              city: editFormData.collegeCity,
+              state: editFormData.collegeState,
+              contactPerson: editFormData.contactPerson,
+              contactMobile: editFormData.contactMobile,
+              contactEmail: editFormData.contactEmail,
+              isHostCollege: editFormData.isHostCollege,
+            },
+          };
+        }
+        return r;
+      })
+    );
+
+    await loadData();
   };
 
   // Reusable CSV Generator for any list of registrations
@@ -2956,15 +3152,17 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                             <Eye className="w-3.5 h-3.5" />
                           </button>
 
-                          {/* Edit Details */}
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEdit(reg)}
-                            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-slate-300 hover:text-white transition-colors cursor-pointer border border-white/10"
-                            title="Edit registration details"
-                          >
-                            <Edit3 className="w-3.5 h-3.5 text-slate-200" />
-                          </button>
+                          {/* Edit Details (Main Admin Only) */}
+                          {isMainAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEdit(reg)}
+                              className="p-1.5 rounded-lg bg-[#D4AF37]/15 hover:bg-[#D4AF37]/35 text-[#E6C57D] hover:text-white transition-colors cursor-pointer border border-[#D4AF37]/30"
+                              title="Edit registration details & fee (Main Admin Only)"
+                            >
+                              <Edit3 className="w-3.5 h-3.5 text-[#D4AF37]" />
+                            </button>
+                          )}
 
                           {/* Delete */}
                           <button
@@ -3080,6 +3278,18 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                                   >
                                     <RotateCcw className="w-3.5 h-3.5" />
                                     <span>Reset Pending</span>
+                                  </button>
+                                )}
+
+                                {isMainAdmin && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEdit(reg)}
+                                    className="px-2.5 py-1.5 rounded-lg bg-[#D4AF37]/20 hover:bg-[#D4AF37]/35 border border-[#D4AF37]/50 text-[#F5E7C4] text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
+                                    title="Edit registration, host waiver & fee (Main Admin Only)"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5 text-[#D4AF37]" />
+                                    <span>Edit Registration</span>
                                   </button>
                                 )}
 
@@ -3969,6 +4179,20 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                 Registrant ID: {inspectRegistration.id}
               </span>
               <div className="flex items-center gap-2">
+                {isMainAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const regToEdit = inspectRegistration;
+                      setInspectRegistration(null);
+                      handleOpenEdit(regToEdit);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/50 text-xs font-bold text-purple-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
+                  >
+                    <Edit3 className="w-3.5 h-3.5 text-purple-300" />
+                    <span>Edit Profile & Fee</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => handleExportSingleRegistration(inspectRegistration)}
@@ -4148,30 +4372,249 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
         </div>
       )}
 
-      {editingRegistration && (
+      {isMainAdmin && editingRegistration && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-sm overflow-y-auto">
-          <div className="relative w-full max-w-3xl celestial-glass rounded-2xl p-6 border border-[#D4AF37]/40 shadow-2xl space-y-4 my-8 max-h-[90vh] overflow-y-auto">
+          <div className="relative w-full max-w-3xl celestial-glass rounded-2xl p-6 border border-[#D4AF37]/50 shadow-2xl space-y-4 my-8 max-h-[92vh] overflow-y-auto">
+            {/* Modal Header */}
             <div className="flex items-center justify-between pb-3 border-b border-white/10">
-              <h3 className="font-cinzel text-base font-bold text-white flex items-center gap-2">
-                <Edit3 className="w-4 h-4 text-[#D4AF37]" />
-                <span>Edit Registration & Roster · {editingRegistration.id}</span>
-              </h3>
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-[#D4AF37]/20 border border-[#D4AF37]/50 flex items-center justify-center text-[#E6C57D]">
+                  <Edit3 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-cinzel text-base font-bold text-white flex items-center gap-2">
+                    <span>Edit Profile & Financials · {editingRegistration.id}</span>
+                  </h3>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#D4AF37]/15 text-[#F5E7C4] border border-[#D4AF37]/35">
+                      Event: {editingRegistration.eventCode} ({editingRegistration.eventTitle})
+                    </span>
+                    <span className="text-[10px] font-mono text-emerald-400">
+                      Main Central Admin Control
+                    </span>
+                  </div>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => setEditingRegistration(null)}
-                className="p-1 rounded-lg bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white cursor-pointer"
+                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white cursor-pointer transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
-              {/* SECTION: PARTICIPANT COUNT & ROSTER EDITING (Main Admin Control) */}
+              {/* SECTION 1: FINANCIAL AUDIT & FEE RECALCULATION (Main Central Admin Exclusive) */}
+              <div className="p-4 rounded-xl bg-[#080E2A] border-2 border-[#D4AF37]/50 space-y-4 shadow-xl">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-[#D4AF37]/20 flex items-center justify-center text-[#E6C57D]">
+                      <CreditCard className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="font-bold text-[#F5E7C4] text-xs uppercase font-mono tracking-wider block">
+                        Financial Audit & Fee Recalculation Desk
+                      </span>
+                      <span className="text-[10px] text-slate-300">
+                        Toggle host status or manually adjust total fee, paid amount, and payment status
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Prominent SMCH Host Waiver Toggle */}
+                  <label className={`inline-flex items-center gap-2.5 px-3 py-1.5 rounded-xl border transition-all cursor-pointer select-none ${
+                    editFormData.isHostCollege
+                      ? 'bg-emerald-950/50 border-emerald-500/70 text-emerald-200 shadow-sm shadow-emerald-500/20'
+                      : 'bg-amber-950/40 border-[#D4AF37]/60 text-[#F5E7C4]'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={editFormData.isHostCollege}
+                      onChange={(e) => handleToggleHostStatus(e.target.checked)}
+                      className="w-4 h-4 rounded text-emerald-500 focus:ring-emerald-500 accent-emerald-500 cursor-pointer"
+                    />
+                    <div className="flex items-center gap-1.5 text-xs font-bold">
+                      <GraduationCap className="w-4 h-4 text-[#D4AF37]" />
+                      <span>{editFormData.isHostCollege ? 'SMCH Host Student (₹0 Fee Waiver)' : 'Other College / External (Pay Fee)'}</span>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Event Official Fee Benchmark Banner */}
+                {(() => {
+                  const ev = EVENTS_DATA.find((e) =>
+                    e.id.toLowerCase() === editingRegistration.eventId?.toLowerCase() ||
+                    e.code.toLowerCase() === editingRegistration.eventCode?.toLowerCase() ||
+                    e.title.toLowerCase() === editingRegistration.eventTitle?.toLowerCase()
+                  );
+                  const officialRate = ev ? ev.feeAmount : editFormData.feePerUnit;
+                  const officialType = ev ? ev.feeType : editFormData.feeType;
+                  const calculatedExpected = editFormData.isHostCollege 
+                    ? 0 
+                    : (officialType === 'per_head' ? officialRate * editFormData.participantCount : officialRate);
+
+                  return (
+                    <div className="p-3 rounded-lg bg-black/50 border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px]">
+                      <div className="text-slate-300">
+                        Official Festival Rule: <strong className="text-white">{ev?.title || editingRegistration.eventTitle}</strong> ({ev?.code || editingRegistration.eventCode})
+                        <div className="text-slate-400 text-[10px] mt-0.5">
+                          Standard Fee: <span className="text-[#E6C57D] font-mono font-bold">₹{officialRate}</span> ({officialType === 'per_head' ? 'Per Participant' : 'Per Team'}) × {editFormData.participantCount} member(s) = <strong className="text-emerald-300 font-mono font-bold">₹{calculatedExpected}</strong>
+                        </div>
+                      </div>
+
+                      {!editFormData.isHostCollege && editFormData.totalAmount !== calculatedExpected && (
+                        <button
+                          type="button"
+                          onClick={() => handleEditTotalAmountChange(calculatedExpected)}
+                          className="px-2.5 py-1 rounded bg-[#D4AF37]/20 hover:bg-[#D4AF37]/35 border border-[#D4AF37]/50 text-[#F5E7C4] text-[10px] font-bold cursor-pointer shrink-0 self-start sm:self-center transition-colors"
+                        >
+                          Reset to Official Fee (₹{calculatedExpected})
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Financial Controls Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* Total Event Fee */}
+                  <div className="p-3 rounded-xl bg-black/60 border border-white/15 space-y-1">
+                    <label className="text-slate-300 text-[11px] font-semibold block">
+                      Total Registration Fee (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={10}
+                      disabled={editFormData.isHostCollege}
+                      value={editFormData.totalAmount}
+                      onChange={(e) => handleEditTotalAmountChange(parseFloat(e.target.value) || 0)}
+                      className="w-full px-3 py-1.5 rounded-lg bg-[#050818] border border-white/20 text-white font-mono font-bold text-base disabled:opacity-60 focus:outline-none focus:border-[#D4AF37]"
+                      required
+                    />
+                    <span className="text-[10px] text-slate-400 block font-mono">
+                      {editFormData.isHostCollege ? 'Waived (SMCH Host ₹0)' : 'Payable by student/team'}
+                    </span>
+                  </div>
+
+                  {/* Amount Paid */}
+                  <div className="p-3 rounded-xl bg-black/60 border border-emerald-500/35 space-y-1">
+                    <label className="text-emerald-300 text-[11px] font-semibold block">
+                      Amount Paid So Far (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={10}
+                      value={editFormData.paidAmount}
+                      onChange={(e) => handleEditPaidAmountChange(parseFloat(e.target.value) || 0)}
+                      className="w-full px-3 py-1.5 rounded-lg bg-[#050818] border border-emerald-500/50 text-emerald-300 font-mono font-bold text-base focus:outline-none focus:border-emerald-400"
+                      required
+                    />
+                    
+                    {/* Quick presets */}
+                    <div className="flex items-center gap-1.5 pt-1 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => handleEditPaidAmountChange(0)}
+                        className="px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[9px] font-mono text-slate-300 cursor-pointer"
+                      >
+                        ₹0
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleEditPaidAmountChange(editFormData.totalAmount)}
+                        className="px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-[9px] font-mono text-emerald-300 cursor-pointer font-bold"
+                      >
+                        Full (₹{editFormData.totalAmount})
+                      </button>
+                      {editFormData.totalAmount > 750 && (
+                        <button
+                          type="button"
+                          onClick={() => handleEditPaidAmountChange(750)}
+                          className="px-1.5 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-[9px] font-mono text-amber-300 cursor-pointer"
+                        >
+                          ₹750 Advance
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Calculated Balance Due Card */}
+                  <div className={`p-3 rounded-xl border flex flex-col justify-between ${
+                    editFormData.pendingAmount === 0 
+                      ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300' 
+                      : 'bg-amber-950/30 border-amber-500/40 text-amber-300'
+                  }`}>
+                    <div>
+                      <span className="text-[11px] font-semibold block opacity-80">
+                        Balance Due (Pending Amount)
+                      </span>
+                      <div className="font-mono font-black text-xl mt-1">
+                        ₹{editFormData.pendingAmount.toLocaleString('en-IN')}
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-mono mt-1 font-bold">
+                      {editFormData.pendingAmount === 0 ? '✓ No Dues Pending' : '⚠️ Balance Pending at Desk'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Status & UTR Row */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="text-slate-300 text-[11px] font-semibold block mb-1">
+                      Payment Verification Status
+                    </label>
+                    <select
+                      value={editFormData.paymentStatus}
+                      onChange={(e) => setEditFormData({ ...editFormData, paymentStatus: e.target.value as PaymentStatus })}
+                      className="w-full px-3 py-2 rounded-lg bg-[#050818] border border-white/20 text-white font-semibold cursor-pointer"
+                    >
+                      <option value="Pending">⏳ Pending (Awaiting review or payment)</option>
+                      <option value="Advance Paid">🪙 Advance Paid (Token / partial fee received)</option>
+                      <option value="Paid in Full">💰 Paid in Full (100% amount remitted)</option>
+                      <option value="Verified">✅ Verified (Approved by Admin)</option>
+                      <option value="Rejected">❌ Rejected (Invalid slip or transaction)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-slate-300 text-[11px] font-semibold block mb-1">
+                      UTR / Transaction Reference Number
+                    </label>
+                    <input
+                      type="text"
+                      value={editFormData.utrNumber}
+                      onChange={(e) => setEditFormData({ ...editFormData, utrNumber: e.target.value })}
+                      placeholder="e.g. 628192837492 or CASH_DESK"
+                      className="w-full px-3 py-2 rounded-lg bg-[#050818] border border-white/20 text-white font-mono"
+                    />
+                  </div>
+                </div>
+
+                {/* Admin Audit Notes */}
+                <div>
+                  <label className="text-slate-300 text-[11px] font-semibold block mb-1">
+                    Administrative Audit Notes & Remittance Remarks
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.adminNotes}
+                    onChange={(e) => setEditFormData({ ...editFormData, adminNotes: e.target.value })}
+                    placeholder="e.g. Verified non-host college fee paid in cash at registration desk"
+                    className="w-full px-3 py-2 rounded-lg bg-[#050818] border border-white/20 text-white"
+                  />
+                </div>
+              </div>
+
+              {/* SECTION 2: PARTICIPANT COUNT & ROSTER EDITING */}
               <div className="p-4 rounded-xl bg-[#090E28] border border-[#D4AF37]/35 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-[#F5E7C4] text-xs flex items-center gap-1.5 uppercase font-mono">
                     <Users className="w-4 h-4 text-[#D4AF37]" />
-                    Participant Count & Roster Members (Main Admin Edit)
+                    Participant Count & Roster Members
                   </span>
                   <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">
                     Event: {editingRegistration.eventCode}
@@ -4193,7 +4636,7 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                     />
                   </div>
                   <div className="text-[11px] text-slate-400 self-end pb-1">
-                    Editing count automatically resizes or creates roster slots below.
+                    Editing count automatically resizes roster slots and recalculates per-head fee.
                   </div>
                 </div>
 
@@ -4299,7 +4742,7 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                 </div>
               </div>
 
-              {/* Primary Contact & Team Info */}
+              {/* SECTION 3: PRIMARY CONTACT & TEAM INFO */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-slate-400 block mb-1">Primary Captain / Delegate Name</label>
@@ -4341,8 +4784,10 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-white/10">
-                <span className="font-semibold text-[#D4AF37] block mb-2">College Affiliation</span>
+              {/* SECTION 4: COLLEGE DETAILS */}
+              <div className="pt-2 border-t border-white/10 space-y-3">
+                <span className="font-semibold text-[#D4AF37] block">College Information</span>
+
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="sm:col-span-3">
                     <label className="text-slate-400 block mb-1">College Name</label>
@@ -4384,43 +4829,28 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-white/10 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-slate-400 block mb-1">UTR / Transaction Reference</label>
-                  <input
-                    type="text"
-                    value={editFormData.utrNumber}
-                    onChange={(e) => setEditFormData({ ...editFormData, utrNumber: e.target.value })}
-                    className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/15 text-white font-mono"
-                  />
+              {/* Modal Footer Controls */}
+              <div className="flex items-center justify-between pt-3 border-t border-white/10">
+                <div className="font-mono text-[11px] text-slate-300">
+                  Final Fee: <strong className="text-emerald-400">₹{editFormData.totalAmount}</strong> · Paid: <strong className="text-white">₹{editFormData.paidAmount}</strong> · Due: <strong className={editFormData.pendingAmount > 0 ? 'text-amber-300' : 'text-emerald-400'}>₹{editFormData.pendingAmount}</strong>
                 </div>
-                <div>
-                  <label className="text-slate-400 block mb-1">Admin Audit Notes</label>
-                  <input
-                    type="text"
-                    value={editFormData.adminNotes}
-                    onChange={(e) => setEditFormData({ ...editFormData, adminNotes: e.target.value })}
-                    placeholder="e.g. Verified by phone call with HOD"
-                    className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/15 text-white"
-                  />
-                </div>
-              </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-white/10">
-                <button
-                  type="button"
-                  onClick={() => setEditingRegistration(null)}
-                  className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-slate-300 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl font-bold text-xs uppercase text-black bg-[#D4AF37] hover:brightness-110 flex items-center gap-1.5 cursor-pointer shadow-md"
-                >
-                  <Save className="w-3.5 h-3.5" />
-                  <span>Save Changes</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingRegistration(null)}
+                    className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-slate-300 cursor-pointer transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-xl font-bold text-xs uppercase text-black bg-[#D4AF37] hover:brightness-110 flex items-center gap-1.5 cursor-pointer shadow-md transition-all"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Save Changes & Sync</span>
+                  </button>
+                </div>
               </div>
             </form>
           </div>
