@@ -4,7 +4,7 @@ import { getCurrentAuthRole } from '../lib/authProfiles';
 
 const PROMO_STORAGE_KEY = 'celestia26_promo_codes';
 
-// Initial pre-configured seed promo codes (Only clean essential codes)
+// Initial pre-configured seed promo codes
 const DEFAULT_PROMO_CODES: PromoCode[] = [
   {
     id: 'promo-1',
@@ -68,14 +68,13 @@ class PromoCodeService {
       const saved = localStorage.getItem(PROMO_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
+        if (Array.isArray(parsed) && parsed.length > 0) {
           return parsed;
         }
       }
     } catch {
       // ignore
     }
-    // Initialize default seed codes if none exist
     try {
       localStorage.setItem(PROMO_STORAGE_KEY, JSON.stringify(DEFAULT_PROMO_CODES));
     } catch {
@@ -90,13 +89,111 @@ class PromoCodeService {
     } catch (err) {
       console.warn('Could not save promo codes to localStorage:', err);
     }
-    // Broadcast instant update event across components and browser windows
     window.dispatchEvent(new CustomEvent('celestia-promocodes-changed', { detail: codes }));
     if (this.bc) {
       try {
         this.bc.postMessage({ type: 'PROMOS_UPDATED', codes });
       } catch {}
     }
+  }
+
+  /**
+   * Resilient helper to persist a promo code into Supabase regardless of DB unique constraints or column naming
+   */
+  private async saveToSupabase(promo: PromoCode): Promise<{ success: boolean; error?: string }> {
+    if (!isSupabaseConfigured || !supabase) {
+      return { success: false, error: 'Supabase client not configured' };
+    }
+
+    const payload = {
+      id: promo.id || `promo-${promo.code}`,
+      code: promo.code.toUpperCase(),
+      discount_percent: promo.discountPercent || 0,
+      applicable_scope: promo.applicableScope || 'all',
+      discount_type: promo.discountType || 'percentage',
+      advance_amount: promo.advanceAmount || 0,
+      is_advance_payment: Boolean(promo.isAdvancePayment || promo.discountType === 'advance'),
+      description: promo.description || '',
+      is_active: promo.isActive !== false,
+      redemption_count: promo.redemptionCount || 0,
+      created_at: promo.createdAt || new Date().toISOString(),
+    };
+
+    try {
+      // Step 1: Check if code already exists in Supabase celestia_promo_codes table
+      const { data: existing } = await supabase
+        .from('celestia_promo_codes')
+        .select('id, code')
+        .ilike('code', promo.code)
+        .maybeSingle();
+
+      if (existing) {
+        // Step 2: Update existing record
+        const { error: updateErr } = await supabase
+          .from('celestia_promo_codes')
+          .update(payload)
+          .eq('id', existing.id);
+
+        if (updateErr) {
+          console.warn('Supabase promo update notice:', updateErr.message);
+          return { success: false, error: updateErr.message };
+        }
+        return { success: true };
+      } else {
+        // Step 3: Insert new record
+        const { error: insertErr } = await supabase
+          .from('celestia_promo_codes')
+          .insert([payload]);
+
+        if (insertErr) {
+          console.warn('Supabase promo insert notice:', insertErr.message);
+          
+          // Try fallback without custom fields if schema differs
+          const fallbackPayload = {
+            id: payload.id,
+            code: payload.code,
+            discount_percent: payload.discount_percent,
+            applicable_scope: payload.applicable_scope,
+            is_active: payload.is_active,
+            description: payload.description,
+          };
+          const { error: fbErr } = await supabase
+            .from('celestia_promo_codes')
+            .insert([fallbackPayload]);
+
+          if (fbErr) {
+            return { success: false, error: insertErr.message };
+          }
+        }
+        return { success: true };
+      }
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Supabase save exception' };
+    }
+  }
+
+  /**
+   * Syncs all promo codes from Local Storage into Supabase celestia_promo_codes table
+   */
+  public async syncAllToSupabase(): Promise<{ success: boolean; count: number; lastError?: string }> {
+    if (!isSupabaseConfigured || !supabase) {
+      return { success: false, count: 0, lastError: 'Supabase client missing' };
+    }
+
+    const locals = this.getLocalCodes();
+    let count = 0;
+    let lastErr = '';
+
+    for (const p of locals) {
+      const res = await this.saveToSupabase(p);
+      if (res.success) {
+        count++;
+      } else if (res.error) {
+        lastErr = res.error;
+      }
+    }
+
+    return { success: count > 0, count, lastError: lastErr };
   }
 
   public async getPromoCodes(): Promise<PromoCode[]> {
@@ -133,14 +230,12 @@ class PromoCodeService {
     // Merge remote and local promo codes by unique UPPERCASE code
     const mergedMap = new Map<string, PromoCode>();
 
-    // 1. Populate with local promo codes
     local.forEach((codeObj) => {
       if (codeObj && codeObj.code) {
         mergedMap.set(codeObj.code.toUpperCase(), codeObj);
       }
     });
 
-    // 2. Merge remote promo codes (overwriting synced fields)
     remoteMapped.forEach((remoteObj) => {
       if (!remoteObj || !remoteObj.code) return;
       const key = remoteObj.code.toUpperCase();
@@ -234,39 +329,21 @@ class PromoCodeService {
       this.saveLocalCodes([newPromo, ...currentCodes]);
     }
 
-    // Save/upsert to Supabase if available
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { error } = await supabase.from('celestia_promo_codes').upsert(
-          [
-            {
-              id: newPromo.id,
-              code: newPromo.code,
-              discount_percent: newPromo.discountPercent,
-              applicable_scope: newPromo.applicableScope,
-              discount_type: newPromo.discountType,
-              advance_amount: newPromo.advanceAmount,
-              is_advance_payment: newPromo.isAdvancePayment,
-              description: newPromo.description,
-              is_active: true,
-              redemption_count: newPromo.redemptionCount || 0,
-              created_at: newPromo.createdAt,
-            },
-          ],
-          { onConflict: 'code' }
-        );
-        if (error) {
-          console.warn('Supabase promo upsert notice:', error.message);
-        }
-      } catch (e) {
-        console.warn('Could not persist new promo code to Supabase:', e);
-      }
+    // Persist immediately into Supabase database table
+    const dbRes = await this.saveToSupabase(newPromo);
+
+    let statusMsg = `Promo code "${code}" (${isAdv ? `Advance ₹${advanceAmount}` : `${newPromo.discountPercent}% OFF`}) saved and ACTIVE!`;
+    if (!dbRes.success && dbRes.error) {
+      console.warn(`Promo code saved locally, Supabase notice: ${dbRes.error}`);
+      statusMsg += ` (Saved to memory; Supabase note: ${dbRes.error})`;
+    } else {
+      statusMsg += ` (Stored in Cloud Supabase DB)`;
     }
 
     return {
       success: true,
       promo: newPromo,
-      message: `Promo code "${code}" (${isAdv ? `Advance ₹${advanceAmount}` : `${newPromo.discountPercent}% OFF`}) is now ACTIVE!`,
+      message: statusMsg,
     };
   }
 
@@ -283,21 +360,16 @@ class PromoCodeService {
     }
 
     const codes = await this.getPromoCodes();
+    const target = codes.find((p) => p.id === id || p.code.toUpperCase() === id.toUpperCase());
+    if (target) {
+      target.isActive = isActive;
+      await this.saveToSupabase(target);
+    }
+
     const updated = codes.map((p) => (p.id === id || p.code.toUpperCase() === id.toUpperCase() ? { ...p, isActive } : p));
     this.saveLocalCodes(updated);
 
-    if (isSupabaseConfigured && supabase) {
-      try {
-        await supabase
-          .from('celestia_promo_codes')
-          .update({ is_active: isActive })
-          .eq('id', id);
-      } catch (e) {
-        console.warn('Could not update promo code status in Supabase:', e);
-      }
-    }
-
-    const targetCode = codes.find((p) => p.id === id || p.code.toUpperCase() === id.toUpperCase())?.code || 'Code';
+    const targetCode = target?.code || 'Code';
     return {
       success: true,
       message: `Promo code "${targetCode}" is now ${isActive ? 'ACTIVE' : 'INACTIVE (Deactivated)'}.`,
@@ -321,6 +393,9 @@ class PromoCodeService {
     if (isSupabaseConfigured && supabase) {
       try {
         await supabase.from('celestia_promo_codes').delete().eq('id', id);
+        if (target?.code) {
+          await supabase.from('celestia_promo_codes').delete().ilike('code', target.code);
+        }
       } catch (e) {
         console.warn('Could not delete promo code from Supabase:', e);
       }

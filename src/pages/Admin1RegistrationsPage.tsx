@@ -260,6 +260,7 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
   const loadPromoCodes = async () => {
     setLoadingPromos(true);
     try {
+      await promoCodeService.syncAllToSupabase();
       const data = await promoCodeService.getPromoCodes();
       setPromoCodes(data);
     } catch {
