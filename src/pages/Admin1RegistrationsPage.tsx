@@ -256,6 +256,50 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
   const [newCodeDiscountType, setNewCodeDiscountType] = useState<'percentage' | 'advance'>('percentage');
   const [newCodeAdvanceAmount, setNewCodeAdvanceAmount] = useState<string>('750');
   const [isCreatingPromo, setIsCreatingPromo] = useState<boolean>(false);
+  const [editingPromoId, setEditingPromoId] = useState<string | null>(null);
+  const [editPromoCode, setEditPromoCode] = useState<string>('');
+  const [editPromoDiscount, setEditPromoDiscount] = useState<string>('');
+  const [editPromoDesc, setEditPromoDesc] = useState<string>('');
+
+  const handleStartEditPromo = (p: PromoCode) => {
+    setEditingPromoId(p.id);
+    setEditPromoCode(p.code);
+    setEditPromoDiscount(String(p.discountPercent || 0));
+    setEditPromoDesc(p.description || '');
+  };
+
+  const handleSavePromoEdit = async () => {
+    if (!editingPromoId) return;
+    const target = promoCodes.find(p => p.id === editingPromoId);
+    if (!target) return;
+
+    const discVal = parseFloat(editPromoDiscount) || 0;
+    if (!editPromoCode.trim()) {
+      showToast('Please enter a valid promo code string.');
+      return;
+    }
+    if (isNaN(discVal) || discVal <= 0 || discVal > 100) {
+      showToast('Discount percentage must be between 1% and 100%.');
+      return;
+    }
+
+    try {
+      const res = await promoCodeService.createPromoCode(
+        editPromoCode,
+        discVal,
+        editPromoDesc,
+        target.applicableScope || 'all',
+        target.discountType || 'percentage',
+        target.advanceAmount,
+        target.id
+      );
+      showToast(res.message);
+      setEditingPromoId(null);
+      loadPromoCodes();
+    } catch {
+      showToast('Failed to update promo code.');
+    }
+  };
 
   const loadPromoCodes = async () => {
     setLoadingPromos(true);
@@ -2409,6 +2453,22 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
               </span>
             )}
           </button>
+
+          {/* Promo Code & Discount Management Button */}
+          {isMainAdmin && (
+            <button
+              type="button"
+              onClick={() => {
+                loadPromoCodes();
+                setShowPromoCodeModal(true);
+              }}
+              className="px-3.5 py-2 rounded-xl font-bold text-xs uppercase tracking-wider text-[#F5E7C4] bg-[#0E1538] hover:bg-[#152050] border border-[#D4AF37]/50 transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
+              title="Manage discount promo codes and advance payment codes"
+            >
+              <Tag className="w-3.5 h-3.5 text-[#D4AF37]" />
+              <span>Promo Codes ({promoCodes.length})</span>
+            </button>
+          )}
 
           {/* Classify By Events Button */}
           <button
@@ -5209,19 +5269,47 @@ CREATE POLICY "Allow public access to celestia_promo_codes" ON public.celestia_p
 
             {/* Promo Codes List Table */}
             <div className="rounded-xl overflow-hidden border border-white/10 bg-black/40">
-              <div className="p-3 bg-black/60 border-b border-white/10 flex items-center justify-between">
-                <span className="text-xs font-mono font-bold text-[#D4AF37]">
-                  Active Promo Codes ({promoCodes.length})
-                </span>
-                <button
-                  type="button"
-                  onClick={loadPromoCodes}
-                  disabled={loadingPromos}
-                  className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-slate-300 flex items-center gap-1 cursor-pointer"
-                >
-                  <RefreshCw className={`w-3 h-3 text-[#D4AF37] ${loadingPromos ? 'animate-spin' : ''}`} />
-                  <span>Refresh</span>
-                </button>
+              <div className="p-3 bg-black/60 border-b border-white/10 flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono font-bold text-[#D4AF37]">
+                    Active Promo Codes ({promoCodes.length})
+                  </span>
+                  <span className="text-[10px] text-emerald-300 font-mono bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 hidden sm:inline-block">
+                    DSU40 · DUO50 · IPL50
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setLoadingPromos(true);
+                      const res = await promoCodeService.syncAllToSupabase();
+                      const updated = await promoCodeService.getPromoCodes();
+                      setPromoCodes(updated);
+                      setLoadingPromos(false);
+                      showToast(
+                        res.success
+                          ? `Synced ${res.count} Promo Codes (DSU40, DUO50, IPL50 & custom) directly into Supabase Cloud DB!`
+                          : `Promo codes active and saved in Cloud Settings Backup.`
+                      );
+                    }}
+                    disabled={loadingPromos}
+                    className="px-3 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                    title="Push all promo codes to Supabase Cloud Database"
+                  >
+                    <Cloud className={`w-3.5 h-3.5 ${loadingPromos ? 'animate-spin' : ''}`} />
+                    <span>Sync All to Supabase Cloud</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={loadPromoCodes}
+                    disabled={loadingPromos}
+                    className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-slate-300 flex items-center gap-1 cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3 h-3 text-[#D4AF37] ${loadingPromos ? 'animate-spin' : ''}`} />
+                    <span>Refresh</span>
+                  </button>
+                </div>
               </div>
 
               <div className="overflow-x-auto">
@@ -5245,68 +5333,136 @@ CREATE POLICY "Allow public access to celestia_promo_codes" ON public.celestia_p
                       </tr>
                     ) : (
                       promoCodes.map((p) => (
-                        <tr key={p.id} className="hover:bg-white/[0.02]">
-                          <td className="py-3 px-3 font-mono font-bold text-[#F5E7C4] text-sm">
-                            {p.code}
-                          </td>
-                          <td className="py-3 px-3 font-mono font-bold text-emerald-400">
-                            {p.discountPercent}% OFF
-                          </td>
-                          <td className="py-3 px-3 text-slate-300">
-                            {p.description || 'N/A'}
-                          </td>
-                          <td className="py-3 px-3 text-center">
-                            {p.isActive ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                                <CheckCircle className="w-3 h-3" /> ACTIVE
+                        editingPromoId === p.id ? (
+                          <tr key={p.id} className="bg-[#090F2C] border-y border-[#D4AF37]/50">
+                            <td className="py-2.5 px-3">
+                              <input
+                                type="text"
+                                value={editPromoCode}
+                                onChange={(e) => setEditPromoCode(e.target.value.toUpperCase())}
+                                className="w-28 px-2 py-1 bg-black/80 border border-[#D4AF37] rounded text-xs font-mono font-bold text-[#F5E7C4] uppercase"
+                              />
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="100"
+                                  value={editPromoDiscount}
+                                  onChange={(e) => setEditPromoDiscount(e.target.value)}
+                                  className="w-16 px-2 py-1 bg-black/80 border border-[#D4AF37] rounded text-xs font-mono font-bold text-emerald-400"
+                                />
+                                <span className="font-mono text-emerald-400">%</span>
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <input
+                                type="text"
+                                value={editPromoDesc}
+                                onChange={(e) => setEditPromoDesc(e.target.value)}
+                                className="w-full px-2 py-1 bg-black/80 border border-white/20 rounded text-xs text-white"
+                              />
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              <span className="text-[10px] font-mono text-amber-300 font-bold px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/30">
+                                Editing
                               </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                                <Clock className="w-3 h-3" /> DEACTIVATED
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3 px-3 text-center font-mono text-slate-200">
-                            {p.redemptionCount}
-                          </td>
-                          <td className="py-3 px-3 text-right">
-                            {isMainAdmin ? (
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-mono text-slate-300">
+                              {p.redemptionCount}
+                            </td>
+                            <td className="py-2.5 px-3 text-right">
                               <div className="flex items-center justify-end gap-1.5">
                                 <button
                                   type="button"
-                                  onClick={() => handleTogglePromoStatus(p.id, p.isActive)}
-                                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1 ${
-                                    p.isActive
-                                      ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40'
-                                      : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40'
-                                  }`}
+                                  onClick={handleSavePromoEdit}
+                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded transition-colors cursor-pointer"
                                 >
-                                  {p.isActive ? (
-                                    <>
-                                      <ToggleRight className="w-3.5 h-3.5" /> Deactivate
-                                    </>
-                                  ) : (
-                                    <>
-                                      <ToggleLeft className="w-3.5 h-3.5" /> Activate
-                                    </>
-                                  )}
+                                  Save
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => handleDeletePromo(p.id)}
-                                  className="p-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 cursor-pointer"
-                                  title="Delete promo code"
+                                  onClick={() => setEditingPromoId(null)}
+                                  className="px-2 py-1 bg-white/10 hover:bg-white/20 text-slate-300 text-xs rounded transition-colors cursor-pointer"
                                 >
-                                  <Trash2 className="w-3.5 h-3.5" />
+                                  Cancel
                                 </button>
                               </div>
-                            ) : (
-                              <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">
-                                Read Only
-                              </span>
-                            )}
-                          </td>
-                        </tr>
+                            </td>
+                          </tr>
+                        ) : (
+                          <tr key={p.id} className="hover:bg-white/[0.02]">
+                            <td className="py-3 px-3 font-mono font-bold text-[#F5E7C4] text-sm">
+                              {p.code}
+                            </td>
+                            <td className="py-3 px-3 font-mono font-bold text-emerald-400">
+                              {p.discountPercent}% OFF
+                            </td>
+                            <td className="py-3 px-3 text-slate-300">
+                              {p.description || 'N/A'}
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              {p.isActive ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                  <CheckCircle className="w-3 h-3" /> ACTIVE
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                  <Clock className="w-3 h-3" /> DEACTIVATED
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 text-center font-mono text-slate-200">
+                              {p.redemptionCount}
+                            </td>
+                            <td className="py-3 px-3 text-right">
+                              {isMainAdmin ? (
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleStartEditPromo(p)}
+                                    className="p-1 rounded-lg bg-[#D4AF37]/20 hover:bg-[#D4AF37]/30 text-[#E6C57D] border border-[#D4AF37]/40 cursor-pointer"
+                                    title="Edit promo code"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleTogglePromoStatus(p.id, p.isActive)}
+                                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1 ${
+                                      p.isActive
+                                        ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40'
+                                        : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40'
+                                    }`}
+                                  >
+                                    {p.isActive ? (
+                                      <>
+                                        <ToggleRight className="w-3.5 h-3.5" /> Deactivate
+                                      </>
+                                    ) : (
+                                      <>
+                                        <ToggleLeft className="w-3.5 h-3.5" /> Activate
+                                      </>
+                                    )}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeletePromo(p.id)}
+                                    className="p-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 cursor-pointer"
+                                    title="Delete promo code"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">
+                                  Read Only
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        )
                       ))
                     )}
                   </tbody>
