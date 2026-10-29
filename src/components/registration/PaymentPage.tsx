@@ -36,6 +36,7 @@ export const PaymentPage: React.FC = () => {
     setUtrNumber, 
     paymentScreenshotName, 
     setPaymentScreenshotName, 
+    paymentScreenshotFile,
     setPaymentScreenshotFile,
     paymentScreenshotData,
     setPaymentScreenshotData,
@@ -205,6 +206,10 @@ export const PaymentPage: React.FC = () => {
     if (!isHost) {
       if (!utrNumber.trim() || utrNumber.trim().length < 6) {
         setErrorMsg('Please enter a valid 12-digit UPI UTR / Transaction Reference Number.');
+        return;
+      }
+      if (!paymentScreenshotFile && !paymentScreenshotData) {
+        setErrorMsg('Payment screenshot is strictly compulsory for all non-host participants. Please upload a clear screenshot of your payment receipt before submitting.');
         return;
       }
     }
@@ -671,16 +676,38 @@ export const PaymentPage: React.FC = () => {
                 </span>
               </div>
 
+              {/* Mandatory Notice for Non-Host / External College Registrations */}
+              <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex items-start gap-2.5">
+                <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <span className="leading-relaxed font-medium">
+                  <strong>Payment Screenshot is Compulsory:</strong> For all participants from other institutions (non-host college), uploading a verified screenshot of the UPI transaction receipt is strictly mandatory to confirm registration.
+                </span>
+              </div>
+
               {/* Screenshot Upload */}
               <div>
-                <label className="block text-xs font-semibold text-slate-200 mb-1">
-                  Upload Payment Screenshot / Slip *
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                    <span>Upload Payment Screenshot / Slip</span>
+                    <span className="text-rose-400 font-bold text-[10px] bg-rose-500/15 border border-rose-500/30 px-2 py-0.5 rounded uppercase tracking-wider">
+                      Compulsory *
+                    </span>
+                  </label>
+                  {paymentScreenshotData ? (
+                    <span className="text-[11px] text-emerald-400 font-mono flex items-center gap-1">
+                      <Check className="w-3.5 h-3.5" /> Receipt Attached
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-rose-300 font-medium">
+                      Screenshot Required *
+                    </span>
+                  )}
+                </div>
 
                 {paymentScreenshotData ? (
-                  <div className="p-3.5 rounded-xl bg-[#070B1E] border border-[#D4AF37]/50 flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <div className="p-3.5 rounded-xl bg-[#070B1E] border border-emerald-500/50 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
                     <div className="flex items-center gap-3 w-full sm:w-auto">
-                      <div className="w-14 h-14 rounded-lg overflow-hidden border border-white/20 bg-black/60 shrink-0 relative group">
+                      <div className="w-14 h-14 rounded-lg overflow-hidden border border-emerald-500/40 bg-black/60 shrink-0 relative group">
                         <img 
                           src={paymentScreenshotData} 
                           alt="Payment Slip Preview" 
@@ -692,7 +719,7 @@ export const PaymentPage: React.FC = () => {
                           {paymentScreenshotName || 'Payment_Slip.png'}
                         </span>
                         <span className="text-[10px] text-emerald-400 font-mono flex items-center gap-1 mt-0.5">
-                          <Check className="w-3 h-3" /> Image Loaded & Ready to Submit
+                          <Check className="w-3 h-3" /> Screenshot Attached & Ready
                         </span>
                       </div>
                     </div>
@@ -710,20 +737,30 @@ export const PaymentPage: React.FC = () => {
                     </div>
                   </div>
                 ) : (
-                  <div className="relative border-2 border-dashed border-white/15 hover:border-[#D4AF37]/40 rounded-xl p-4 text-center bg-[#070B1E]/60 transition-colors">
+                  <div className={`relative border-2 border-dashed ${
+                    errorMsg && (!paymentScreenshotFile && !paymentScreenshotData)
+                      ? 'border-rose-500 bg-rose-950/25 ring-2 ring-rose-500/30'
+                      : 'border-white/20 hover:border-[#D4AF37]/50 bg-[#070B1E]/60'
+                  } rounded-xl p-5 text-center transition-all group`}>
                     <input
                       type="file"
                       accept="image/*,.pdf"
+                      required
                       onChange={handleFileUpload}
                       className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                     />
-                    <div className="flex flex-col items-center justify-center space-y-1">
-                      <Upload className="w-6 h-6 text-[#D4AF37] mb-1" />
+                    <div className="flex flex-col items-center justify-center space-y-1.5">
+                      <div className="w-10 h-10 rounded-full bg-[#D4AF37]/10 flex items-center justify-center group-hover:scale-105 transition-transform">
+                        <Upload className="w-5 h-5 text-[#D4AF37]" />
+                      </div>
                       <span className="text-xs text-slate-200 font-medium">
-                        {paymentScreenshotName ? paymentScreenshotName : 'Click or drag screenshot here'}
+                        {paymentScreenshotName ? paymentScreenshotName : 'Click or drag payment screenshot here *'}
                       </span>
-                      <span className="text-[10px] text-slate-500">
-                        PNG, JPG or PDF up to 5MB (Official Bank / UPI Receipt)
+                      <span className="text-[10px] text-slate-400">
+                        PNG, JPG or PDF up to 5MB (Official Bank / UPI Transaction Receipt)
+                      </span>
+                      <span className="text-[10px] font-mono text-rose-300 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">
+                        Compulsory for all non-SMCH participants
                       </span>
                     </div>
                   </div>

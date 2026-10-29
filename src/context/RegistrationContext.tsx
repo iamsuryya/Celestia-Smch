@@ -302,6 +302,11 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
     const submissionId = generateRegistrationCode(selectedEvent.id);
     const isHost = Boolean(collegeDetails.isHostCollege);
+
+    // Strict enforcement: For all participants not from Srinivasan Medical College & Hospital (Host), payment screenshot is compulsory
+    if (!isHost && !paymentScreenshotFile && !paymentScreenshotData) {
+      throw new Error('Payment screenshot is strictly compulsory for all non-host college registrations. Please upload your payment receipt before submitting.');
+    }
     
     const baseFee = isHost ? 0 : (selectedEvent.feeType === 'per_head' ? selectedEvent.feeAmount * Math.max(participants.length, 1) : selectedEvent.feeAmount);
     const isAdv = !isHost && Boolean(appliedPromoCode?.isAdvancePayment || appliedPromoCode?.discountType === 'advance');

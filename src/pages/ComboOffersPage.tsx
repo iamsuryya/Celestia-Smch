@@ -51,7 +51,7 @@ export const ComboOffersPage: React.FC<ComboOffersPageProps> = ({
         defaults.push(...['adblitz', 'stellar-bid', 'twin-flare'].slice(0, minorCount));
       }
       if (soloCount > 0) {
-        defaults.push(...['seraphia', 'symphora', 'nrityara', 'cosmic-switch', 'eclipse', 'elaris', 'stellar-bid'].slice(0, soloCount));
+        defaults.push(...['symphora', 'nrityara', 'cosmic-switch', 'eclipse', 'elaris', 'stellar-bid'].slice(0, soloCount));
       }
       return defaults;
     }

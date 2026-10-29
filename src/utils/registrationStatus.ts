@@ -85,7 +85,12 @@ export function isEventRegistrationOpen(eventCodeOrId: string | undefined): bool
     if (map[found.code.toLowerCase()] !== undefined) return map[found.code.toLowerCase()];
   }
 
-  // Default is OPEN for all festival events (including Seraphia)
+  // Seraphia (Solo Singing) registration is closed / stopped
+  if (normalized === 'seraphia' || normalized === 'solo-singing') {
+    return false;
+  }
+
+  // Default is OPEN for all other festival events
   return true;
 }
 
@@ -191,12 +196,9 @@ export async function loadStatusFromSupabase(): Promise<void> {
       const parsed = typeof data.setting_value === 'string' ? JSON.parse(data.setting_value) : data.setting_value;
       if (parsed && typeof parsed === 'object') {
         if (parsed.map) {
-          // If Seraphia was closed in legacy cloud settings, ensure it is open like other events
-          if (parsed.map['seraphia'] === false || parsed.map['SERAPHIA'] === false) {
-            parsed.map['seraphia'] = true;
-            parsed.map['SERAPHIA'] = true;
-            saveStatusToSupabase(parsed.map, parsed.globalOpen ?? true).catch(() => {});
-          }
+          // Seraphia registration is stopped / closed
+          parsed.map['seraphia'] = false;
+          parsed.map['SERAPHIA'] = false;
           localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(parsed.map));
         }
         if (typeof parsed.globalOpen === 'boolean') {
@@ -210,15 +212,15 @@ export async function loadStatusFromSupabase(): Promise<void> {
   }
 }
 
-// Automatically initiate cloud status sync on import and unblock Seraphia
+// Automatically initiate cloud status sync on import and stop Seraphia registration
 if (typeof window !== 'undefined') {
   try {
     const map = getEventRegistrationStatusMap();
-    if (map['seraphia'] === false || map['SERAPHIA'] === false || !localStorage.getItem('celestia_seraphia_opened_v2')) {
-      map['seraphia'] = true;
-      map['SERAPHIA'] = true;
+    if (map['seraphia'] !== false || map['SERAPHIA'] !== false || !localStorage.getItem('celestia_seraphia_closed_final')) {
+      map['seraphia'] = false;
+      map['SERAPHIA'] = false;
       localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(map));
-      localStorage.setItem('celestia_seraphia_opened_v2', 'true');
+      localStorage.setItem('celestia_seraphia_closed_final', 'true');
       window.dispatchEvent(new CustomEvent('celestia-registration-status-changed'));
       saveStatusToSupabase(map, isGlobalRegistrationOpen()).catch(() => {});
     }

@@ -174,7 +174,7 @@ export const EventSelector: React.FC = () => {
                   <div className="flex items-center gap-2">
                     {!isRegOpen && (
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 font-semibold">
-                        Registration Stopped
+                        Registration Closed
                       </span>
                     )}
                     <span className="text-[#E6C57D] font-medium">{evt.type}</span>

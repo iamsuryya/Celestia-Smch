@@ -105,7 +105,7 @@ export const ComboRegistrationWizard: React.FC<ComboRegistrationWizardProps> = (
     }
     if (combo.id === 'spotlight-squad-package') {
       const majorEvt = EVENTS_DATA.find(e => e.id === 'starfusion')!;
-      const soloEvt1 = EVENTS_DATA.find(e => e.id === 'seraphia')!;
+      const soloEvt1 = EVENTS_DATA.find(e => e.id === 'symphora') || EVENTS_DATA.find(e => e.type === 'Solo')!;
       const soloEvt2 = EVENTS_DATA.find(e => e.id === 'eclipse')!;
       return [majorEvt, soloEvt1, soloEvt2];
     }
@@ -116,7 +116,7 @@ export const ComboRegistrationWizard: React.FC<ComboRegistrationWizardProps> = (
   const [allAccessMajorId, setAllAccessMajorId] = useState<string>('starfusion');
   const [allAccessMinor1Id, setAllAccessMinor1Id] = useState<string>('adblitz');
   const [allAccessMinor2Id, setAllAccessMinor2Id] = useState<string>('stellar-bid');
-  const [allAccessSolo1Id, setAllAccessSolo1Id] = useState<string>('seraphia');
+  const [allAccessSolo1Id, setAllAccessSolo1Id] = useState<string>('symphora');
   const [allAccessSolo2Id, setAllAccessSolo2Id] = useState<string>('eclipse');
 
   // Power Trio Specific Event Selection States (1 Major + 2 Minor)
@@ -126,7 +126,7 @@ export const ComboRegistrationWizard: React.FC<ComboRegistrationWizardProps> = (
 
   // Spotlight Squad Specific Event Selection States (1 Major + 2 Solo)
   const [spotlightMajorId, setSpotlightMajorId] = useState<string>('starfusion');
-  const [spotlightSolo1Id, setSpotlightSolo1Id] = useState<string>('seraphia');
+  const [spotlightSolo1Id, setSpotlightSolo1Id] = useState<string>('symphora');
   const [spotlightSolo2Id, setSpotlightSolo2Id] = useState<string>('eclipse');
 
   // Solo Duo & Triple Threat Single Participant Details (Single person for all solo events)
@@ -574,7 +574,7 @@ export const ComboRegistrationWizard: React.FC<ComboRegistrationWizardProps> = (
       return;
     }
     if (!paymentFile && !paymentPreviewData) {
-      setSubmissionError('Please upload your payment screenshot proof.');
+      setSubmissionError('Payment screenshot is strictly compulsory. Please upload your payment receipt / screenshot proof.');
       scrollToTop();
       return;
     }
@@ -1931,15 +1931,50 @@ export const ComboRegistrationWizard: React.FC<ComboRegistrationWizardProps> = (
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-300 mb-1">
-              Upload Payment Screenshot *
-            </label>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={handlePaymentScreenshotUpload}
-              className="w-full text-xs text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-amber-500 file:text-slate-950 hover:file:bg-amber-400 cursor-pointer"
-            />
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-bold text-slate-300">
+                Upload Payment Screenshot <span className="text-rose-400 font-bold">* (Compulsory)</span>
+              </label>
+              {paymentPreviewData && (
+                <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
+                  <Check className="w-3 h-3" /> Screenshot Attached
+                </span>
+              )}
+            </div>
+
+            {paymentPreviewData ? (
+              <div className="p-3 bg-slate-900 border border-emerald-500/50 rounded-xl flex items-center justify-between gap-3 shadow-md">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-lg overflow-hidden border border-slate-700 bg-black shrink-0">
+                    <img src={paymentPreviewData} alt="Payment Proof" className="w-full h-full object-cover" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-semibold text-white block truncate max-w-[180px]">
+                      {paymentFile?.name || 'Payment_Receipt.png'}
+                    </span>
+                    <span className="text-[10px] text-emerald-400">Attached & Ready to Submit</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPaymentFile(null);
+                    setPaymentPreviewData(null);
+                  }}
+                  className="px-2.5 py-1 text-xs text-rose-400 hover:bg-rose-500/20 rounded-lg transition-colors cursor-pointer"
+                >
+                  Change
+                </button>
+              </div>
+            ) : (
+              <input
+                type="file"
+                accept="image/*"
+                required
+                onChange={handlePaymentScreenshotUpload}
+                className="w-full text-xs text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-amber-500 file:text-slate-950 hover:file:bg-amber-400 cursor-pointer"
+              />
+            )}
           </div>
 
           {submissionError && (
