@@ -5289,8 +5289,8 @@ CREATE POLICY "Allow public access to celestia_promo_codes" ON public.celestia_p
                       setLoadingPromos(false);
                       showToast(
                         res.success
-                          ? `Synced ${res.count} Promo Codes (DSU40, DUO50, IPL50 & custom) directly into Supabase Cloud DB!`
-                          : `Promo codes active and saved in Cloud Settings Backup.`
+                          ? `Synced ${res.count} Promo Codes (DSU40, DUO50, IPL50) to Supabase! ${res.details ? `(${res.details})` : ''}`
+                          : `Sync status: ${res.lastError || 'Saved to Cloud Backup'}`
                       );
                     }}
                     disabled={loadingPromos}

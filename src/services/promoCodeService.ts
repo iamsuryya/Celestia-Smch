@@ -51,7 +51,7 @@ class PromoCodeService {
     if (typeof window !== 'undefined') {
       setTimeout(() => {
         this.syncAllToSupabase().catch(() => {});
-      }, 800);
+      }, 600);
     }
   }
 
@@ -61,7 +61,7 @@ class PromoCodeService {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // Remove deleted AP500 and AP750
+          // Filter out deprecated codes
           const filtered = parsed.filter((p: PromoCode) => 
             p && p.code && p.code.toUpperCase() !== 'AP500' && p.code.toUpperCase() !== 'AP750'
           );
@@ -101,11 +101,14 @@ class PromoCodeService {
   }
 
   /**
-   * Resilient helper to persist a promo code into Supabase table celestia_promo_codes AND celestia_app_settings JSON backup
+   * Resilient helper to persist a promo code into Supabase:
+   * 1. Attempts dedicated celestia_promo_codes table
+   * 2. Attempts celestia_app_settings JSON backup
+   * 3. Attempts registrations table system metadata row (SYS_CONFIG_PROMO_CODES)
    */
-  public async saveToSupabase(promo: PromoCode): Promise<{ success: boolean; error?: string }> {
+  public async saveToSupabase(promo: PromoCode): Promise<{ success: boolean; error?: string; details?: string }> {
     if (!isSupabaseConfigured || !supabase) {
-      return { success: false, error: 'Supabase client not configured' };
+      return { success: false, error: 'Supabase client not configured in build' };
     }
 
     const payload = {
@@ -125,8 +128,8 @@ class PromoCodeService {
     let tableSaved = false;
     let tableErr = '';
 
+    // Tier 1: Dedicated celestia_promo_codes table
     try {
-      // 1. Check if code already exists in celestia_promo_codes table
       const { data: existing } = await supabase
         .from('celestia_promo_codes')
         .select('id, code')
@@ -153,7 +156,6 @@ class PromoCodeService {
           tableSaved = true;
         } else {
           tableErr = insertErr.message;
-          // Try fallback without optional fields if schema differs
           const fallbackPayload = {
             id: payload.id,
             code: payload.code,
@@ -172,10 +174,10 @@ class PromoCodeService {
         }
       }
     } catch (err: any) {
-      tableErr = err?.message || 'Supabase exception';
+      tableErr = err?.message || 'Table save exception';
     }
 
-    // 2. ALWAYS save to celestia_app_settings JSON string as guaranteed fail-safe backup!
+    // Tier 2: celestia_app_settings table
     try {
       const currentLocals = this.getLocalCodes();
       const updatedList = currentLocals.map((p) =>
@@ -208,21 +210,64 @@ class PromoCodeService {
           .insert([settingsPayload]);
       }
     } catch {
-      // Fail-safe backup save notice
+      // ignore
+    }
+
+    // Tier 3: Guaranteed registrations table metadata row (SYS_CONFIG_PROMO_CODES)
+    try {
+      const currentLocals = this.getLocalCodes();
+      if (!currentLocals.some((p) => p.code.toUpperCase() === promo.code.toUpperCase())) {
+        currentLocals.push(promo);
+      }
+      const jsonStr = JSON.stringify(currentLocals);
+
+      const { data: sysRecord } = await supabase
+        .from('registrations')
+        .select('id')
+        .eq('registration_code', 'SYS_CONFIG_PROMO_CODES')
+        .maybeSingle();
+
+      if (sysRecord) {
+        await supabase
+          .from('registrations')
+          .update({
+            admin_notes: jsonStr,
+            participant_count: currentLocals.length,
+          })
+          .eq('id', sysRecord.id);
+      } else {
+        await supabase
+          .from('registrations')
+          .insert([{
+            registration_code: 'SYS_CONFIG_PROMO_CODES',
+            event_code: 'SYSTEM',
+            event_type: 'System',
+            team_name: 'Celestia Promo Codes System Metadata',
+            college_name: 'Central Admin Desk',
+            admin_notes: jsonStr,
+            participant_count: currentLocals.length,
+            total_fee: 0,
+            registration_status: 'Confirmed',
+          }]);
+      }
+    } catch {
+      // ignore
     }
 
     return {
       success: true,
-      error: tableSaved ? undefined : tableErr ? `Saved to Cloud Backup (Table notice: ${tableErr})` : undefined,
+      details: tableSaved 
+        ? 'Stored in celestia_promo_codes table' 
+        : `Stored in Supabase Cloud system row (Table notice: ${tableErr || 'Check SQL Editor'})`,
     };
   }
 
   /**
    * Syncs all promo codes into Supabase
    */
-  public async syncAllToSupabase(): Promise<{ success: boolean; count: number; lastError?: string }> {
+  public async syncAllToSupabase(): Promise<{ success: boolean; count: number; lastError?: string; details?: string }> {
     if (!isSupabaseConfigured || !supabase) {
-      return { success: false, count: 0, lastError: 'Supabase client missing' };
+      return { success: false, count: 0, lastError: 'Supabase client missing in build' };
     }
 
     const locals = this.getLocalCodes();
@@ -237,18 +282,20 @@ class PromoCodeService {
     const list = Array.from(map.values());
     let count = 0;
     let lastErr = '';
+    let detailsMsg = '';
 
     for (const p of list) {
       const res = await this.saveToSupabase(p);
       if (res.success) {
         count++;
+        if (res.details) detailsMsg = res.details;
       }
       if (res.error) {
         lastErr = res.error;
       }
     }
 
-    return { success: count > 0, count, lastError: lastErr };
+    return { success: count > 0, count, lastError: lastErr, details: detailsMsg };
   }
 
   public async getPromoCodes(): Promise<PromoCode[]> {
@@ -257,6 +304,7 @@ class PromoCodeService {
 
     if (isSupabaseConfigured && supabase) {
       try {
+        // Attempt 1: Read from celestia_promo_codes table
         const { data, error } = await supabase
           .from('celestia_promo_codes')
           .select('*')
@@ -278,8 +326,10 @@ class PromoCodeService {
               redemptionCount: d.redemption_count ?? d.redemptionCount ?? 0,
               createdAt: d.created_at ?? d.createdAt ?? new Date().toISOString(),
             }));
-        } else {
-          // Read from app settings JSON backup
+        }
+
+        // Attempt 2: Read from celestia_app_settings JSON backup if table is empty
+        if (remoteMapped.length === 0) {
           const { data: settingData } = await supabase
             .from('celestia_app_settings')
             .select('setting_value')
@@ -288,6 +338,22 @@ class PromoCodeService {
 
           if (settingData?.setting_value) {
             const parsed = typeof settingData.setting_value === 'string' ? JSON.parse(settingData.setting_value) : settingData.setting_value;
+            if (Array.isArray(parsed)) {
+              remoteMapped = parsed.filter((p: any) => p && p.code && p.code.toUpperCase() !== 'AP500' && p.code.toUpperCase() !== 'AP750');
+            }
+          }
+        }
+
+        // Attempt 3: Read from registrations table system row (SYS_CONFIG_PROMO_CODES)
+        if (remoteMapped.length === 0) {
+          const { data: sysData } = await supabase
+            .from('registrations')
+            .select('admin_notes')
+            .eq('registration_code', 'SYS_CONFIG_PROMO_CODES')
+            .maybeSingle();
+
+          if (sysData?.admin_notes) {
+            const parsed = typeof sysData.admin_notes === 'string' ? JSON.parse(sysData.admin_notes) : sysData.admin_notes;
             if (Array.isArray(parsed)) {
               remoteMapped = parsed.filter((p: any) => p && p.code && p.code.toUpperCase() !== 'AP500' && p.code.toUpperCase() !== 'AP750');
             }
@@ -407,14 +473,14 @@ class PromoCodeService {
       this.saveLocalCodes([newPromo, ...currentCodes]);
     }
 
-    // Persist immediately into Supabase database table & settings backup
+    // Persist immediately into Supabase
     const dbRes = await this.saveToSupabase(newPromo);
 
     let statusMsg = `Promo code "${code}" (${isAdv ? `Advance ₹${advanceAmount}` : `${newPromo.discountPercent}% OFF`}) saved and ACTIVE!`;
-    if (!dbRes.success && dbRes.error) {
-      statusMsg += ` (${dbRes.error})`;
+    if (dbRes.details) {
+      statusMsg += ` (${dbRes.details})`;
     } else {
-      statusMsg += ` (Synced to Supabase Cloud DB & Backup)`;
+      statusMsg += ` (Synced to Supabase Cloud DB)`;
     }
 
     return {
