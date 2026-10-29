@@ -241,6 +241,7 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
   const [selectedRegIds, setSelectedRegIds] = useState<string[]>([]);
   const [showEventClassificationModal, setShowEventClassificationModal] = useState<boolean>(false);
   const [bulkDeleteConfirmModal, setBulkDeleteConfirmModal] = useState<boolean>(false);
+  const [showExportScopeModal, setShowExportScopeModal] = useState<boolean>(false);
 
   // Promo Code Modal & Management State
   const [showPromoCodeModal, setShowPromoCodeModal] = useState<boolean>(false);
@@ -909,11 +910,16 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
       const saved = localStorage.getItem('celestia26_registrations');
       if (saved) {
         const list: RegistrationSubmission[] = JSON.parse(saved);
-        const updated = list.map((r) =>
-          isMatch(r)
-            ? { ...r, paymentStatus: 'Verified' as const, registrationStatus: 'Confirmed', paymentConfirmed: true }
-            : r
-        );
+        const updated = list.map((r) => {
+          if (!isMatch(r)) return r;
+          const isPartial = (r.pendingAmount && r.pendingAmount > 0) || (r.paidAmount !== undefined && r.paidAmount < r.totalAmount);
+          return {
+            ...r,
+            paymentStatus: isPartial ? ('Advance Paid' as const) : ('Verified' as const),
+            registrationStatus: 'Confirmed' as const,
+            paymentConfirmed: true
+          };
+        });
         localStorage.setItem('celestia26_registrations', JSON.stringify(updated));
       }
     } catch (e) {
@@ -925,14 +931,28 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
 
     loadData();
     setCloudRegistrations((prev) =>
-      prev.map((r) =>
-        isMatch(r)
-          ? { ...r, paymentStatus: 'Verified', registrationStatus: 'Confirmed', paymentConfirmed: true }
-          : r
-      )
+      prev.map((r) => {
+        if (!isMatch(r)) return r;
+        const isPartial = (r.pendingAmount && r.pendingAmount > 0) || (r.paidAmount !== undefined && r.paidAmount < r.totalAmount);
+        return {
+          ...r,
+          paymentStatus: isPartial ? ('Advance Paid' as const) : ('Verified' as const),
+          registrationStatus: 'Confirmed' as const,
+          paymentConfirmed: true
+        };
+      })
     );
     if (inspectRegistration && isMatch(inspectRegistration)) {
-      setInspectRegistration((prev) => prev ? { ...prev, paymentStatus: 'Verified', registrationStatus: 'Confirmed', paymentConfirmed: true } : null);
+      setInspectRegistration((prev) => {
+        if (!prev) return null;
+        const isPartial = (prev.pendingAmount && prev.pendingAmount > 0) || (prev.paidAmount !== undefined && prev.paidAmount < prev.totalAmount);
+        return {
+          ...prev,
+          paymentStatus: isPartial ? ('Advance Paid' as const) : ('Verified' as const),
+          registrationStatus: 'Confirmed' as const,
+          paymentConfirmed: true
+        };
+      });
     }
   };
 
@@ -2384,7 +2404,7 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
           {/* Download Verified By Event CSV */}
           <button
             type="button"
-            onClick={() => exportVerifiedByEventCSV(allRegistrations, showToast)}
+            onClick={() => setShowExportScopeModal(true)}
             className="px-3.5 py-2 rounded-xl font-bold text-xs uppercase tracking-wider text-emerald-950 bg-gradient-to-r from-emerald-300 via-emerald-400 to-teal-400 hover:brightness-110 transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-500/20"
             title="Export only verified & approved registrations formatted event by event for Excel/Sheets"
           >
@@ -5266,6 +5286,91 @@ CREATE POLICY "Allow public insert to payment_submissions" ON public.payment_sub
                 className="px-5 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs text-slate-200 cursor-pointer"
               >
                 Close Promo Panel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: VERIFIED EXCEL EXPORT SCOPE SELECTOR */}
+      {showExportScopeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
+          <div className="relative w-full max-w-lg celestial-glass rounded-2xl p-6 border border-[#D4AF37]/50 shadow-2xl space-y-5 my-8">
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <Download className="w-5 h-5 text-emerald-400" />
+                <h3 className="font-cinzel text-lg font-bold text-white">
+                  Verified Registrations Export Options
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowExportScopeModal(false)}
+                className="p-1 rounded-lg bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Select which dataset scope you wish to generate and download as an Event-Wise Excel/CSV report:
+            </p>
+
+            <div className="space-y-3">
+              {/* Option 1: All Verified Participants */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowExportScopeModal(false);
+                  exportVerifiedByEventCSV(allRegistrations, showToast, { excludeSmch: false });
+                }}
+                className="w-full p-4 rounded-xl bg-[#090F2C] hover:bg-[#0E1742] border border-emerald-500/40 hover:border-emerald-400 transition-all text-left group cursor-pointer shadow-md"
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-bold text-emerald-300 text-sm flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <span>Option 1: All Verified Participants (All Institutions)</span>
+                  </span>
+                  <span className="text-[10px] font-mono bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30">
+                    Full Roster
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 pl-6">
+                  Includes all verified registrations across all colleges, including Srinivasan Medical College & Hospital.
+                </p>
+              </button>
+
+              {/* Option 2: Exclude SMCH Host Students */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowExportScopeModal(false);
+                  exportVerifiedByEventCSV(allRegistrations, showToast, { excludeSmch: true });
+                }}
+                className="w-full p-4 rounded-xl bg-[#090F2C] hover:bg-[#0E1742] border border-amber-500/40 hover:border-amber-400 transition-all text-left group cursor-pointer shadow-md"
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-bold text-amber-300 text-sm flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-amber-400" />
+                    <span>Option 2: Non-Host Colleges Only (Exclude SMCH Students)</span>
+                  </span>
+                  <span className="text-[10px] font-mono bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded border border-amber-500/30">
+                    External Only
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 pl-6">
+                  Excludes all students/registrations from Srinivasan Medical College & Hospital (Host College).
+                </p>
+              </button>
+            </div>
+
+            <div className="pt-3 border-t border-white/10 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowExportScopeModal(false)}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs text-slate-300 cursor-pointer"
+              >
+                Cancel
               </button>
             </div>
           </div>

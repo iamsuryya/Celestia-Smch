@@ -27,6 +27,11 @@ export interface RegistrationPayload {
   discountPercent?: number;
   discountAmount?: number;
   originalAmount?: number;
+  isAdvancePayment?: boolean;
+  advanceAmountPaid?: number;
+  remainingBalance?: number;
+  paidAmount?: number;
+  pendingAmount?: number;
   // Combo offer metadata & Headcount
   participantCount?: number;
   comboGroupId?: string;
@@ -502,9 +507,9 @@ export const supabaseRegistrationService = {
           const paymentData = {
             registration_id: registrationId,
             utr_number: payload.utrNumber || 'NOT_SUBMITTED',
-            amount_paid: Number(payload.totalFee) || 0,
+            amount_paid: payload.paidAmount !== undefined ? Number(payload.paidAmount) : (payload.advanceAmountPaid !== undefined ? Number(payload.advanceAmountPaid) : Number(payload.totalFee)),
             payment_screenshot_path: paymentProof || null,
-            payment_status: isAutoApproveEnabled() ? 'Verified' : 'Submitted',
+            payment_status: isAutoApproveEnabled() ? 'Verified' : (payload.isAdvancePayment ? 'Advance Paid' : 'Submitted'),
           };
 
           const { error: payError } = await supabase
@@ -751,8 +756,8 @@ export const supabaseRegistrationService = {
         totalAmount: Number(row.total_fee) || 0,
         paidAmount: (() => {
           if (row.paid_amount !== undefined && row.paid_amount !== null) return Number(row.paid_amount);
-          if (row.advance_amount_paid) return Number(row.advance_amount_paid);
-          // If admin didn't add any advance amount override, default to full amount paid
+          if (payment?.amount_paid !== undefined && payment?.amount_paid !== null) return Number(payment.amount_paid);
+          if (row.advance_amount_paid !== undefined && row.advance_amount_paid !== null) return Number(row.advance_amount_paid);
           return Number(row.total_fee) || 0;
         })(),
         pendingAmount: (() => {
@@ -760,7 +765,8 @@ export const supabaseRegistrationService = {
           if (row.pending_amount !== undefined && row.pending_amount !== null) return Number(row.pending_amount);
           const pd = (() => {
             if (row.paid_amount !== undefined && row.paid_amount !== null) return Number(row.paid_amount);
-            if (row.advance_amount_paid) return Number(row.advance_amount_paid);
+            if (payment?.amount_paid !== undefined && payment?.amount_paid !== null) return Number(payment.amount_paid);
+            if (row.advance_amount_paid !== undefined && row.advance_amount_paid !== null) return Number(row.advance_amount_paid);
             return tot;
           })();
           return Math.max(0, tot - pd);
@@ -781,14 +787,15 @@ export const supabaseRegistrationService = {
           const tot = Number(row.total_fee) || 0;
           const pd = (() => {
             if (row.paid_amount !== undefined && row.paid_amount !== null) return Number(row.paid_amount);
-            if (row.advance_amount_paid) return Number(row.advance_amount_paid);
+            if (payment?.amount_paid !== undefined && payment?.amount_paid !== null) return Number(payment.amount_paid);
+            if (row.advance_amount_paid !== undefined && row.advance_amount_paid !== null) return Number(row.advance_amount_paid);
             return tot;
           })();
           const pend = Math.max(0, tot - pd);
 
           if (pd >= tot && tot > 0) return 'Paid in Full';
           if (pd > 0 && pend > 0) return 'Advance Paid';
-          return (payment?.payment_status as any) || (row.payment_status as any) || 'Paid in Full';
+          return (payment?.payment_status as any) || (row.payment_status as any) || 'Submitted';
         })(),
         registrationStatus: (row.registration_status as any) || 'Submitted',
         comboGroupId: row.combo_group_id || undefined,
@@ -1137,6 +1144,19 @@ export const supabaseRegistrationService = {
         }
       } else if (updateErr) {
         return { success: false, message: `Failed to update payment: ${updateErr.message}` };
+      }
+
+      // Also sync payment_submissions table
+      try {
+        await supabase
+          .from('payment_submissions')
+          .update({
+            amount_paid: paidAmount,
+            payment_status: calcStatus,
+          })
+          .eq('registration_id', reg.id);
+      } catch (pErr) {
+        console.warn('payment_submissions table sync notice:', pErr);
       }
 
       return {

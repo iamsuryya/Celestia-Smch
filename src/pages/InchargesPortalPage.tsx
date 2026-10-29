@@ -34,6 +34,7 @@ import { EVENTS_DATA, EventItem } from '../data/festivalData';
 import { RegistrationSubmission, ParticipantMember } from '../types/registration';
 import { supabaseRegistrationService } from '../services/supabaseRegistrationService';
 import { clearAuthSession } from '../lib/authProfiles';
+import { exportVerifiedByEventCSV } from '../utils/exportVerifiedHelper';
 
 interface InchargesPortalPageProps {
   onExit: () => void;
@@ -61,6 +62,7 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
   const [regTypeFilter, setRegTypeFilter] = useState<'all' | 'individual' | 'combo'>('all');
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('table');
   const [showRulesDrawer, setShowRulesDrawer] = useState(false);
+  const [showExportScopeModal, setShowExportScopeModal] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
@@ -561,6 +563,16 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
           </button>
 
 
+
+          <button
+            type="button"
+            onClick={() => setShowExportScopeModal(true)}
+            className="px-3.5 py-2 rounded-xl font-bold text-xs uppercase tracking-wider text-emerald-950 bg-gradient-to-r from-emerald-300 via-emerald-400 to-teal-400 hover:brightness-110 transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-500/20"
+            title="Export verified registrations grouped event-by-event"
+          >
+            <CheckCircle className="w-3.5 h-3.5 text-emerald-950" />
+            <span>Verified By Event (Excel)</span>
+          </button>
 
           <button
             type="button"
@@ -1481,6 +1493,91 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
                 className="px-4 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white font-medium cursor-pointer transition-colors"
               >
                 Close View
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: VERIFIED EXCEL EXPORT SCOPE SELECTOR */}
+      {showExportScopeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
+          <div className="relative w-full max-w-lg celestial-glass rounded-2xl p-6 border border-[#D4AF37]/50 shadow-2xl space-y-5 my-8">
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <Download className="w-5 h-5 text-emerald-400" />
+                <h3 className="font-cinzel text-lg font-bold text-white">
+                  Verified Registrations Export Options
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowExportScopeModal(false)}
+                className="p-1 rounded-lg bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Select which dataset scope you wish to generate and download as an Event-Wise Excel/CSV report:
+            </p>
+
+            <div className="space-y-3">
+              {/* Option 1: All Verified Participants */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowExportScopeModal(false);
+                  exportVerifiedByEventCSV(registrations, showToast, { excludeSmch: false });
+                }}
+                className="w-full p-4 rounded-xl bg-[#090F2C] hover:bg-[#0E1742] border border-emerald-500/40 hover:border-emerald-400 transition-all text-left group cursor-pointer shadow-md"
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-bold text-emerald-300 text-sm flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-emerald-400" />
+                    <span>Option 1: All Verified Participants (All Institutions)</span>
+                  </span>
+                  <span className="text-[10px] font-mono bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30">
+                    Full Roster
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 pl-6">
+                  Includes all verified registrations across all colleges, including Srinivasan Medical College & Hospital.
+                </p>
+              </button>
+
+              {/* Option 2: Exclude SMCH Host Students */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowExportScopeModal(false);
+                  exportVerifiedByEventCSV(registrations, showToast, { excludeSmch: true });
+                }}
+                className="w-full p-4 rounded-xl bg-[#090F2C] hover:bg-[#0E1742] border border-amber-500/40 hover:border-amber-400 transition-all text-left group cursor-pointer shadow-md"
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-bold text-amber-300 text-sm flex items-center gap-2">
+                    <Building className="w-4 h-4 text-amber-400" />
+                    <span>Option 2: Non-Host Colleges Only (Exclude SMCH Students)</span>
+                  </span>
+                  <span className="text-[10px] font-mono bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded border border-amber-500/30">
+                    External Only
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 pl-6">
+                  Excludes all students/registrations from Srinivasan Medical College & Hospital (Host College).
+                </p>
+              </button>
+            </div>
+
+            <div className="pt-3 border-t border-white/10 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowExportScopeModal(false)}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs text-slate-300 cursor-pointer"
+              >
+                Cancel
               </button>
             </div>
           </div>
