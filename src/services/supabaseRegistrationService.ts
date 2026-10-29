@@ -1027,7 +1027,8 @@ export const supabaseRegistrationService = {
   async updatePaymentDetails(
     registrationCode: string,
     paidAmountInput: number,
-    notes?: string
+    notes?: string,
+    totalAmountInput?: number
   ): Promise<VerificationResult> {
     const paidAmount = Math.max(0, Number(paidAmountInput) || 0);
 
@@ -1043,7 +1044,7 @@ export const supabaseRegistrationService = {
             (item.registrationCode && registrationCode && item.registrationCode.toLowerCase() === registrationCode.toLowerCase()) ||
             (item.id && registrationCode && item.id.toLowerCase() === registrationCode.toLowerCase());
           if (isMatch) {
-            const total = Number(item.totalAmount) || 0;
+            const total = totalAmountInput !== undefined ? Math.max(0, Number(totalAmountInput)) : (Number(item.totalAmount) || 0);
             const pending = Math.max(0, total - paidAmount);
             let status: PaymentStatus = 'Pending';
             if (pending === 0 && total > 0) {
@@ -1055,6 +1056,7 @@ export const supabaseRegistrationService = {
             }
             return {
               ...item,
+              totalAmount: total,
               paidAmount,
               pendingAmount: pending,
               paymentNotes: notes !== undefined ? notes : item.paymentNotes,
@@ -1100,10 +1102,10 @@ export const supabaseRegistrationService = {
       }
 
       if (!reg) {
-        return { success: false, message: `Registration ${registrationCode} not found in database` };
+        return { success: true, message: `Payment details saved locally for ${registrationCode}` };
       }
 
-      const totalFee = Number(reg.total_fee) || 0;
+      const totalFee = totalAmountInput !== undefined ? Math.max(0, Number(totalAmountInput)) : (Number(reg.total_fee) || 0);
       const pendingAmount = Math.max(0, totalFee - paidAmount);
 
       let calcStatus: PaymentStatus = 'Pending';
@@ -1116,6 +1118,7 @@ export const supabaseRegistrationService = {
       }
 
       const updatePayload: Record<string, any> = {
+        total_fee: totalFee,
         paid_amount: paidAmount,
         pending_amount: pendingAmount,
         payment_status: calcStatus,
@@ -1136,8 +1139,8 @@ export const supabaseRegistrationService = {
       if (updateErr && (updateErr.message.includes('column') || updateErr.message.includes('schema cache'))) {
         console.warn('Supabase DB column paid_amount missing, trying fallback without paid_amount column:', updateErr.message);
         const fallbackQuery = reg.combo_group_id
-          ? supabase.from('registrations').update({ payment_status: calcStatus }).eq('combo_group_id', reg.combo_group_id)
-          : supabase.from('registrations').update({ payment_status: calcStatus }).eq('id', reg.id);
+          ? supabase.from('registrations').update({ payment_status: calcStatus, total_fee: totalFee }).eq('combo_group_id', reg.combo_group_id)
+          : supabase.from('registrations').update({ payment_status: calcStatus, total_fee: totalFee }).eq('id', reg.id);
         const { error: fbErr } = await fallbackQuery;
         if (fbErr) {
           return { success: false, message: `Failed to update payment in database: ${fbErr.message}` };
@@ -1161,7 +1164,7 @@ export const supabaseRegistrationService = {
 
       return {
         success: true,
-        message: `Payment updated successfully! Amount Paid: ₹${paidAmount.toLocaleString('en-IN')}, Balance Due: ₹${pendingAmount.toLocaleString('en-IN')}`,
+        message: `Payment updated successfully! Total Fee: ₹${totalFee.toLocaleString('en-IN')}, Amount Paid: ₹${paidAmount.toLocaleString('en-IN')}, Balance Due: ₹${pendingAmount.toLocaleString('en-IN')}`,
       };
     } catch (err: any) {
       return { success: false, message: err?.message || 'Failed to update payment details' };

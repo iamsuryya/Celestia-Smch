@@ -4,7 +4,7 @@ import { getCurrentAuthRole } from '../lib/authProfiles';
 
 const PROMO_STORAGE_KEY = 'celestia26_promo_codes';
 
-// Initial pre-configured seed promo codes
+// Initial pre-configured seed promo codes (Only clean essential codes)
 const DEFAULT_PROMO_CODES: PromoCode[] = [
   {
     id: 'promo-1',
@@ -14,43 +14,8 @@ const DEFAULT_PROMO_CODES: PromoCode[] = [
     discountType: 'percentage',
     description: 'General 10% promotional discount',
     isActive: true,
-    redemptionCount: 14,
+    redemptionCount: 0,
     createdAt: '2026-10-15',
-  },
-  {
-    id: 'promo-2',
-    code: 'EARLYBIRD20',
-    discountPercent: 20,
-    applicableScope: 'individual',
-    discountType: 'percentage',
-    description: 'Early bird 20% discount offer for Individual Events',
-    isActive: true,
-    redemptionCount: 28,
-    createdAt: '2026-10-16',
-  },
-  {
-    id: 'promo-3',
-    code: 'SMCHSPECIAL15',
-    discountPercent: 15,
-    applicableScope: 'combo',
-    discountType: 'percentage',
-    description: 'Special 15% discount for Combo Packages',
-    isActive: true,
-    redemptionCount: 8,
-    createdAt: '2026-10-17',
-  },
-  {
-    id: 'promo-ap750',
-    code: 'AP750',
-    discountPercent: 0,
-    applicableScope: 'all',
-    discountType: 'advance',
-    advanceAmount: 750,
-    isAdvancePayment: true,
-    description: 'Advance payment of ₹750 (Balance due on arrival)',
-    isActive: true,
-    redemptionCount: 5,
-    createdAt: '2026-10-20',
   },
   {
     id: 'promo-ap500',
@@ -62,7 +27,20 @@ const DEFAULT_PROMO_CODES: PromoCode[] = [
     isAdvancePayment: true,
     description: 'Advance payment of ₹500 (Balance due on arrival)',
     isActive: true,
-    redemptionCount: 3,
+    redemptionCount: 0,
+    createdAt: '2026-10-20',
+  },
+  {
+    id: 'promo-ap750',
+    code: 'AP750',
+    discountPercent: 0,
+    applicableScope: 'all',
+    discountType: 'advance',
+    advanceAmount: 750,
+    isAdvancePayment: true,
+    description: 'Advance payment of ₹750 (Balance due on arrival)',
+    isActive: true,
+    redemptionCount: 0,
     createdAt: '2026-10-20',
   },
   {
@@ -75,17 +53,24 @@ const DEFAULT_PROMO_CODES: PromoCode[] = [
     isAdvancePayment: true,
     description: 'Advance payment of ₹2000 (Balance due on arrival)',
     isActive: true,
-    redemptionCount: 2,
+    redemptionCount: 0,
     createdAt: '2026-10-20',
   },
 ];
 
 class PromoCodeService {
+  private bc = typeof window !== 'undefined' && 'BroadcastChannel' in window
+    ? new BroadcastChannel('celestia_promos_channel')
+    : null;
+
   private getLocalCodes(): PromoCode[] {
     try {
       const saved = localStorage.getItem(PROMO_STORAGE_KEY);
       if (saved) {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed;
+        }
       }
     } catch {
       // ignore
@@ -105,8 +90,13 @@ class PromoCodeService {
     } catch (err) {
       console.warn('Could not save promo codes to localStorage:', err);
     }
-    // Broadcast instant update event to all active components & windows
+    // Broadcast instant update event across components and browser windows
     window.dispatchEvent(new CustomEvent('celestia-promocodes-changed', { detail: codes }));
+    if (this.bc) {
+      try {
+        this.bc.postMessage({ type: 'PROMOS_UPDATED', codes });
+      } catch {}
+    }
   }
 
   public async getPromoCodes(): Promise<PromoCode[]> {
@@ -123,7 +113,7 @@ class PromoCodeService {
         if (!error && data && Array.isArray(data)) {
           remoteMapped = data.map((d: any) => ({
             id: d.id || `promo-${d.code}`,
-            code: d.code,
+            code: String(d.code).toUpperCase(),
             discountPercent: d.discount_percent ?? d.discountPercent ?? 0,
             applicableScope: d.applicable_scope ?? d.applicableScope ?? 'all',
             discountType: d.discount_type ?? d.discountType ?? (d.is_advance_payment || d.isAdvancePayment ? 'advance' : 'percentage'),
@@ -136,11 +126,11 @@ class PromoCodeService {
           }));
         }
       } catch (err) {
-        console.warn('Supabase getPromoCodes error, fallback to local:', err);
+        console.warn('Supabase getPromoCodes notice:', err);
       }
     }
 
-    // Merge remote and local promo codes by unique UPPERCASE code to ensure no local promo codes are lost
+    // Merge remote and local promo codes by unique UPPERCASE code
     const mergedMap = new Map<string, PromoCode>();
 
     // 1. Populate with local promo codes
@@ -150,7 +140,7 @@ class PromoCodeService {
       }
     });
 
-    // 2. Merge remote promo codes (overwriting synced fields, retaining local fields if missing)
+    // 2. Merge remote promo codes (overwriting synced fields)
     remoteMapped.forEach((remoteObj) => {
       if (!remoteObj || !remoteObj.code) return;
       const key = remoteObj.code.toUpperCase();
@@ -164,6 +154,7 @@ class PromoCodeService {
           advanceAmount: remoteObj.advanceAmount ?? existingLocal.advanceAmount,
           isAdvancePayment: remoteObj.isAdvancePayment ?? existingLocal.isAdvancePayment,
           description: remoteObj.description || existingLocal.description,
+          isActive: remoteObj.isActive !== undefined ? remoteObj.isActive : existingLocal.isActive,
         });
       } else {
         mergedMap.set(key, remoteObj);
@@ -207,30 +198,43 @@ class PromoCodeService {
     }
 
     const currentCodes = this.getLocalCodes();
-    if (currentCodes.some((p) => p.code.toUpperCase() === code)) {
-      return { success: false, message: `Promo code "${code}" already exists in the system.` };
+    const existingIndex = currentCodes.findIndex((p) => p.code.toUpperCase() === code);
+    const isAdv = discountType === 'advance';
+
+    let newPromo: PromoCode;
+
+    if (existingIndex >= 0) {
+      newPromo = {
+        ...currentCodes[existingIndex],
+        code,
+        discountPercent: isAdv ? 0 : Math.round(discountPercent),
+        applicableScope,
+        discountType,
+        advanceAmount: isAdv ? advanceAmount : undefined,
+        isAdvancePayment: isAdv,
+        description: description?.trim() || (isAdv ? `Advance Payment ₹${advanceAmount}` : `${Math.round(discountPercent)}% Off Discount`),
+        isActive: true,
+      };
+      currentCodes[existingIndex] = newPromo;
+      this.saveLocalCodes([...currentCodes]);
+    } else {
+      newPromo = {
+        id: `promo-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        code,
+        discountPercent: isAdv ? 0 : Math.round(discountPercent),
+        applicableScope,
+        discountType,
+        advanceAmount: isAdv ? advanceAmount : undefined,
+        isAdvancePayment: isAdv,
+        description: description?.trim() || (isAdv ? `Advance Payment ₹${advanceAmount}` : `${Math.round(discountPercent)}% Off Discount`),
+        isActive: true,
+        redemptionCount: 0,
+        createdAt: new Date().toISOString().split('T')[0],
+      };
+      this.saveLocalCodes([newPromo, ...currentCodes]);
     }
 
-    const isAdv = discountType === 'advance';
-    const newPromo: PromoCode = {
-      id: `promo-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-      code,
-      discountPercent: isAdv ? 0 : Math.round(discountPercent),
-      applicableScope,
-      discountType,
-      advanceAmount: isAdv ? advanceAmount : undefined,
-      isAdvancePayment: isAdv,
-      description: description?.trim() || (isAdv ? `Advance Payment ₹${advanceAmount}` : `${Math.round(discountPercent)}% Off Discount`),
-      isActive: true,
-      redemptionCount: 0,
-      createdAt: new Date().toISOString().split('T')[0],
-    };
-
-    // Update LocalStorage immediately
-    const updated = [newPromo, ...currentCodes];
-    this.saveLocalCodes(updated);
-
-    // Save to Supabase if available (with fallback safety)
+    // Save/upsert to Supabase if available
     if (isSupabaseConfigured && supabase) {
       try {
         const { error } = await supabase.from('celestia_promo_codes').upsert(
@@ -244,15 +248,15 @@ class PromoCodeService {
               advance_amount: newPromo.advanceAmount,
               is_advance_payment: newPromo.isAdvancePayment,
               description: newPromo.description,
-              is_active: newPromo.isActive,
-              redemption_count: 0,
+              is_active: true,
+              redemption_count: newPromo.redemptionCount || 0,
               created_at: newPromo.createdAt,
             },
           ],
           { onConflict: 'code' }
         );
         if (error) {
-          console.warn('Supabase promo insert notice:', error.message);
+          console.warn('Supabase promo upsert notice:', error.message);
         }
       } catch (e) {
         console.warn('Could not persist new promo code to Supabase:', e);
@@ -262,7 +266,7 @@ class PromoCodeService {
     return {
       success: true,
       promo: newPromo,
-      message: `Promo code "${code}" (${isAdv ? `Advance ₹${advanceAmount}` : `${newPromo.discountPercent}% OFF`}) created successfully!`,
+      message: `Promo code "${code}" (${isAdv ? `Advance ₹${advanceAmount}` : `${newPromo.discountPercent}% OFF`}) is now ACTIVE!`,
     };
   }
 
@@ -279,7 +283,7 @@ class PromoCodeService {
     }
 
     const codes = await this.getPromoCodes();
-    const updated = codes.map((p) => (p.id === id ? { ...p, isActive } : p));
+    const updated = codes.map((p) => (p.id === id || p.code.toUpperCase() === id.toUpperCase() ? { ...p, isActive } : p));
     this.saveLocalCodes(updated);
 
     if (isSupabaseConfigured && supabase) {
@@ -293,7 +297,7 @@ class PromoCodeService {
       }
     }
 
-    const targetCode = codes.find((p) => p.id === id)?.code || 'Code';
+    const targetCode = codes.find((p) => p.id === id || p.code.toUpperCase() === id.toUpperCase())?.code || 'Code';
     return {
       success: true,
       message: `Promo code "${targetCode}" is now ${isActive ? 'ACTIVE' : 'INACTIVE (Deactivated)'}.`,
@@ -310,8 +314,8 @@ class PromoCodeService {
     }
 
     const codes = await this.getPromoCodes();
-    const target = codes.find((p) => p.id === id);
-    const updated = codes.filter((p) => p.id !== id);
+    const target = codes.find((p) => p.id === id || p.code.toUpperCase() === id.toUpperCase());
+    const updated = codes.filter((p) => p.id !== id && p.code.toUpperCase() !== id.toUpperCase());
     this.saveLocalCodes(updated);
 
     if (isSupabaseConfigured && supabase) {
@@ -344,9 +348,46 @@ class PromoCodeService {
       return { valid: false, message: 'Please enter a promo code.' };
     }
 
+    // 1. Fetch current merged promo codes list
     const codes = await this.getPromoCodes();
-    const match = codes.find((p) => p.code.toUpperCase() === clean);
+    let match = codes.find((p) => p.code.toUpperCase() === clean);
 
+    // 2. Direct Supabase Query Fallback if not found in local list (e.g. created on another device)
+    if (!match && isSupabaseConfigured && supabase) {
+      try {
+        const { data } = await supabase
+          .from('celestia_promo_codes')
+          .select('*')
+          .ilike('code', clean)
+          .maybeSingle();
+
+        if (data) {
+          match = {
+            id: data.id || `promo-${data.code}`,
+            code: String(data.code).toUpperCase(),
+            discountPercent: data.discount_percent ?? data.discountPercent ?? 0,
+            applicableScope: data.applicable_scope ?? data.applicableScope ?? 'all',
+            discountType: data.discount_type ?? data.discountType ?? (data.is_advance_payment || data.isAdvancePayment ? 'advance' : 'percentage'),
+            advanceAmount: data.advance_amount ?? data.advanceAmount,
+            isAdvancePayment: data.is_advance_payment ?? data.isAdvancePayment ?? (data.discount_type === 'advance'),
+            description: data.description || 'Promotional Discount Code',
+            isActive: data.is_active ?? data.isActive ?? true,
+            redemptionCount: data.redemption_count ?? data.redemptionCount ?? 0,
+            createdAt: data.created_at ?? data.createdAt ?? new Date().toISOString(),
+          };
+
+          // Cache locally
+          const currentLocals = this.getLocalCodes();
+          if (!currentLocals.some((p) => p.code.toUpperCase() === match!.code)) {
+            this.saveLocalCodes([match, ...currentLocals]);
+          }
+        }
+      } catch (err) {
+        console.warn('Direct Supabase promo query notice:', err);
+      }
+    }
+
+    // If still not matched, reject as invalid
     if (!match) {
       return { valid: false, message: `Promo code "${clean}" is invalid or does not exist.` };
     }
@@ -423,7 +464,7 @@ class PromoCodeService {
 
     const codes = await this.getPromoCodes();
     const updated = codes.map((p) =>
-      p.code.toUpperCase() === clean ? { ...p, redemptionCount: p.redemptionCount + 1 } : p
+      p.code.toUpperCase() === clean ? { ...p, redemptionCount: (p.redemptionCount || 0) + 1 } : p
     );
     this.saveLocalCodes(updated);
 
@@ -433,7 +474,7 @@ class PromoCodeService {
         if (match) {
           await supabase
             .from('celestia_promo_codes')
-            .update({ redemption_count: match.redemptionCount + 1 })
+            .update({ redemption_count: (match.redemptionCount || 0) + 1 })
             .eq('id', match.id);
         }
       } catch (e) {
@@ -474,6 +515,19 @@ class PromoCodeService {
 
     window.addEventListener('celestia-promocodes-changed', handleCustomEvent);
     window.addEventListener('storage', handleCustomEvent);
+
+    if (this.bc) {
+      this.bc.onmessage = async (event) => {
+        if (event.data?.type === 'PROMOS_UPDATED') {
+          if (Array.isArray(event.data.codes)) {
+            onChange(event.data.codes);
+          } else {
+            const updated = await this.getPromoCodes();
+            onChange(updated);
+          }
+        }
+      };
+    }
 
     return () => {
       if (channel && supabase) {

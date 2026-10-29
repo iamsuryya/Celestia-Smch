@@ -216,6 +216,7 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
 
   // Modals state
   const [inspectRegistration, setInspectRegistration] = useState<RegistrationSubmission | null>(null);
+  const [paymentInputTotal, setPaymentInputTotal] = useState<number>(0);
   const [paymentInputPaid, setPaymentInputPaid] = useState<number>(0);
   const [paymentInputNotes, setPaymentInputNotes] = useState<string>('');
   const [isSavingPayment, setIsSavingPayment] = useState<boolean>(false);
@@ -226,6 +227,7 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
       const initialPaid = inspectRegistration.paidAmount !== undefined 
         ? inspectRegistration.paidAmount 
         : (inspectRegistration.paymentConfirmed ? tot : 0);
+      setPaymentInputTotal(tot);
       setPaymentInputPaid(initialPaid);
       setPaymentInputNotes(inspectRegistration.paymentNotes || '');
     }
@@ -389,7 +391,13 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
   const handleSavePaymentDetails = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inspectRegistration) return;
-    const total = Number(inspectRegistration.totalAmount) || 0;
+
+    if (!isMainAdmin) {
+      showToast('Permission Denied: Only Main Central Admin can edit registration fee or payment details.');
+      return;
+    }
+
+    const total = Math.max(0, Number(paymentInputTotal) || 0);
     const paid = Math.max(0, Number(paymentInputPaid) || 0);
 
     if (paid > total && total > 0) {
@@ -403,26 +411,37 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
       const res = await supabaseRegistrationService.updatePaymentDetails(
         inspectRegistration.id,
         paid,
-        paymentInputNotes
+        paymentInputNotes,
+        total
       );
       if (res.success) {
-        showToast(res.message || 'Payment details updated!');
+        showToast(res.message || 'Payment details updated successfully!');
+        const pend = Math.max(0, total - paid);
+        let st: PaymentStatus = 'Pending';
+        if (pend === 0 && total > 0) st = 'Paid in Full';
+        else if (paid > 0) st = 'Advance Paid';
+
+        const updatedReg: RegistrationSubmission = {
+          ...inspectRegistration,
+          totalAmount: total,
+          paidAmount: paid,
+          pendingAmount: pend,
+          paymentNotes: paymentInputNotes,
+          paymentStatus: st,
+          paymentConfirmed: st === 'Paid in Full' || inspectRegistration.paymentConfirmed,
+        };
+
+        setInspectRegistration(updatedReg);
+
+        setCloudRegistrations((prev) =>
+          prev.map((r) =>
+            r.id === inspectRegistration.id || r.registrationCode === inspectRegistration.registrationCode
+              ? updatedReg
+              : r
+          )
+        );
+
         await loadData();
-        setInspectRegistration((prev) => {
-          if (!prev) return null;
-          const pend = Math.max(0, total - paid);
-          let st: PaymentStatus = 'Pending';
-          if (pend === 0 && total > 0) st = 'Paid in Full';
-          else if (paid > 0) st = 'Advance Paid';
-          return {
-            ...prev,
-            paidAmount: paid,
-            pendingAmount: pend,
-            paymentNotes: paymentInputNotes,
-            paymentStatus: st,
-            paymentConfirmed: st === 'Paid in Full' || prev.paymentConfirmed,
-          };
-        });
       } else {
         showToast(`Failed to update payment: ${res.message}`);
       }
@@ -3614,11 +3633,18 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                     <div>
                       <label className="text-slate-400 text-[10px] uppercase font-mono block mb-1">
-                        Total Registration Fee
+                        Total Registration Fee (₹)
                       </label>
-                      <div className="px-3 py-2 rounded-lg bg-black/50 border border-white/10 font-mono font-bold text-white text-sm">
-                        ₹{Number(inspectRegistration.totalAmount).toLocaleString('en-IN')}
-                      </div>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        disabled={!isMainAdmin}
+                        value={paymentInputTotal}
+                        onChange={(e) => setPaymentInputTotal(Math.max(0, Number(e.target.value) || 0))}
+                        className="w-full px-3 py-2 rounded-lg bg-black/60 border border-[#D4AF37]/50 font-mono font-bold text-white text-sm focus:outline-none focus:border-[#D4AF37] disabled:opacity-60"
+                        placeholder="0"
+                      />
                     </div>
 
                     <div>
@@ -3629,9 +3655,10 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                         type="number"
                         min="0"
                         step="1"
+                        disabled={!isMainAdmin}
                         value={paymentInputPaid}
                         onChange={(e) => setPaymentInputPaid(Math.max(0, Number(e.target.value) || 0))}
-                        className="w-full px-3 py-2 rounded-lg bg-black/60 border border-amber-500/50 font-mono font-bold text-emerald-300 text-sm focus:outline-none focus:border-[#D4AF37]"
+                        className="w-full px-3 py-2 rounded-lg bg-black/60 border border-amber-500/50 font-mono font-bold text-emerald-300 text-sm focus:outline-none focus:border-[#D4AF37] disabled:opacity-60"
                         placeholder="0"
                       />
                     </div>
@@ -3641,11 +3668,11 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                         Calculated Pending Balance
                       </label>
                       <div className={`px-3 py-2 rounded-lg bg-black/50 border font-mono font-bold text-sm ${
-                        Math.max(0, Number(inspectRegistration.totalAmount || 0) - Number(paymentInputPaid || 0)) > 0
+                        Math.max(0, paymentInputTotal - paymentInputPaid) > 0
                           ? 'border-amber-500/50 text-amber-300'
                           : 'border-emerald-500/50 text-emerald-300'
                       }`}>
-                        ₹{Math.max(0, Number(inspectRegistration.totalAmount || 0) - Number(paymentInputPaid || 0)).toLocaleString('en-IN')}
+                        ₹{Math.max(0, paymentInputTotal - paymentInputPaid).toLocaleString('en-IN')}
                       </div>
                     </div>
                   </div>
@@ -4547,6 +4574,20 @@ CREATE TABLE IF NOT EXISTS public.payment_submissions (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS public.celestia_promo_codes (
+    id TEXT PRIMARY KEY,
+    code TEXT UNIQUE NOT NULL,
+    discount_percent NUMERIC DEFAULT 0,
+    applicable_scope TEXT DEFAULT 'all',
+    discount_type TEXT DEFAULT 'percentage',
+    advance_amount NUMERIC DEFAULT 0,
+    is_advance_payment BOOLEAN DEFAULT false,
+    description TEXT,
+    is_active BOOLEAN DEFAULT true,
+    redemption_count INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
 ALTER TABLE public.payment_submissions ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
 ALTER TABLE public.payment_submissions ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
 
@@ -4556,6 +4597,7 @@ GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;
 ALTER TABLE public.registrations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.participants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.payment_submissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.celestia_promo_codes ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Allow public insert to registrations" ON public.registrations;
 CREATE POLICY "Allow public insert to registrations" ON public.registrations FOR ALL USING (true) WITH CHECK (true);
@@ -4564,7 +4606,10 @@ DROP POLICY IF EXISTS "Allow public insert to participants" ON public.participan
 CREATE POLICY "Allow public insert to participants" ON public.participants FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Allow public insert to payment_submissions" ON public.payment_submissions;
-CREATE POLICY "Allow public insert to payment_submissions" ON public.payment_submissions FOR ALL USING (true) WITH CHECK (true);`;
+CREATE POLICY "Allow public insert to payment_submissions" ON public.payment_submissions FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access to celestia_promo_codes" ON public.celestia_promo_codes;
+CREATE POLICY "Allow public access to celestia_promo_codes" ON public.celestia_promo_codes FOR ALL USING (true) WITH CHECK (true);`;
                       navigator.clipboard.writeText(sql);
                       setCopiedSql(true);
                       showToast('SQL Schema copied to clipboard!');
