@@ -49,8 +49,7 @@ export function getEventRegistrationStatusMap(): EventRegistrationStatusMap {
 
 /**
  * Returns whether registration for a specific event is open.
- * Solo Singing (Seraphia / SERAPHIA) defaults to CLOSED (false) unless explicitly toggled OPEN by admin.
- * All other events default to OPEN (true) until explicitly toggled CLOSED by admin.
+ * All festival events (including Seraphia) default to OPEN (true) until explicitly toggled CLOSED by admin.
  */
 export function isEventRegistrationOpen(eventCodeOrId: string | undefined): boolean {
   if (!isGlobalRegistrationOpen()) return false;
@@ -86,13 +85,7 @@ export function isEventRegistrationOpen(eventCodeOrId: string | undefined): bool
     if (map[found.code.toLowerCase()] !== undefined) return map[found.code.toLowerCase()];
   }
 
-  // DEFAULT BEHAVIOR:
-  // Solo Singing (Seraphia) is REGISTRATION CLOSED by default as requested!
-  if (normalized === 'seraphia' || normalized === 'seraphia') {
-    return false;
-  }
-
-  // Default is OPEN for all other events
+  // Default is OPEN for all festival events (including Seraphia)
   return true;
 }
 
@@ -198,6 +191,12 @@ export async function loadStatusFromSupabase(): Promise<void> {
       const parsed = typeof data.setting_value === 'string' ? JSON.parse(data.setting_value) : data.setting_value;
       if (parsed && typeof parsed === 'object') {
         if (parsed.map) {
+          // If Seraphia was closed in legacy cloud settings, ensure it is open like other events
+          if (parsed.map['seraphia'] === false || parsed.map['SERAPHIA'] === false) {
+            parsed.map['seraphia'] = true;
+            parsed.map['SERAPHIA'] = true;
+            saveStatusToSupabase(parsed.map, parsed.globalOpen ?? true).catch(() => {});
+          }
           localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(parsed.map));
         }
         if (typeof parsed.globalOpen === 'boolean') {
@@ -211,8 +210,20 @@ export async function loadStatusFromSupabase(): Promise<void> {
   }
 }
 
-// Automatically initiate cloud status sync on import
+// Automatically initiate cloud status sync on import and unblock Seraphia
 if (typeof window !== 'undefined') {
+  try {
+    const map = getEventRegistrationStatusMap();
+    if (map['seraphia'] === false || map['SERAPHIA'] === false || !localStorage.getItem('celestia_seraphia_opened_v2')) {
+      map['seraphia'] = true;
+      map['SERAPHIA'] = true;
+      localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(map));
+      localStorage.setItem('celestia_seraphia_opened_v2', 'true');
+      window.dispatchEvent(new CustomEvent('celestia-registration-status-changed'));
+      saveStatusToSupabase(map, isGlobalRegistrationOpen()).catch(() => {});
+    }
+  } catch {}
+
   setTimeout(() => {
     loadStatusFromSupabase().catch(() => {});
   }, 500);
