@@ -36,6 +36,14 @@ export const EventCard: React.FC<EventCardProps> = ({
           onError={(e) => handleEventImageError(e, event)}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-[#080C1F] via-[#080C1F]/40 to-transparent" />
+        
+        {!isRegOpen && (
+          <div className="absolute top-3 left-3 bg-rose-600/90 text-white font-mono font-bold text-[10px] sm:text-[11px] uppercase tracking-wider px-2.5 py-1 rounded-md shadow-lg border border-rose-400 backdrop-blur-md flex items-center gap-1.5 z-10">
+            <span className="w-2 h-2 rounded-full bg-rose-200 animate-pulse" />
+            <span>REGISTRATION CLOSED</span>
+          </div>
+        )}
+
         <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between text-xs">
           <span className="font-mono font-bold text-[#E6C57D] bg-[#080C1F]/80 px-2 py-0.5 rounded border border-[#D4AF37]/30">
             {event.code}
@@ -116,9 +124,9 @@ export const EventCard: React.FC<EventCardProps> = ({
           {!isRegOpen ? (
             <button
               disabled
-              className="min-h-[40px] py-2 px-3 sm:px-4 text-xs font-semibold tracking-wider text-rose-300 bg-rose-950/40 border border-rose-500/30 rounded-lg cursor-not-allowed opacity-80 whitespace-nowrap"
+              className="min-h-[40px] py-2 px-3 sm:px-4 text-[11px] font-bold tracking-wider uppercase text-rose-300 bg-rose-950/60 border border-rose-500/50 rounded-lg cursor-not-allowed whitespace-nowrap shadow-inner"
             >
-              Closed
+              REGISTRATION CLOSED
             </button>
           ) : (
             <button

@@ -1,4 +1,5 @@
 import { EVENTS_DATA } from '../data/festivalData';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 const STATUS_STORAGE_KEY = 'celestia_event_registration_status';
 const GLOBAL_STATUS_STORAGE_KEY = 'celestia_global_registration_open';
@@ -29,6 +30,7 @@ export function setGlobalRegistrationOpen(isOpen: boolean): void {
   try {
     localStorage.setItem(GLOBAL_STATUS_STORAGE_KEY, String(isOpen));
     window.dispatchEvent(new CustomEvent('celestia-registration-status-changed'));
+    saveStatusToSupabase(getEventRegistrationStatusMap(), isOpen);
   } catch {}
 }
 
@@ -47,8 +49,8 @@ export function getEventRegistrationStatusMap(): EventRegistrationStatusMap {
 
 /**
  * Returns whether registration for a specific event is open.
- * GUARANTEE: Never auto-stops by time or date!
- * Stays OPEN until an admin explicitly toggles it off.
+ * Solo Singing (Seraphia / SERAPHIA) defaults to CLOSED (false) unless explicitly toggled OPEN by admin.
+ * All other events default to OPEN (true) until explicitly toggled CLOSED by admin.
  */
 export function isEventRegistrationOpen(eventCodeOrId: string | undefined): boolean {
   if (!isGlobalRegistrationOpen()) return false;
@@ -57,37 +59,45 @@ export function isEventRegistrationOpen(eventCodeOrId: string | undefined): bool
   const map = getEventRegistrationStatusMap();
   const normalized = eventCodeOrId.toLowerCase().trim();
 
-  // 1. Direct exact key lookup
+  // 1. Direct exact key lookup in status map
   if (map[eventCodeOrId] !== undefined) {
-    if (map[eventCodeOrId] === false) return false;
+    return map[eventCodeOrId];
   }
 
-  // 2. Case-insensitive key lookup in map
+  // 2. Case-insensitive key lookup in status map
+  if (map[normalized] !== undefined) {
+    return map[normalized];
+  }
+
   for (const [key, val] of Object.entries(map)) {
     if (key.toLowerCase().trim() === normalized) {
-      if (val === false) return false;
+      return val;
     }
   }
 
-  // 3. Match against EVENTS_DATA by ID or Code
+  // 3. Match against EVENTS_DATA by ID or Code in status map
   const found = EVENTS_DATA.find(
     (e) => e.id.toLowerCase() === normalized || e.code.toLowerCase() === normalized
   );
   if (found) {
-    if (map[found.id] === false || map[found.code] === false) {
-      return false;
-    }
-    if (map[found.id.toLowerCase()] === false || map[found.code.toLowerCase()] === false) {
-      return false;
-    }
+    if (map[found.id] !== undefined) return map[found.id];
+    if (map[found.code] !== undefined) return map[found.code];
+    if (map[found.id.toLowerCase()] !== undefined) return map[found.id.toLowerCase()];
+    if (map[found.code.toLowerCase()] !== undefined) return map[found.code.toLowerCase()];
   }
 
-  // Default is OPEN for all events!
+  // DEFAULT BEHAVIOR:
+  // Solo Singing (Seraphia) is REGISTRATION CLOSED by default as requested!
+  if (normalized === 'seraphia' || normalized === 'seraphia') {
+    return false;
+  }
+
+  // Default is OPEN for all other events
   return true;
 }
 
 /**
- * Sets registration open/closed status for a single event.
+ * Sets registration open/closed status for a single event and syncs across devices via Supabase.
  */
 export function setEventRegistrationOpen(eventCodeOrId: string, isOpen: boolean): void {
   try {
@@ -111,6 +121,9 @@ export function setEventRegistrationOpen(eventCodeOrId: string, isOpen: boolean)
     localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(map));
     window.dispatchEvent(new CustomEvent('celestia-registration-status-changed', { detail: { eventCodeOrId, isOpen } }));
     window.dispatchEvent(new Event('storage'));
+
+    // Persist to Supabase DB
+    saveStatusToSupabase(map, isGlobalRegistrationOpen());
   } catch {}
 }
 
@@ -130,7 +143,79 @@ export function setAllEventsRegistrationOpen(isOpen: boolean): void {
     localStorage.setItem(GLOBAL_STATUS_STORAGE_KEY, String(isOpen));
     window.dispatchEvent(new CustomEvent('celestia-registration-status-changed', { detail: { isOpen } }));
     window.dispatchEvent(new Event('storage'));
+
+    // Persist to Supabase DB
+    saveStatusToSupabase(map, isOpen);
   } catch {}
+}
+
+/**
+ * Persists event status map to Supabase cloud database for cross-device consistency
+ */
+export async function saveStatusToSupabase(map: EventRegistrationStatusMap, isGlobalOpen: boolean = true): Promise<void> {
+  if (!isSupabaseConfigured || !supabase) return;
+  try {
+    const payload = {
+      setting_key: 'event_registration_status',
+      setting_value: JSON.stringify({ map, globalOpen: isGlobalOpen }),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data: existing } = await supabase
+      .from('celestia_app_settings')
+      .select('setting_key')
+      .eq('setting_key', 'event_registration_status')
+      .maybeSingle();
+
+    if (existing) {
+      await supabase
+        .from('celestia_app_settings')
+        .update(payload)
+        .eq('setting_key', 'event_registration_status');
+    } else {
+      await supabase
+        .from('celestia_app_settings')
+        .insert([payload]);
+    }
+  } catch (err) {
+    // Fail silently or handle fallback
+  }
+}
+
+/**
+ * Loads event registration status map from Supabase cloud DB to sync Admin changes across all devices
+ */
+export async function loadStatusFromSupabase(): Promise<void> {
+  if (!isSupabaseConfigured || !supabase) return;
+  try {
+    const { data, error } = await supabase
+      .from('celestia_app_settings')
+      .select('setting_value')
+      .eq('setting_key', 'event_registration_status')
+      .maybeSingle();
+
+    if (!error && data && data.setting_value) {
+      const parsed = typeof data.setting_value === 'string' ? JSON.parse(data.setting_value) : data.setting_value;
+      if (parsed && typeof parsed === 'object') {
+        if (parsed.map) {
+          localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(parsed.map));
+        }
+        if (typeof parsed.globalOpen === 'boolean') {
+          localStorage.setItem(GLOBAL_STATUS_STORAGE_KEY, String(parsed.globalOpen));
+        }
+        window.dispatchEvent(new CustomEvent('celestia-registration-status-changed'));
+      }
+    }
+  } catch (err) {
+    // Fail silently
+  }
+}
+
+// Automatically initiate cloud status sync on import
+if (typeof window !== 'undefined') {
+  setTimeout(() => {
+    loadStatusFromSupabase().catch(() => {});
+  }, 500);
 }
 
 /**
@@ -177,4 +262,3 @@ export function setAutoApproveEnabled(enabled: boolean): void {
     window.dispatchEvent(new CustomEvent('celestia-auto-approve-changed'));
   } catch {}
 }
-
