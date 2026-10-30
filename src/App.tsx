@@ -114,7 +114,7 @@ function AppContent() {
   const handleOpenRegister = (event?: EventItem) => {
     if (event) {
       if (!isEventRegistrationOpen(event.id) || !isEventRegistrationOpen(event.code)) {
-        alert(`Registration for ${event.title} (${event.code}) has been stopped by the Admin.`);
+        alert(`Registration Closed: ${event.title} (${event.code}) is no longer accepting registrations.`);
         return;
       }
     }

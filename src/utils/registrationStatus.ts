@@ -55,8 +55,32 @@ export function isEventRegistrationOpen(eventCodeOrId: string | undefined): bool
   if (!isGlobalRegistrationOpen()) return false;
   if (!eventCodeOrId) return true;
 
-  const map = getEventRegistrationStatusMap();
   const normalized = eventCodeOrId.toLowerCase().trim();
+
+  // Seraphia (Solo Singing) registration is closed / stopped
+  if (normalized === 'seraphia' || normalized === 'solo-singing') {
+    const seraphiaOverride = typeof window !== 'undefined' ? localStorage.getItem('celestia_seraphia_manual_override') : null;
+    if (seraphiaOverride !== null) {
+      return seraphiaOverride === 'true';
+    }
+    return false;
+  }
+
+  // Star Fusion / Starfusion (Group Dance) registration is closed / stopped
+  if (
+    normalized === 'starfusion' ||
+    normalized === 'star fusion' ||
+    normalized === 'star-fusion' ||
+    normalized === 'group-dance'
+  ) {
+    const starfusionOverride = typeof window !== 'undefined' ? localStorage.getItem('celestia_starfusion_manual_override') : null;
+    if (starfusionOverride !== null) {
+      return starfusionOverride === 'true';
+    }
+    return false;
+  }
+
+  const map = getEventRegistrationStatusMap();
 
   // 1. Direct exact key lookup in status map
   if (map[eventCodeOrId] !== undefined) {
@@ -85,11 +109,6 @@ export function isEventRegistrationOpen(eventCodeOrId: string | undefined): bool
     if (map[found.code.toLowerCase()] !== undefined) return map[found.code.toLowerCase()];
   }
 
-  // Seraphia (Solo Singing) registration is closed / stopped
-  if (normalized === 'seraphia' || normalized === 'solo-singing') {
-    return false;
-  }
-
   // Default is OPEN for all other festival events
   return true;
 }
@@ -101,6 +120,13 @@ export function setEventRegistrationOpen(eventCodeOrId: string, isOpen: boolean)
   try {
     const map = getEventRegistrationStatusMap();
     const normalized = eventCodeOrId.toLowerCase().trim();
+
+    if (normalized === 'starfusion' || normalized === 'star fusion' || normalized === 'star-fusion' || normalized === 'group-dance') {
+      localStorage.setItem('celestia_starfusion_manual_override', String(isOpen));
+    }
+    if (normalized === 'seraphia' || normalized === 'solo-singing') {
+      localStorage.setItem('celestia_seraphia_manual_override', String(isOpen));
+    }
     
     map[eventCodeOrId] = isOpen;
     map[normalized] = isOpen;
@@ -197,8 +223,15 @@ export async function loadStatusFromSupabase(): Promise<void> {
       if (parsed && typeof parsed === 'object') {
         if (parsed.map) {
           // Seraphia registration is stopped / closed
-          parsed.map['seraphia'] = false;
-          parsed.map['SERAPHIA'] = false;
+          if (localStorage.getItem('celestia_seraphia_manual_override') !== 'true') {
+            parsed.map['seraphia'] = false;
+            parsed.map['SERAPHIA'] = false;
+          }
+          // Star Fusion / Starfusion registration is stopped / closed
+          if (localStorage.getItem('celestia_starfusion_manual_override') !== 'true') {
+            parsed.map['starfusion'] = false;
+            parsed.map['STARFUSION'] = false;
+          }
           localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(parsed.map));
         }
         if (typeof parsed.globalOpen === 'boolean') {
@@ -212,15 +245,28 @@ export async function loadStatusFromSupabase(): Promise<void> {
   }
 }
 
-// Automatically initiate cloud status sync on import and stop Seraphia registration
+// Automatically initiate cloud status sync on import and stop Seraphia & Star Fusion registration
 if (typeof window !== 'undefined') {
   try {
     const map = getEventRegistrationStatusMap();
+    let changed = false;
+
     if (map['seraphia'] !== false || map['SERAPHIA'] !== false || !localStorage.getItem('celestia_seraphia_closed_final')) {
       map['seraphia'] = false;
       map['SERAPHIA'] = false;
-      localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(map));
       localStorage.setItem('celestia_seraphia_closed_final', 'true');
+      changed = true;
+    }
+
+    if (map['starfusion'] !== false || map['STARFUSION'] !== false || !localStorage.getItem('celestia_starfusion_closed_final')) {
+      map['starfusion'] = false;
+      map['STARFUSION'] = false;
+      localStorage.setItem('celestia_starfusion_closed_final', 'true');
+      changed = true;
+    }
+
+    if (changed) {
+      localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(map));
       window.dispatchEvent(new CustomEvent('celestia-registration-status-changed'));
       saveStatusToSupabase(map, isGlobalRegistrationOpen()).catch(() => {});
     }

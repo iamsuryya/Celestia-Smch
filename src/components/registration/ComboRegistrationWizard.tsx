@@ -113,19 +113,19 @@ export const ComboRegistrationWizard: React.FC<ComboRegistrationWizardProps> = (
   });
 
   // Celestia All-Access Specific Event Selection States
-  const [allAccessMajorId, setAllAccessMajorId] = useState<string>('starfusion');
+  const [allAccessMajorId, setAllAccessMajorId] = useState<string>('reflexia');
   const [allAccessMinor1Id, setAllAccessMinor1Id] = useState<string>('adblitz');
   const [allAccessMinor2Id, setAllAccessMinor2Id] = useState<string>('stellar-bid');
   const [allAccessSolo1Id, setAllAccessSolo1Id] = useState<string>('symphora');
   const [allAccessSolo2Id, setAllAccessSolo2Id] = useState<string>('eclipse');
 
   // Power Trio Specific Event Selection States (1 Major + 2 Minor)
-  const [powerTrioMajorId, setPowerTrioMajorId] = useState<string>('starfusion');
+  const [powerTrioMajorId, setPowerTrioMajorId] = useState<string>('reflexia');
   const [powerTrioMinor1Id, setPowerTrioMinor1Id] = useState<string>('adblitz');
   const [powerTrioMinor2Id, setPowerTrioMinor2Id] = useState<string>('stellar-bid');
 
   // Spotlight Squad Specific Event Selection States (1 Major + 2 Solo)
-  const [spotlightMajorId, setSpotlightMajorId] = useState<string>('starfusion');
+  const [spotlightMajorId, setSpotlightMajorId] = useState<string>('reflexia');
   const [spotlightSolo1Id, setSpotlightSolo1Id] = useState<string>('symphora');
   const [spotlightSolo2Id, setSpotlightSolo2Id] = useState<string>('eclipse');
 
@@ -885,22 +885,42 @@ export const ComboRegistrationWizard: React.FC<ComboRegistrationWizardProps> = (
                 1. Which Major Event are you participating in? (Select 1) *
               </label>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {majorEventsList.map(evt => (
-                  <button
-                    key={evt.id}
-                    type="button"
-                    onClick={() => setAllAccessMajorId(evt.id)}
-                    className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
-                      allAccessMajorId === evt.id
-                        ? 'bg-amber-950/60 border-amber-500 text-white shadow-lg'
-                        : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
-                    }`}
-                  >
-                    <span className="text-[10px] font-bold uppercase text-amber-400 block mb-1">Major Event</span>
-                    <h5 className="font-bold text-sm text-white">{evt.title}</h5>
-                    <span className="text-xs text-slate-400 block mt-0.5">{evt.categoryDisplay}</span>
-                  </button>
-                ))}
+                {majorEventsList.map(evt => {
+                  const isEvtOpen = isEventRegistrationOpen(evt.id) && isEventRegistrationOpen(evt.code);
+                  if (!isEvtOpen) {
+                    return (
+                      <div
+                        key={evt.id}
+                        className="p-4 rounded-xl border border-rose-900/40 bg-rose-950/20 text-slate-400 opacity-75 select-none"
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-bold uppercase text-slate-500">Major Event</span>
+                          <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-rose-900/80 text-rose-300 font-bold border border-rose-500/40">
+                            Registration Closed
+                          </span>
+                        </div>
+                        <h5 className="font-bold text-sm text-slate-400 line-through">{evt.title}</h5>
+                        <span className="text-xs text-rose-400/80 block mt-0.5">Registration Closed</span>
+                      </div>
+                    );
+                  }
+                  return (
+                    <button
+                      key={evt.id}
+                      type="button"
+                      onClick={() => setAllAccessMajorId(evt.id)}
+                      className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                        allAccessMajorId === evt.id
+                          ? 'bg-amber-950/60 border-amber-500 text-white shadow-lg'
+                          : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      <span className="text-[10px] font-bold uppercase text-amber-400 block mb-1">Major Event</span>
+                      <h5 className="font-bold text-sm text-white">{evt.title}</h5>
+                      <span className="text-xs text-slate-400 block mt-0.5">{evt.categoryDisplay}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -994,22 +1014,42 @@ export const ComboRegistrationWizard: React.FC<ComboRegistrationWizardProps> = (
                 1. Which Major Event are you participating in? (Select 1) *
               </label>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {majorEventsList.map(evt => (
-                  <button
-                    key={evt.id}
-                    type="button"
-                    onClick={() => setPowerTrioMajorId(evt.id)}
-                    className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
-                      powerTrioMajorId === evt.id
-                        ? 'bg-amber-950/60 border-amber-500 text-white shadow-lg'
-                        : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
-                    }`}
-                  >
-                    <span className="text-[10px] font-bold uppercase text-amber-400 block mb-1">Major Event</span>
-                    <h5 className="font-bold text-sm text-white">{evt.title}</h5>
-                    <span className="text-xs text-slate-400 block mt-0.5">{evt.categoryDisplay}</span>
-                  </button>
-                ))}
+                {majorEventsList.map(evt => {
+                  const isEvtOpen = isEventRegistrationOpen(evt.id) && isEventRegistrationOpen(evt.code);
+                  if (!isEvtOpen) {
+                    return (
+                      <div
+                        key={evt.id}
+                        className="p-4 rounded-xl border border-rose-900/40 bg-rose-950/20 text-slate-400 opacity-75 select-none"
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-bold uppercase text-slate-500">Major Event</span>
+                          <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-rose-900/80 text-rose-300 font-bold border border-rose-500/40">
+                            Registration Closed
+                          </span>
+                        </div>
+                        <h5 className="font-bold text-sm text-slate-400 line-through">{evt.title}</h5>
+                        <span className="text-xs text-rose-400/80 block mt-0.5">Registration Closed</span>
+                      </div>
+                    );
+                  }
+                  return (
+                    <button
+                      key={evt.id}
+                      type="button"
+                      onClick={() => setPowerTrioMajorId(evt.id)}
+                      className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                        powerTrioMajorId === evt.id
+                          ? 'bg-amber-950/60 border-amber-500 text-white shadow-lg'
+                          : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      <span className="text-[10px] font-bold uppercase text-amber-400 block mb-1">Major Event</span>
+                      <h5 className="font-bold text-sm text-white">{evt.title}</h5>
+                      <span className="text-xs text-slate-400 block mt-0.5">{evt.categoryDisplay}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -1069,22 +1109,42 @@ export const ComboRegistrationWizard: React.FC<ComboRegistrationWizardProps> = (
                 1. Which Major Event are you participating in? (Select 1) *
               </label>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {majorEventsList.map(evt => (
-                  <button
-                    key={evt.id}
-                    type="button"
-                    onClick={() => setSpotlightMajorId(evt.id)}
-                    className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
-                      spotlightMajorId === evt.id
-                        ? 'bg-amber-950/60 border-amber-500 text-white shadow-lg'
-                        : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
-                    }`}
-                  >
-                    <span className="text-[10px] font-bold uppercase text-amber-400 block mb-1">Major Event</span>
-                    <h5 className="font-bold text-sm text-white">{evt.title}</h5>
-                    <span className="text-xs text-slate-400 block mt-0.5">{evt.categoryDisplay}</span>
-                  </button>
-                ))}
+                {majorEventsList.map(evt => {
+                  const isEvtOpen = isEventRegistrationOpen(evt.id) && isEventRegistrationOpen(evt.code);
+                  if (!isEvtOpen) {
+                    return (
+                      <div
+                        key={evt.id}
+                        className="p-4 rounded-xl border border-rose-900/40 bg-rose-950/20 text-slate-400 opacity-75 select-none"
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-bold uppercase text-slate-500">Major Event</span>
+                          <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-rose-900/80 text-rose-300 font-bold border border-rose-500/40">
+                            Registration Closed
+                          </span>
+                        </div>
+                        <h5 className="font-bold text-sm text-slate-400 line-through">{evt.title}</h5>
+                        <span className="text-xs text-rose-400/80 block mt-0.5">Registration Closed</span>
+                      </div>
+                    );
+                  }
+                  return (
+                    <button
+                      key={evt.id}
+                      type="button"
+                      onClick={() => setSpotlightMajorId(evt.id)}
+                      className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                        spotlightMajorId === evt.id
+                          ? 'bg-amber-950/60 border-amber-500 text-white shadow-lg'
+                          : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      <span className="text-[10px] font-bold uppercase text-amber-400 block mb-1">Major Event</span>
+                      <h5 className="font-bold text-sm text-white">{evt.title}</h5>
+                      <span className="text-xs text-slate-400 block mt-0.5">{evt.categoryDisplay}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -1147,6 +1207,28 @@ export const ComboRegistrationWizard: React.FC<ComboRegistrationWizardProps> = (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {eligibleList.map(evt => {
               const isSelected = genericPickedEventIds.includes(evt.id);
+              const isEvtOpen = isEventRegistrationOpen(evt.id) && isEventRegistrationOpen(evt.code);
+
+              if (!isEvtOpen) {
+                return (
+                  <div
+                    key={evt.id}
+                    className="p-3.5 rounded-xl border border-rose-900/40 bg-rose-950/20 text-slate-400 opacity-70 flex items-center justify-between select-none"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] uppercase font-bold text-slate-500">{evt.type}</span>
+                        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-rose-900/80 text-rose-300 font-semibold border border-rose-500/30">
+                          Registration Closed
+                        </span>
+                      </div>
+                      <h5 className="font-bold text-sm text-slate-400 line-through">{evt.title}</h5>
+                      <span className="text-xs text-rose-400/70">{evt.categoryDisplay} · Closed</span>
+                    </div>
+                  </div>
+                );
+              }
+
               return (
                 <div
                   key={evt.id}

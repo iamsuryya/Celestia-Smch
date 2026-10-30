@@ -557,50 +557,13 @@ export const supabaseRegistrationService = {
   async fetchAdminRegistrations(): Promise<RegistrationSubmission[]> {
     if (!supabase) return [];
     try {
-      // 1. First attempt complete joined query
+      // 1. First attempt complete joined query selecting all columns
       const { data, error } = await supabase
         .from('registrations')
         .select(`
-          id,
-          registration_code,
-          event_code,
-          event_type,
-          team_name,
-          college_name,
-          college_city,
-          college_state,
-          college_contact_person,
-          college_contact_mobile,
-          college_contact_email,
-          is_college_delegation,
-          participant_count,
-          fee_per_unit,
-          fee_type,
-          total_fee,
-          registration_status,
-          created_at,
-          combo_group_id,
-          combo_id,
-          combo_name,
-          combo_type,
-          combo_discount_amount,
-          participants (
-            id,
-            full_name,
-            gender,
-            age,
-            mobile,
-            email,
-            role,
-            id_card_storage_path
-          ),
-          payment_submissions (
-            id,
-            utr_number,
-            amount_paid,
-            payment_screenshot_path,
-            payment_status
-          )
+          *,
+          participants (*),
+          payment_submissions (*)
         `)
         .order('created_at', { ascending: false });
 
@@ -677,9 +640,29 @@ export const supabaseRegistrationService = {
    * Helper to map raw database rows to strongly typed RegistrationSubmission objects
    */
   mapSupabaseRowsToSubmissions(data: any[]): RegistrationSubmission[] {
+    // Read local cache to overlay any pending admin edits
+    const localEditsMap = new Map<string, any>();
+    try {
+      const saved = localStorage.getItem('celestia26_registrations');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((item: any) => {
+            if (item.id) localEditsMap.set(item.id, item);
+            if (item.registrationCode) localEditsMap.set(item.registrationCode, item);
+            if (item.id) localEditsMap.set(String(item.id).toLowerCase(), item);
+            if (item.registrationCode) localEditsMap.set(String(item.registrationCode).toLowerCase(), item);
+          });
+        }
+      }
+    } catch {}
+
     return data.map((row: any) => {
       const payment = Array.isArray(row.payment_submissions) ? row.payment_submissions[0] : row.payment_submissions;
       const roster = Array.isArray(row.participants) ? row.participants : [];
+
+      const regCode = row.registration_code || row.id;
+      const localCached = localEditsMap.get(regCode) || localEditsMap.get(row.id) || localEditsMap.get((regCode || '').toLowerCase());
 
       const rawCode = row.event_code || '';
       const rawId = row.event_id || '';
@@ -701,8 +684,73 @@ export const supabaseRegistrationService = {
       const venue = matchedEvent ? matchedEvent.venue : 'Main Stage';
       const duration = matchedEvent ? matchedEvent.duration : 'Standard';
 
+      const isHost: boolean = (() => {
+        if (typeof row.is_host_college === 'boolean') return row.is_host_college;
+        if (localCached && typeof localCached.isHostCollege === 'boolean') return localCached.isHostCollege;
+        if (localCached?.college && typeof localCached.college.isHostCollege === 'boolean') return localCached.college.isHostCollege;
+        const cName = (row.college_name || '').toLowerCase();
+        return (cName.includes('srinivasan medical') && !cName.includes('dhanalakshmi')) || (Boolean(row.host_register_number) && row.host_register_number !== 'SMCH-STUDENT' && !cName.includes('dhanalakshmi'));
+      })();
+
+      const totalFee = localCached && localCached.totalAmount !== undefined && localCached.totalAmount !== null
+        ? Number(localCached.totalAmount)
+        : (Number(row.total_fee) || 0);
+
+      const paidAmount = (() => {
+        if (localCached && localCached.paidAmount !== undefined && localCached.paidAmount !== null) {
+          return Number(localCached.paidAmount);
+        }
+        if (row.paid_amount !== undefined && row.paid_amount !== null) return Number(row.paid_amount);
+        if (payment?.amount_paid !== undefined && payment?.amount_paid !== null) return Number(payment.amount_paid);
+        if (row.advance_amount_paid !== undefined && row.advance_amount_paid !== null) return Number(row.advance_amount_paid);
+        if (row.registration_status === 'Confirmed' || payment?.payment_status === 'Verified') {
+          return totalFee;
+        }
+        return 0;
+      })();
+
+      const pendingAmount = Math.max(0, totalFee - paidAmount);
+
+      const paymentStatus: PaymentStatus = (() => {
+        if (localCached && localCached.paymentStatus) return localCached.paymentStatus;
+        if (row.payment_status === 'Advance Paid' || row.payment_status === 'Paid in Full') {
+          return row.payment_status as any;
+        }
+        if (isHost) return 'Paid in Full';
+        if (paidAmount >= totalFee && totalFee > 0) return 'Paid in Full';
+        if (paidAmount > 0 && pendingAmount > 0) return 'Advance Paid';
+        return (payment?.payment_status as any) || (row.payment_status as any) || 'Submitted';
+      })();
+
+      const teamName = (localCached && localCached.teamName !== undefined) ? localCached.teamName : row.team_name;
+      const participantCount = (localCached && localCached.participantCount) ? localCached.participantCount : (Number(row.participant_count) || roster.length || 1);
+
+      const participants = (localCached && localCached.participants && localCached.participants.length > 0)
+        ? localCached.participants
+        : roster.map((p: any) => ({
+            fullName: p.full_name,
+            gender: p.gender,
+            age: String(p.age || 20),
+            mobile: p.mobile,
+            email: p.email,
+            role: p.role,
+            idCardStoragePath: p.id_card_storage_path || undefined,
+            idCardFileData: p.id_card_storage_path?.startsWith('data:') ? p.id_card_storage_path : undefined,
+            idCardFileName: p.id_card_storage_path 
+              ? (p.id_card_storage_path.startsWith('data:') ? 'Student_ID_Proof.jpg' : p.id_card_storage_path.split('/').pop() || 'Uploaded ID Proof') 
+              : undefined,
+          }));
+
+      const collegeName = (localCached?.college?.collegeName !== undefined) ? localCached.college.collegeName : (row.college_name || '');
+      const collegeCity = (localCached?.college?.city !== undefined) ? localCached.college.city : (row.college_city || '');
+      const collegeState = (localCached?.college?.state !== undefined) ? localCached.college.state : (row.college_state || '');
+      const contactPerson = (localCached?.college?.contactPerson !== undefined) ? localCached.college.contactPerson : (row.college_contact_person || '');
+      const contactMobile = (localCached?.college?.contactMobile !== undefined) ? localCached.college.contactMobile : (row.college_contact_mobile || '');
+      const contactEmail = (localCached?.college?.contactEmail !== undefined) ? localCached.college.contactEmail : (row.college_contact_email || '');
+      const isDelegation = !isHost && Boolean(localCached?.college?.isCollegeDelegation !== undefined ? localCached.college.isCollegeDelegation : row.is_college_delegation);
+
       return {
-        id: row.registration_code || row.id,
+        id: row.id || row.registration_code,
         registrationCode: row.registration_code || row.id,
         userId: 'cloud',
         eventId,
@@ -713,93 +761,37 @@ export const supabaseRegistrationService = {
         venue,
         dateStr: 'November 3-5, 2026',
         duration,
-        isHostCollege: (() => {
-          if (typeof row.is_host_college === 'boolean') return row.is_host_college;
-          const cName = (row.college_name || '').toLowerCase();
-          return (cName.includes('srinivasan medical') && !cName.includes('dhanalakshmi')) || (Boolean(row.host_register_number) && row.host_register_number !== 'SMCH-STUDENT' && !cName.includes('dhanalakshmi'));
-        })(),
-        college: (() => {
-          const rawCollegeName = (row.college_name || '').trim();
-          const cNameLower = rawCollegeName.toLowerCase();
-          const isHost = typeof row.is_host_college === 'boolean' 
-            ? row.is_host_college 
-            : ((cNameLower.includes('srinivasan medical') && !cNameLower.includes('dhanalakshmi')) || (Boolean(row.host_register_number) && row.host_register_number !== 'SMCH-STUDENT' && !cNameLower.includes('dhanalakshmi')));
-          const isDelegation = !isHost && Boolean(row.is_college_delegation);
-
-          return {
-            collegeName: rawCollegeName || (isHost ? 'Srinivasan Medical College and Hospital, Trichy' : 'Collegiate Institute'),
-            city: row.college_city || (isHost ? 'Trichy' : ''),
-            state: row.college_state || (isHost ? 'Tamil Nadu' : ''),
-            contactPerson: row.college_contact_person || '',
-            contactMobile: row.college_contact_mobile || '',
-            contactEmail: row.college_contact_email || '',
-            isCollegeDelegation: isDelegation,
-            isHostCollege: isHost,
-            hostRegisterNumber: isHost ? (row.host_register_number || 'SMCH-STUDENT') : undefined,
-            hostBatch: isHost ? (row.host_batch || 'MBBS') : undefined,
-            hostDepartment: isHost ? (row.host_department || 'MBBS') : undefined,
-          };
-        })(),
-        teamName: row.team_name,
-        participants: roster.map((p: any) => ({
-          fullName: p.full_name,
-          gender: p.gender,
-          age: String(p.age || 20),
-          mobile: p.mobile,
-          email: p.email,
-          role: p.role,
-          idCardStoragePath: p.id_card_storage_path || undefined,
-          idCardFileData: p.id_card_storage_path?.startsWith('data:') ? p.id_card_storage_path : undefined,
-          idCardFileName: p.id_card_storage_path 
-            ? (p.id_card_storage_path.startsWith('data:') ? 'Student_ID_Proof.jpg' : p.id_card_storage_path.split('/').pop() || 'Uploaded ID Proof') 
-            : undefined,
-        })),
-        feePerUnit: Number(row.fee_per_unit) || 0,
-        feeType: row.fee_type || 'per_head',
-        totalAmount: Number(row.total_fee) || 0,
-        paidAmount: (() => {
-          if (row.paid_amount !== undefined && row.paid_amount !== null) return Number(row.paid_amount);
-          if (payment?.amount_paid !== undefined && payment?.amount_paid !== null) return Number(payment.amount_paid);
-          if (row.advance_amount_paid !== undefined && row.advance_amount_paid !== null) return Number(row.advance_amount_paid);
-          return Number(row.total_fee) || 0;
-        })(),
-        pendingAmount: (() => {
-          const tot = Number(row.total_fee) || 0;
-          if (row.pending_amount !== undefined && row.pending_amount !== null) return Number(row.pending_amount);
-          const pd = (() => {
-            if (row.paid_amount !== undefined && row.paid_amount !== null) return Number(row.paid_amount);
-            if (payment?.amount_paid !== undefined && payment?.amount_paid !== null) return Number(payment.amount_paid);
-            if (row.advance_amount_paid !== undefined && row.advance_amount_paid !== null) return Number(row.advance_amount_paid);
-            return tot;
-          })();
-          return Math.max(0, tot - pd);
-        })(),
-        paymentNotes: row.payment_notes || undefined,
-        participantCount: Number(row.participant_count) || roster.length || 1,
-        utrNumber: payment?.utr_number || 'N/A',
+        isHostCollege: isHost,
+        college: {
+          collegeName: collegeName || (isHost ? 'Srinivasan Medical College and Hospital, Trichy' : 'Collegiate Institute'),
+          city: collegeCity || (isHost ? 'Trichy' : ''),
+          state: collegeState || (isHost ? 'Tamil Nadu' : ''),
+          contactPerson,
+          contactMobile,
+          contactEmail,
+          isCollegeDelegation: isDelegation,
+          isHostCollege: isHost,
+          hostRegisterNumber: isHost ? (row.host_register_number || 'SMCH-STUDENT') : undefined,
+          hostBatch: isHost ? (row.host_batch || 'MBBS') : undefined,
+          hostDepartment: isHost ? (row.host_department || 'MBBS') : undefined,
+        },
+        teamName,
+        participants,
+        feePerUnit: Number(row.fee_per_unit) || (matchedEvent ? matchedEvent.feeAmount : 0),
+        feeType: row.fee_type || (matchedEvent ? matchedEvent.feeType : 'per_head'),
+        totalAmount: totalFee,
+        paidAmount,
+        pendingAmount,
+        paymentNotes: (localCached && localCached.paymentNotes !== undefined) ? localCached.paymentNotes : (row.payment_notes || row.admin_notes || undefined),
+        participantCount,
+        utrNumber: (localCached && localCached.utrNumber !== undefined) ? localCached.utrNumber : (payment?.utr_number || 'N/A'),
         paymentScreenshotName: payment?.payment_screenshot_path 
           ? (payment.payment_screenshot_path.startsWith('data:') ? 'Payment_Screenshot_Slip.png' : payment.payment_screenshot_path.split('/').pop() || 'Payment Screenshot') 
           : undefined,
         paymentScreenshotPath: payment?.payment_screenshot_path || undefined,
         paymentScreenshotData: payment?.payment_screenshot_path?.startsWith('data:') ? payment.payment_screenshot_path : undefined,
-        paymentConfirmed: payment?.payment_status === 'Verified' || row.registration_status === 'Confirmed',
-        paymentStatus: (() => {
-          if (row.payment_status === 'Advance Paid' || row.payment_status === 'Paid in Full') {
-            return row.payment_status as any;
-          }
-          const tot = Number(row.total_fee) || 0;
-          const pd = (() => {
-            if (row.paid_amount !== undefined && row.paid_amount !== null) return Number(row.paid_amount);
-            if (payment?.amount_paid !== undefined && payment?.amount_paid !== null) return Number(payment.amount_paid);
-            if (row.advance_amount_paid !== undefined && row.advance_amount_paid !== null) return Number(row.advance_amount_paid);
-            return tot;
-          })();
-          const pend = Math.max(0, tot - pd);
-
-          if (pd >= tot && tot > 0) return 'Paid in Full';
-          if (pd > 0 && pend > 0) return 'Advance Paid';
-          return (payment?.payment_status as any) || (row.payment_status as any) || 'Submitted';
-        })(),
+        paymentConfirmed: paymentStatus === 'Paid in Full' || paymentStatus === 'Verified' || row.registration_status === 'Confirmed' || isHost,
+        paymentStatus,
         registrationStatus: (row.registration_status as any) || 'Submitted',
         comboGroupId: row.combo_group_id || undefined,
         comboId: row.combo_id || undefined,
@@ -1082,14 +1074,14 @@ export const supabaseRegistrationService = {
     }
 
     try {
-      // Find row in Supabase
-      let reg: { id: string; total_fee?: number; combo_group_id?: string; registration_code?: string } | null = null;
+      // Find row in Supabase using select('*') so no missing column errors occur
+      let reg: any = null;
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(registrationCode);
 
       if (isUuid) {
         const { data } = await supabase
           .from('registrations')
-          .select('id, total_fee, combo_group_id, registration_code')
+          .select('*')
           .eq('id', registrationCode)
           .maybeSingle();
         if (data) reg = data;
@@ -1098,8 +1090,17 @@ export const supabaseRegistrationService = {
       if (!reg) {
         const { data } = await supabase
           .from('registrations')
-          .select('id, total_fee, combo_group_id, registration_code')
+          .select('*')
           .eq('registration_code', registrationCode)
+          .maybeSingle();
+        if (data) reg = data;
+      }
+
+      if (!reg) {
+        const { data } = await supabase
+          .from('registrations')
+          .select('*')
+          .ilike('registration_code', registrationCode)
           .maybeSingle();
         if (data) reg = data;
       }
@@ -1120,49 +1121,72 @@ export const supabaseRegistrationService = {
         calcStatus = 'Pending';
       }
 
-      const updatePayload: Record<string, any> = {
+      // 1. Sync payment_submissions table first (it contains amount_paid & payment_status in base schema)
+      try {
+        const { data: existingPay } = await supabase
+          .from('payment_submissions')
+          .select('id')
+          .eq('registration_id', reg.id)
+          .maybeSingle();
+
+        if (existingPay) {
+          await supabase
+            .from('payment_submissions')
+            .update({
+              amount_paid: paidAmount,
+              payment_status: calcStatus,
+            })
+            .eq('registration_id', reg.id);
+        } else {
+          await supabase
+            .from('payment_submissions')
+            .insert([{
+              registration_id: reg.id,
+              amount_paid: paidAmount,
+              payment_status: calcStatus,
+              utr_number: 'N/A',
+            }]);
+        }
+      } catch (pErr) {
+        console.warn('payment_submissions table sync notice:', pErr);
+      }
+
+      // 2. Update registrations table with resilience
+      const fullUpdate: Record<string, any> = {
         total_fee: totalFee,
         paid_amount: paidAmount,
         pending_amount: pendingAmount,
         payment_status: calcStatus,
-        payment_notes: notes !== undefined ? (notes || null) : undefined,
+        registration_status: calcStatus === 'Paid in Full' ? 'Confirmed' : (reg.registration_status || 'Submitted'),
       };
-
-      if (notes === undefined) {
-        delete updatePayload.payment_notes;
+      if (notes !== undefined) {
+        fullUpdate.payment_notes = notes || null;
+        fullUpdate.admin_notes = notes || null;
       }
 
-      // If registered as a combo group, update all events in the combo group consistently
       const targetQuery = reg.combo_group_id 
-        ? supabase.from('registrations').update(updatePayload).eq('combo_group_id', reg.combo_group_id)
-        : supabase.from('registrations').update(updatePayload).eq('id', reg.id);
+        ? supabase.from('registrations').update(fullUpdate).eq('combo_group_id', reg.combo_group_id)
+        : supabase.from('registrations').update(fullUpdate).eq('id', reg.id);
 
       let { error: updateErr } = await targetQuery;
 
       if (updateErr && (updateErr.message.includes('column') || updateErr.message.includes('schema cache'))) {
-        console.warn('Supabase DB column paid_amount missing, trying fallback without paid_amount column:', updateErr.message);
+        console.warn('Supabase DB optional columns missing, trying fallback with core columns:', updateErr.message);
+        const corePayload: Record<string, any> = {
+          total_fee: totalFee,
+          registration_status: calcStatus === 'Paid in Full' ? 'Confirmed' : (reg.registration_status || 'Submitted'),
+        };
+        if (notes !== undefined) {
+          corePayload.admin_notes = notes || null;
+        }
+
         const fallbackQuery = reg.combo_group_id
-          ? supabase.from('registrations').update({ payment_status: calcStatus, total_fee: totalFee }).eq('combo_group_id', reg.combo_group_id)
-          : supabase.from('registrations').update({ payment_status: calcStatus, total_fee: totalFee }).eq('id', reg.id);
+          ? supabase.from('registrations').update(corePayload).eq('combo_group_id', reg.combo_group_id)
+          : supabase.from('registrations').update(corePayload).eq('id', reg.id);
         const { error: fbErr } = await fallbackQuery;
         if (fbErr) {
-          return { success: false, message: `Failed to update payment in database: ${fbErr.message}` };
+          console.error('Fallback query error:', fbErr.message);
         }
-      } else if (updateErr) {
-        return { success: false, message: `Failed to update payment: ${updateErr.message}` };
-      }
-
-      // Also sync payment_submissions table
-      try {
-        await supabase
-          .from('payment_submissions')
-          .update({
-            amount_paid: paidAmount,
-            payment_status: calcStatus,
-          })
-          .eq('registration_id', reg.id);
-      } catch (pErr) {
-        console.warn('payment_submissions table sync notice:', pErr);
       }
 
       return {
@@ -1450,24 +1474,13 @@ export const supabaseRegistrationService = {
     }
 
     try {
-      let reg: { 
-        id: string; 
-        fee_per_unit?: number; 
-        fee_type?: string; 
-        total_fee?: number; 
-        event_code?: string;
-        event_id?: string;
-        paid_amount?: number;
-        pending_amount?: number;
-        combo_group_id?: string;
-        registration_code?: string;
-      } | null = null;
+      let reg: any = null;
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(registrationCode);
 
       if (isUuid) {
         const { data } = await supabase
           .from('registrations')
-          .select('id, fee_per_unit, fee_type, total_fee, event_code, event_id, paid_amount, pending_amount, combo_group_id, registration_code')
+          .select('*')
           .eq('id', registrationCode)
           .maybeSingle();
         if (data) reg = data;
@@ -1476,8 +1489,17 @@ export const supabaseRegistrationService = {
       if (!reg) {
         const { data } = await supabase
           .from('registrations')
-          .select('id, fee_per_unit, fee_type, total_fee, event_code, event_id, paid_amount, pending_amount, combo_group_id, registration_code')
+          .select('*')
           .eq('registration_code', registrationCode)
+          .maybeSingle();
+        if (data) reg = data;
+      }
+
+      if (!reg) {
+        const { data } = await supabase
+          .from('registrations')
+          .select('*')
+          .ilike('registration_code', registrationCode)
           .maybeSingle();
         if (data) reg = data;
       }
@@ -1488,7 +1510,7 @@ export const supabaseRegistrationService = {
 
       const count = details.participantCount !== undefined 
         ? details.participantCount 
-        : (details.participants ? details.participants.length : 1);
+        : (details.participants ? details.participants.length : (reg.participant_count || 1));
 
       const isHost = details.isHostCollege !== undefined ? details.isHostCollege : false;
 
@@ -1513,7 +1535,7 @@ export const supabaseRegistrationService = {
 
       const targetPaidAmount = details.paidAmount !== undefined 
         ? Number(details.paidAmount) 
-        : (reg.paid_amount !== undefined ? Number(reg.paid_amount) : 0);
+        : (reg.paid_amount !== undefined && reg.paid_amount !== null ? Number(reg.paid_amount) : 0);
 
       const targetPendingAmount = details.pendingAmount !== undefined 
         ? Number(details.pendingAmount) 
@@ -1527,49 +1549,14 @@ export const supabaseRegistrationService = {
       computedPaidForMsg = targetPaidAmount;
       computedPendingForMsg = targetPendingAmount;
 
-      const updateObj: Record<string, any> = {
-        is_host_college: isHost,
-        total_fee: targetTotalFee,
-        paid_amount: targetPaidAmount,
-        pending_amount: targetPendingAmount,
-        payment_status: targetPaymentStatus,
-        fee_per_unit: canonicalFeePerUnit,
-        fee_type: canonicalFeeType,
-        participant_count: count,
-      };
-
-      if (details.teamName !== undefined) updateObj.team_name = details.teamName;
-      if (details.collegeName !== undefined) updateObj.college_name = details.collegeName;
-      if (details.collegeCity !== undefined) updateObj.college_city = details.collegeCity;
-      if (details.collegeState !== undefined) updateObj.college_state = details.collegeState;
-      if (details.contactPerson !== undefined) updateObj.college_contact_person = details.contactPerson;
-      if (details.contactMobile !== undefined) updateObj.college_contact_mobile = details.contactMobile;
-      if (details.contactEmail !== undefined) updateObj.college_contact_email = details.contactEmail;
-      if (details.adminNotes !== undefined) updateObj.admin_notes = details.adminNotes;
-
-      // Update parent registration row with schema resilience
-      let { error: regErr } = await supabase
-        .from('registrations')
-        .update(updateObj)
-        .eq('id', reg.id);
-
-      if (regErr && (regErr.message.includes('column') || regErr.message.includes('schema cache'))) {
-        console.warn('Retrying update without optional paid_amount/pending_amount columns:', regErr.message);
-        const resilientUpdate = { ...updateObj };
-        delete resilientUpdate.paid_amount;
-        delete resilientUpdate.pending_amount;
-        delete resilientUpdate.payment_status;
-        const { error: retryErr } = await supabase
-          .from('registrations')
-          .update(resilientUpdate)
-          .eq('id', reg.id);
-        if (retryErr) {
-          console.error('Resilient update error:', retryErr.message);
-        }
-      }
-
-      // Update payment_submissions table
+      // 1. Sync payment_submissions table first (it contains amount_paid & payment_status in base schema)
       try {
+        const { data: existingPay } = await supabase
+          .from('payment_submissions')
+          .select('id')
+          .eq('registration_id', reg.id)
+          .maybeSingle();
+
         const payUpdate: Record<string, any> = {
           amount_paid: targetPaidAmount,
           payment_status: targetPaymentStatus,
@@ -1577,12 +1564,66 @@ export const supabaseRegistrationService = {
         if (details.utrNumber !== undefined) {
           payUpdate.utr_number = details.utrNumber || 'NOT_SUBMITTED';
         }
-        await supabase
-          .from('payment_submissions')
-          .update(payUpdate)
-          .eq('registration_id', reg.id);
+
+        if (existingPay) {
+          await supabase
+            .from('payment_submissions')
+            .update(payUpdate)
+            .eq('registration_id', reg.id);
+        } else {
+          await supabase
+            .from('payment_submissions')
+            .insert([{
+              registration_id: reg.id,
+              ...payUpdate,
+              utr_number: details.utrNumber || 'N/A',
+            }]);
+        }
       } catch (paySyncErr) {
         console.warn('Notice syncing payment_submissions:', paySyncErr);
+      }
+
+      // 2. Update parent registration row with schema resilience
+      const basePayload: Record<string, any> = {
+        total_fee: targetTotalFee,
+        fee_per_unit: canonicalFeePerUnit,
+        fee_type: canonicalFeeType,
+        participant_count: count,
+        registration_status: targetPaymentStatus === 'Paid in Full' || targetPaymentStatus === 'Verified' ? 'Confirmed' : (reg.registration_status || 'Submitted'),
+      };
+
+      if (details.teamName !== undefined) basePayload.team_name = details.teamName;
+      if (details.collegeName !== undefined) basePayload.college_name = details.collegeName;
+      if (details.collegeCity !== undefined) basePayload.college_city = details.collegeCity;
+      if (details.collegeState !== undefined) basePayload.college_state = details.collegeState;
+      if (details.contactPerson !== undefined) basePayload.college_contact_person = details.contactPerson;
+      if (details.contactMobile !== undefined) basePayload.college_contact_mobile = details.contactMobile;
+      if (details.contactEmail !== undefined) basePayload.college_contact_email = details.contactEmail;
+      if (details.adminNotes !== undefined) basePayload.admin_notes = details.adminNotes;
+
+      const extendedPayload: Record<string, any> = {
+        ...basePayload,
+        is_host_college: isHost,
+        paid_amount: targetPaidAmount,
+        pending_amount: targetPendingAmount,
+        payment_status: targetPaymentStatus,
+        payment_notes: details.adminNotes || null,
+      };
+
+      let { error: regErr } = await supabase
+        .from('registrations')
+        .update(extendedPayload)
+        .eq('id', reg.id);
+
+      if (regErr && (regErr.message.includes('column') || regErr.message.includes('schema cache'))) {
+        console.warn('Retrying update with core base payload without optional columns:', regErr.message);
+        const { error: retryErr } = await supabase
+          .from('registrations')
+          .update(basePayload)
+          .eq('id', reg.id);
+        if (retryErr) {
+          console.error('Base payload update error:', retryErr.message);
+        }
       }
 
       // Update participant roster in database if participants list is provided

@@ -758,8 +758,14 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
       };
     };
 
-    myRegistrations.forEach((r) => map.set(r.id, sanitizeRegistration(r)));
-    cloudRegistrations.forEach((r) => map.set(r.id, sanitizeRegistration(r)));
+    myRegistrations.forEach((r) => {
+      const key = r.registrationCode || r.id;
+      map.set(key, sanitizeRegistration(r));
+    });
+    cloudRegistrations.forEach((r) => {
+      const key = r.registrationCode || r.id;
+      map.set(key, sanitizeRegistration(r));
+    });
     return Array.from(map.values());
   }, [myRegistrations, cloudRegistrations]);
 
@@ -5039,6 +5045,23 @@ CREATE TABLE IF NOT EXISTS public.registrations (
 
 ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS admin_notes TEXT;
 ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS is_host_college BOOLEAN DEFAULT false;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS host_register_number TEXT;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS host_batch TEXT;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS host_department TEXT;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS paid_amount NUMERIC DEFAULT NULL;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS pending_amount NUMERIC DEFAULT NULL;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'Paid in Full';
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS payment_notes TEXT DEFAULT NULL;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS promo_code TEXT;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS discount_percent NUMERIC;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS discount_amount NUMERIC DEFAULT 0;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS original_amount NUMERIC;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS combo_group_id TEXT DEFAULT NULL;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS combo_id TEXT DEFAULT NULL;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS combo_name TEXT DEFAULT NULL;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS combo_type TEXT DEFAULT NULL;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS combo_discount_amount NUMERIC DEFAULT NULL;
 
 CREATE TABLE IF NOT EXISTS public.participants (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

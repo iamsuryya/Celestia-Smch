@@ -70,6 +70,13 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
             <X className="w-5 h-5" />
           </button>
 
+          {!isRegOpen && (
+            <div className="absolute top-4 left-6 z-20 bg-rose-600/95 text-white font-mono font-bold text-[11px] sm:text-xs uppercase tracking-wider px-3 py-1.5 rounded-md shadow-lg border border-rose-400 backdrop-blur-md flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-rose-200 animate-pulse" />
+              <span>Registration Closed</span>
+            </div>
+          )}
+
           <div className="absolute bottom-4 left-6 right-6 z-10">
             <div className="flex items-center gap-2 text-xs font-mono text-[#D4AF37] mb-1 flex-wrap">
               <span className="font-bold">{event.code}</span>
@@ -94,6 +101,16 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
 
         {/* Modal Scrollable Body Organized into 8 Clear Sections */}
         <div className="p-6 sm:p-8 overflow-y-auto space-y-6 text-sm text-slate-300">
+
+          {!isRegOpen && (
+            <div className="p-4 rounded-xl bg-rose-950/60 border border-rose-500/50 text-rose-200 flex items-center gap-3 shadow-md">
+              <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
+              <div>
+                <strong className="block text-white text-sm font-bold">Registration Closed</strong>
+                <span className="text-xs text-rose-300">Registration for {event.title} ({event.code}) is officially closed. No further entries are accepted.</span>
+              </div>
+            </div>
+          )}
           
           {/* Section 1: Overview */}
           <section className="space-y-2">

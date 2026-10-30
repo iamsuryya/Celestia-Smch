@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { COMBO_OFFERS, ComboOffer, ComboCategory, getEventComboType } from '../data/comboOffersData';
 import { EVENTS_DATA, EventItem } from '../data/festivalData';
+import { isEventRegistrationOpen } from '../utils/registrationStatus';
 
 interface ComboOffersPageProps {
   onSelectComboForWizard: (combo: ComboOffer, selectedEvents: EventItem[]) => void;
@@ -45,21 +46,24 @@ export const ComboOffersPage: React.FC<ComboOffersPageProps> = ({
       const { majorCount = 0, minorCount = 0, soloCount = 0 } = combo.packageStructure;
       const defaults: string[] = [];
       if (majorCount > 0) {
-        defaults.push(...['reflexia', 'starfusion', 'silhouette'].slice(0, majorCount));
+        const openMajors = ['reflexia', 'silhouette', 'starfusion'].filter(id => isEventRegistrationOpen(id));
+        defaults.push(...openMajors.slice(0, majorCount));
       }
       if (minorCount > 0) {
-        defaults.push(...['adblitz', 'stellar-bid', 'twin-flare'].slice(0, minorCount));
+        const openMinors = ['adblitz', 'stellar-bid', 'twin-flare'].filter(id => isEventRegistrationOpen(id));
+        defaults.push(...openMinors.slice(0, minorCount));
       }
       if (soloCount > 0) {
-        defaults.push(...['symphora', 'nrityara', 'cosmic-switch', 'eclipse', 'elaris', 'stellar-bid'].slice(0, soloCount));
+        const openSolos = ['symphora', 'nrityara', 'cosmic-switch', 'eclipse', 'elaris', 'stellar-bid'].filter(id => isEventRegistrationOpen(id));
+        defaults.push(...openSolos.slice(0, soloCount));
       }
       return defaults;
     }
 
     // Standard Min/Max Count Combos
     const eligible = combo.eligibleEventIds
-      ? EVENTS_DATA.filter(e => combo.eligibleEventIds?.includes(e.id))
-      : EVENTS_DATA;
+      ? EVENTS_DATA.filter(e => combo.eligibleEventIds?.includes(e.id) && isEventRegistrationOpen(e.id))
+      : EVENTS_DATA.filter(e => isEventRegistrationOpen(e.id));
     const targetCount = combo.minEventsToSelect || combo.maxEventsToSelect || 1;
     return eligible.slice(0, targetCount).map((e: EventItem) => e.id);
   };

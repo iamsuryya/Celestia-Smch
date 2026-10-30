@@ -42,7 +42,11 @@ ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS discount_percent NUMER
 ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS discount_amount NUMERIC DEFAULT 0;
 ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS original_amount NUMERIC;
 
--- Advance Payment & Pending Amount Management Columns
+-- Advance Payment & Host Student Management Columns
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS is_host_college BOOLEAN DEFAULT false;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS host_register_number TEXT;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS host_batch TEXT;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS host_department TEXT;
 ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS paid_amount NUMERIC DEFAULT NULL;
 ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS pending_amount NUMERIC DEFAULT NULL;
 ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'Paid in Full';

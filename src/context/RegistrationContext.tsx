@@ -172,6 +172,25 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     };
   }, []);
 
+  // Real-time synchronization of completed registrations when updated in admin desk or other tabs
+  useEffect(() => {
+    const handleReloadRegistrations = () => {
+      try {
+        const saved = localStorage.getItem(REGISTRATIONS_STORAGE_KEY);
+        if (saved) {
+          setMyRegistrations(JSON.parse(saved));
+        }
+      } catch {}
+    };
+
+    window.addEventListener('celestia-registration-status-changed', handleReloadRegistrations);
+    window.addEventListener('storage', handleReloadRegistrations);
+    return () => {
+      window.removeEventListener('celestia-registration-status-changed', handleReloadRegistrations);
+      window.removeEventListener('storage', handleReloadRegistrations);
+    };
+  }, []);
+
   const loginUser = (user: UserAccount) => {
     setCurrentUser(user);
   };
@@ -187,7 +206,7 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const selectEvent = (event: EventItem) => {
     if (!isEventRegistrationOpen(event.id) || !isEventRegistrationOpen(event.code)) {
-      alert(`Registration for ${event.title} (${event.code}) has been stopped by the Admin.`);
+      alert(`Registration Closed: ${event.title} (${event.code}) is no longer accepting registrations.`);
       return;
     }
 
@@ -297,7 +316,7 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     if (!selectedEvent || !collegeDetails || !currentUser) return null;
 
     if (!isGlobalRegistrationOpen() || !isEventRegistrationOpen(selectedEvent.id) || !isEventRegistrationOpen(selectedEvent.code)) {
-      throw new Error(`Registration for ${selectedEvent.title} (${selectedEvent.code}) has been stopped by the Admin. New entries are currently blocked.`);
+      throw new Error(`Registration Closed: Registration for ${selectedEvent.title} (${selectedEvent.code}) has been closed. New entries are not accepted.`);
     }
 
     const submissionId = generateRegistrationCode(selectedEvent.id);
@@ -427,7 +446,7 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       const found = EVENTS_DATA.find((e) => e.id.toLowerCase() === preselectedEventId.toLowerCase() || e.code.toLowerCase() === preselectedEventId.toLowerCase());
       if (found) {
         if (!isEventRegistrationOpen(found.id) || !isEventRegistrationOpen(found.code)) {
-          alert(`Registration for ${found.title} (${found.code}) has been stopped by the Admin.`);
+          alert(`Registration Closed: ${found.title} (${found.code}) is no longer accepting registrations.`);
           setSelectedEvent(null);
         } else {
           selectEvent(found);
