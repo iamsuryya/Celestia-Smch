@@ -359,8 +359,8 @@ export const RegistrationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       isAdvancePayment: isAdv,
       advanceAmountPaid: isAdv ? (appliedPromoCode?.advanceAmount || totalAmount) : undefined,
       remainingBalance: isAdv ? remainingBalance : undefined,
-      totalAmount: baseFee,
-      paidAmount: isHost ? 0 : (isAdv ? (appliedPromoCode?.advanceAmount || totalAmount) : baseFee),
+      totalAmount: isHost ? 0 : totalAmount,
+      paidAmount: isHost ? 0 : (isAdv ? (appliedPromoCode?.advanceAmount || totalAmount) : totalAmount),
       pendingAmount: isHost ? 0 : (isAdv ? remainingBalance : 0),
       utrNumber: isHost 
         ? (utrNumber.trim() || 'SMCH-HOST-FREE') 

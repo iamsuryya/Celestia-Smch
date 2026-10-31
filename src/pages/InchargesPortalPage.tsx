@@ -35,6 +35,8 @@ import { RegistrationSubmission, ParticipantMember } from '../types/registration
 import { supabaseRegistrationService } from '../services/supabaseRegistrationService';
 import { clearAuthSession } from '../lib/authProfiles';
 import { exportVerifiedByEventCSV } from '../utils/exportVerifiedHelper';
+import { CaptainContactModal } from '../components/admin/CaptainContactModal';
+import { Smartphone } from 'lucide-react';
 
 interface InchargesPortalPageProps {
   onExit: () => void;
@@ -63,6 +65,7 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('table');
   const [showRulesDrawer, setShowRulesDrawer] = useState(false);
   const [showExportScopeModal, setShowExportScopeModal] = useState(false);
+  const [showCaptainContactModal, setShowCaptainContactModal] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
@@ -572,6 +575,16 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
           >
             <CheckCircle className="w-3.5 h-3.5 text-emerald-950" />
             <span>Verified By Event (Excel)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowCaptainContactModal(true)}
+            className="px-3.5 py-2 rounded-xl font-bold text-xs uppercase tracking-wider text-[#F5E7C4] bg-gradient-to-r from-amber-500/20 to-amber-600/30 hover:from-amber-500/30 hover:to-amber-600/40 border border-[#D4AF37]/60 transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-500/10"
+            title="Export Captains & Solo Participants as a Mobile Address Book Contact Group (.VCF)"
+          >
+            <Smartphone className="w-3.5 h-3.5 text-[#D4AF37]" />
+            <span>Save Captain Contacts (.VCF)</span>
           </button>
 
           <button
@@ -1583,6 +1596,15 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
           </div>
         </div>
       )}
+
+      {/* MODAL: CAPTAIN CONTACT GROUP EXPORTER */}
+      <CaptainContactModal
+        isOpen={showCaptainContactModal}
+        onClose={() => setShowCaptainContactModal(false)}
+        registrations={registrations}
+        initialEventCode={selectedEventId === 'ALL' ? 'ALL' : (EVENTS_DATA.find(e => e.id === selectedEventId)?.code || 'ALL')}
+        isInchargeView={true}
+      />
 
       {/* Security Footer Notice */}
       <div className="mt-8 pt-4 border-t border-white/10 text-center text-xs text-slate-400 font-mono print:hidden">

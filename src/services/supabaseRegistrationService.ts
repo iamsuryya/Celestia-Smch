@@ -1743,5 +1743,78 @@ export const supabaseRegistrationService = {
       const msg = err instanceof Error ? err.message : 'Auto approve failed';
       return { success: false, message: msg };
     }
+  },
+
+  /**
+   * Retags non-SMCH registrations as Other College while preserving all collected amounts,
+   * UTR receipts, and payment statuses completely untouched.
+   */
+  async retagOtherCollegesBatch(targetIds: string[]): Promise<VerificationResult> {
+    if (!targetIds || targetIds.length === 0) {
+      return { success: true, message: 'No records to retag.' };
+    }
+
+    const idSet = new Set(targetIds.map((id) => id.toLowerCase()));
+
+    // 1. Update localStorage caches
+    const cacheKeys = ['celestia26_registrations', 'celestia_submissions', 'celestia_my_registrations'];
+    cacheKeys.forEach((key) => {
+      try {
+        const saved = localStorage.getItem(key);
+        if (saved) {
+          const list = JSON.parse(saved);
+          const updated = list.map((item: any) => {
+            const isMatch = 
+              idSet.has((item.id || '').toLowerCase()) || 
+              idSet.has((item.registrationCode || '').toLowerCase());
+            if (isMatch) {
+              return {
+                ...item,
+                isHostCollege: false,
+                college: {
+                  ...item.college,
+                  isHostCollege: false,
+                  registrationType: 'other_college',
+                },
+              };
+            }
+            return item;
+          });
+          localStorage.setItem(key, JSON.stringify(updated));
+        }
+      } catch (e) {
+        console.warn(`LocalStorage update notice for ${key}:`, e);
+      }
+    });
+
+    window.dispatchEvent(new CustomEvent('celestia-registration-status-changed'));
+
+    // 2. Update Supabase if connected
+    if (supabase) {
+      try {
+        for (const identifier of targetIds) {
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
+          if (isUuid) {
+            await supabase
+              .from('registrations')
+              .update({ is_host_college: false })
+              .eq('id', identifier);
+          } else {
+            await supabase
+              .from('registrations')
+              .update({ is_host_college: false })
+              .ilike('registration_code', identifier);
+          }
+        }
+      } catch (err) {
+        console.warn('Supabase batch retag notice:', err);
+      }
+    }
+
+    return {
+      success: true,
+      message: `Successfully updated ${targetIds.length} registration(s) to Other College tag. Amounts and payment records remain strictly preserved.`
+    };
   }
 };
+

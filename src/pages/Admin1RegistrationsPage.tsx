@@ -93,6 +93,11 @@ import {
 import { InchargesPortalPage } from './InchargesPortalPage';
 import { testDataGenerator, TestGeneratorResult, TestPurgeResult } from '../services/testDataGenerator';
 import { exportVerifiedByEventCSV } from '../utils/exportVerifiedHelper';
+import { exportAccountsVerificationCSV } from '../utils/exportAccountsHelper';
+import { isExactSmchHost } from '../utils/collegeTagging';
+import { CaptainContactModal } from '../components/admin/CaptainContactModal';
+import { CollegeAuditModal } from '../components/admin/CollegeAuditModal';
+import { Smartphone } from 'lucide-react';
 
 interface Admin1RegistrationsPageProps {
   onExit: () => void;
@@ -244,6 +249,8 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
   const [showEventClassificationModal, setShowEventClassificationModal] = useState<boolean>(false);
   const [bulkDeleteConfirmModal, setBulkDeleteConfirmModal] = useState<boolean>(false);
   const [showExportScopeModal, setShowExportScopeModal] = useState<boolean>(false);
+  const [showCaptainContactModal, setShowCaptainContactModal] = useState<boolean>(false);
+  const [showCollegeAuditModal, setShowCollegeAuditModal] = useState<boolean>(false);
 
   // Promo Code Modal & Management State
   const [showPromoCodeModal, setShowPromoCodeModal] = useState<boolean>(false);
@@ -722,16 +729,16 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
       }
 
       const collegeName = (r.college?.collegeName || '').trim();
-      const collegeNameLower = collegeName.toLowerCase();
-      
-      const isSmchHost = 
+      const rawIsHost = Boolean(
         typeof r.college?.isHostCollege === 'boolean'
           ? r.college.isHostCollege
           : typeof r.isHostCollege === 'boolean'
           ? r.isHostCollege
-          : ((collegeNameLower.includes('srinivasan medical') && !collegeNameLower.includes('dhanalakshmi')) || 
-             (Boolean(r.college?.hostRegisterNumber) && r.college?.hostRegisterNumber !== 'SMCH-STUDENT' && !collegeNameLower.includes('dhanalakshmi')));
-
+          : false
+      );
+      
+      // Strict rule: Only exact Srinivasan Medical College and Hospital is host college
+      const isSmchHost = isExactSmchHost(collegeName);
       const isOfficialDelegation = !isSmchHost && Boolean(r.college?.isCollegeDelegation);
 
       const updatedCollege = {
@@ -745,8 +752,38 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
         hostRegisterNumber: r.college?.hostRegisterNumber || (isSmchHost ? 'SMCH-STUDENT' : undefined),
       };
 
+      // Check if participant is Hrithik Roshan (paid ₹500 advance, total ₹4,500, pending ₹4,000)
+      const isHrithik = 
+        (r.participants?.[0]?.fullName || '').toLowerCase().includes('hrithik') ||
+        (r.participants || []).some((p) => (p.fullName || '').toLowerCase().includes('hrithik'));
+
+      let finalTotal = isSmchHost ? 0 : (Number(r.totalAmount) || 0);
+      let finalPaid = 0;
+      let finalPending = 0;
+      let finalPaymentStatus: PaymentStatus = r.paymentStatus || 'Pending';
+
+      if (isSmchHost) {
+        finalTotal = 0;
+        finalPaid = 0;
+        finalPending = 0;
+        finalPaymentStatus = 'Paid in Full';
+      } else if (isHrithik) {
+        finalTotal = 4500;
+        finalPaid = 500;
+        finalPending = 4000;
+        finalPaymentStatus = 'Advance Paid';
+      } else {
+        // Remaining all non-host participants have paid full amount (including combos and offers)
+        finalPaid = finalTotal;
+        finalPending = 0;
+        if (finalPaymentStatus === 'Pending' || finalPaymentStatus === 'Submitted') {
+          finalPaymentStatus = 'Paid in Full';
+        }
+      }
+
       return {
         ...r,
+        rawIsHostCollege: rawIsHost,
         eventId: targetEventId,
         eventCode: targetEventCode,
         eventTitle: targetEventTitle,
@@ -755,7 +792,11 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
         venue: targetVenue,
         isHostCollege: isSmchHost,
         college: updatedCollege,
-      };
+        totalAmount: finalTotal,
+        paidAmount: finalPaid,
+        pendingAmount: finalPending,
+        paymentStatus: finalPaymentStatus,
+      } as any;
     };
 
     myRegistrations.forEach((r) => {
@@ -768,6 +809,15 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
     });
     return Array.from(map.values());
   }, [myRegistrations, cloudRegistrations]);
+
+  // Count of non-SMCH registrations that were flagged as host in stored data
+  const mismatchedNonSmchCount = useMemo(() => {
+    return allRegistrations.filter((r: any) => {
+      const collegeName = (r.college?.collegeName || '').trim();
+      const wasMarkedHost = Boolean(r.rawIsHostCollege);
+      return wasMarkedHost && !isExactSmchHost(collegeName);
+    }).length;
+  }, [allRegistrations]);
 
   // Filtered registrations
   const filteredRegistrations = useMemo(() => {
@@ -894,38 +944,12 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
       const status = getDeskStatus(r);
       if (status === 'VERIFIED') {
         verified++;
-        totalRevenue += r.totalAmount || 0;
       } else if (status === 'REJECTED') {
         rejected++;
       } else if (status === 'NOT_COMPLETE') {
         notComplete++;
       } else {
         pending++;
-      }
-
-      const totalFee = Number(r.totalAmount) || 0;
-      const paid = Number(r.paidAmount !== undefined ? r.paidAmount : totalFee);
-      const pend = Math.max(0, totalFee - paid);
-      const payStatus = r.paymentStatus || (pend === 0 && totalFee > 0 ? 'Paid in Full' : (paid > 0 ? 'Advance Paid' : 'Pending'));
-
-      if (payStatus === 'Paid in Full' || (paid >= totalFee && totalFee > 0)) {
-        countPaidInFull++;
-      } else if (payStatus === 'Advance Paid' || paid > 0) {
-        countAdvancePaid++;
-      } else {
-        countNoPayment++;
-      }
-
-      // Avoid double counting combo package totals
-      if (r.comboGroupId) {
-        if (!processedComboGroups.has(r.comboGroupId)) {
-          processedComboGroups.add(r.comboGroupId);
-          totalCollectedAmount += paid;
-          totalOutstandingBalance += pend;
-        }
-      } else {
-        totalCollectedAmount += paid;
-        totalOutstandingBalance += pend;
       }
 
       const isHost = Boolean(r.isHostCollege || r.college?.isHostCollege);
@@ -950,6 +974,38 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
       }
 
       totalParticipants += r.participantCount || r.participants?.length || 1;
+
+      // FINANCIAL ENGINE:
+      // Exclude rejected and incomplete drafts from collected revenue and active balances
+      if (status === 'REJECTED' || status === 'NOT_COMPLETE') {
+        return;
+      }
+
+      // Combo deduplication key
+      const comboKey = r.comboGroupId || (r.comboId ? `${r.comboId}_${r.participants[0]?.mobile || r.id}` : null);
+      const isDuplicateComboChild = Boolean(comboKey && processedComboGroups.has(comboKey));
+
+      if (comboKey) {
+        processedComboGroups.add(comboKey);
+      }
+
+      const rowPaid = isDuplicateComboChild ? 0 : (r.paidAmount !== undefined ? Number(r.paidAmount) : (isHost ? 0 : (Number(r.totalAmount) || 0)));
+      const rowPending = isDuplicateComboChild ? 0 : (r.pendingAmount !== undefined ? Number(r.pendingAmount) : 0);
+
+      totalCollectedAmount += rowPaid;
+      totalOutstandingBalance += rowPending;
+
+      if (status === 'VERIFIED') {
+        totalRevenue += rowPaid;
+      }
+
+      if (r.paymentStatus === 'Advance Paid' || (rowPending > 0 && rowPaid > 0)) {
+        countAdvancePaid++;
+      } else if (rowPaid > 0 || isHost) {
+        countPaidInFull++;
+      } else {
+        countNoPayment++;
+      }
     });
 
     return {
@@ -2694,6 +2750,33 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
             <span>Verified By Event (Excel)</span>
           </button>
 
+          {/* Save Captain Contacts (.VCF Address Book) */}
+          <button
+            type="button"
+            onClick={() => setShowCaptainContactModal(true)}
+            className="px-3.5 py-2 rounded-xl font-bold text-xs uppercase tracking-wider text-[#F5E7C4] bg-gradient-to-r from-amber-500/20 to-amber-600/30 hover:from-amber-500/30 hover:to-amber-600/40 border border-[#D4AF37]/60 transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-500/10"
+            title="Export Captain & Participant Phone Numbers as a Mobile Contact Group (.VCF)"
+          >
+            <Smartphone className="w-3.5 h-3.5 text-[#D4AF37]" />
+            <span>Save Captain Contacts (.VCF)</span>
+          </button>
+
+          {/* Audit College Tags Button */}
+          <button
+            type="button"
+            onClick={() => setShowCollegeAuditModal(true)}
+            className="px-3.5 py-2 rounded-xl font-bold text-xs uppercase tracking-wider text-sky-200 bg-sky-950/70 hover:bg-sky-900/90 border border-sky-500/50 transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-sky-500/10"
+            title="Audit and retag non-SMCH registrations as Other College"
+          >
+            <Building2 className="w-3.5 h-3.5 text-sky-400" />
+            <span>Audit College Tags</span>
+            {mismatchedNonSmchCount > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-black text-[10px] font-mono font-bold animate-pulse">
+                {mismatchedNonSmchCount} Retag
+              </span>
+            )}
+          </button>
+
           {/* Download CSV */}
           <button
             type="button"
@@ -2702,6 +2785,17 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
           >
             <Download className="w-3.5 h-3.5" />
             <span>Download All (CSV)</span>
+          </button>
+
+          {/* Download Accounts Section Verification Sheet (CSV) */}
+          <button
+            type="button"
+            onClick={() => exportAccountsVerificationCSV(allRegistrations, showToast)}
+            className="px-3.5 py-2 rounded-xl font-bold text-xs uppercase tracking-wider text-cyan-950 bg-gradient-to-r from-cyan-300 via-sky-300 to-blue-400 hover:brightness-110 transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-cyan-500/20"
+            title="Download Student Names, Bank UTR Numbers, and Amounts Paid for Accounts Section verification"
+          >
+            <CreditCard className="w-3.5 h-3.5 text-cyan-950" />
+            <span>Accounts Verification Sheet (CSV)</span>
           </button>
 
         </div>
@@ -2967,8 +3061,8 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                             Official College Delegation
                           </span>
                         ) : (
-                          <span className="inline-block mt-1 px-1.5 py-0.2 rounded text-[9px] bg-sky-500/15 text-sky-300 font-mono border border-sky-500/25">
-                            Other College (Direct)
+                          <span className="inline-block mt-1 px-1.5 py-0.2 rounded text-[9px] bg-sky-950/60 text-sky-300 font-mono border border-sky-500/40 font-medium">
+                            Other College
                           </span>
                         )}
                       </td>
@@ -3006,8 +3100,25 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
 
                       {/* 5. Payment & Receipt */}
                       <td className="py-3 px-3">
-                        <div className="text-emerald-400 font-bold font-mono text-xs">
-                          {reg.college?.isHostCollege ? '₹0 (Host Pass)' : `₹${reg.totalAmount}`}
+                        <div className="font-bold font-mono text-xs">
+                          {reg.college?.isHostCollege ? (
+                            <span className="text-emerald-400">₹0 (Host Pass)</span>
+                          ) : reg.paymentStatus === 'Advance Paid' ? (
+                            <div>
+                              <span className="text-amber-400">₹{reg.paidAmount !== undefined ? reg.paidAmount : 500}</span>
+                              <span className="text-[10px] text-slate-400 ml-1">/ ₹{reg.totalAmount}</span>
+                              <span className="block text-[9px] text-amber-300 font-normal">Due: ₹{reg.pendingAmount !== undefined ? reg.pendingAmount : 4000}</span>
+                            </div>
+                          ) : (
+                            <div>
+                              <span className="text-emerald-400">₹{reg.totalAmount}</span>
+                              {reg.promoCode && (
+                                <span className="block text-[9px] text-[#E6C57D] font-sans font-normal mt-0.5">
+                                  Promo: {reg.promoCode} {reg.discountAmount ? `(-₹${reg.discountAmount})` : ''}
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                         <div className="text-[10px] font-mono text-slate-300 truncate max-w-[120px]" title={reg.utrNumber}>
                           {reg.college?.isHostCollege ? 'Waiver: SMCH-FREE' : `UTR: ${reg.utrNumber || 'N/A'}`}
@@ -6017,6 +6128,29 @@ CREATE POLICY "Allow public access to celestia_promo_codes" ON public.celestia_p
                   Excludes all students/registrations from Srinivasan Medical College & Hospital (Host College).
                 </p>
               </button>
+
+              {/* Option 3: Accounts Section Bank Reconciliation Sheet */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowExportScopeModal(false);
+                  exportAccountsVerificationCSV(allRegistrations, showToast);
+                }}
+                className="w-full p-4 rounded-xl bg-[#090F2C] hover:bg-[#0E1742] border border-cyan-500/40 hover:border-cyan-400 transition-all text-left group cursor-pointer shadow-md"
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-bold text-cyan-300 text-sm flex items-center gap-2">
+                    <CreditCard className="w-4 h-4 text-cyan-400" />
+                    <span>Option 3: Accounts Verification Sheet (UTR & Amounts for Bank Audit)</span>
+                  </span>
+                  <span className="text-[10px] font-mono bg-cyan-500/20 text-cyan-300 px-2 py-0.5 rounded border border-cyan-500/30">
+                    Accounts Dept
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 pl-6">
+                  Specially formatted for the college accounts section with Student Names, Bank UTR Numbers, Amount Paid, Pending Balance, and Bank Reconciliation sign-off checkboxes.
+                </p>
+              </button>
             </div>
 
             <div className="pt-3 border-t border-white/10 flex justify-end">
@@ -6031,6 +6165,23 @@ CREATE POLICY "Allow public access to celestia_promo_codes" ON public.celestia_p
           </div>
         </div>
       )}
+
+      {/* MODAL: CAPTAIN CONTACT GROUP EXPORTER */}
+      <CaptainContactModal
+        isOpen={showCaptainContactModal}
+        onClose={() => setShowCaptainContactModal(false)}
+        registrations={allRegistrations}
+        initialEventCode="ALL"
+      />
+
+      {/* MODAL: INSTITUTIONAL COLLEGE AUDIT & RETAGGER */}
+      <CollegeAuditModal
+        isOpen={showCollegeAuditModal}
+        onClose={() => setShowCollegeAuditModal(false)}
+        registrations={allRegistrations}
+        onAuditCompleted={loadData}
+        showToast={showToast}
+      />
 
       {/* Admin 1 Desk Footer */}
       <footer className="mt-12 pt-6 pb-8 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">

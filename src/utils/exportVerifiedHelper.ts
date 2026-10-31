@@ -1,5 +1,6 @@
 import { RegistrationSubmission } from '../types/registration';
 import { EVENTS_DATA } from '../data/festivalData';
+import { isExactSmchHost } from './collegeTagging';
 
 export interface ExportVerifiedOptions {
   excludeSmch?: boolean;
@@ -20,15 +21,10 @@ export function exportVerifiedByEventCSV(
 ): void {
   const excludeSmch = Boolean(options?.excludeSmch);
 
-  // Helper to check if a registration belongs to SMCH / Srinivasan Medical College
+  // Helper to check if a registration belongs to SMCH / Srinivasan Medical College (Host)
   const isSmchHostRegistration = (r: RegistrationSubmission): boolean => {
-    const cName = (r.college?.collegeName || '').toLowerCase();
-    return (
-      Boolean(r.isHostCollege) ||
-      Boolean(r.college?.isHostCollege) ||
-      cName.includes('srinivasan') ||
-      (Boolean(r.college?.hostRegisterNumber) && !cName.includes('medical') && !cName.includes('college'))
-    );
+    const cName = r.college?.collegeName || '';
+    return isExactSmchHost(cName);
   };
 
   // Filter ONLY verified / approved entries
