@@ -73,10 +73,29 @@ export function isEventRegistrationOpen(eventCodeOrId: string | undefined): bool
     normalized === 'star-fusion' ||
     normalized === 'group-dance'
   ) {
-    const starfusionOverride = typeof window !== 'undefined' ? localStorage.getItem('celestia_starfusion_manual_override') : null;
-    if (starfusionOverride !== null) {
-      return starfusionOverride === 'true';
-    }
+    return false;
+  }
+
+  // Memania / Mememania (Meme Competition) registration is closed / stopped
+  if (
+    normalized === 'mememania' ||
+    normalized === 'memania' ||
+    normalized === 'meme-mania' ||
+    normalized === 'meme mania' ||
+    normalized === 'meme-competition' ||
+    normalized === 'md01'
+  ) {
+    return false;
+  }
+
+  // Cineverse (Movie Recreation Reel) registration is closed / stopped
+  if (
+    normalized === 'cineverse' ||
+    normalized === 'cine-verse' ||
+    normalized === 'movie-recreation-reel' ||
+    normalized === 'reels' ||
+    normalized === 'md02'
+  ) {
     return false;
   }
 
@@ -228,10 +247,17 @@ export async function loadStatusFromSupabase(): Promise<void> {
             parsed.map['SERAPHIA'] = false;
           }
           // Star Fusion / Starfusion registration is stopped / closed
-          if (localStorage.getItem('celestia_starfusion_manual_override') !== 'true') {
-            parsed.map['starfusion'] = false;
-            parsed.map['STARFUSION'] = false;
-          }
+          parsed.map['starfusion'] = false;
+          parsed.map['STARFUSION'] = false;
+
+          // Mememania / Memania registration is stopped / closed
+          parsed.map['mememania'] = false;
+          parsed.map['MEMEMANIA'] = false;
+          parsed.map['memania'] = false;
+
+          // Cineverse registration is stopped / closed
+          parsed.map['cineverse'] = false;
+          parsed.map['CINEVERSE'] = false;
           localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(parsed.map));
         }
         if (typeof parsed.globalOpen === 'boolean') {
@@ -245,7 +271,7 @@ export async function loadStatusFromSupabase(): Promise<void> {
   }
 }
 
-// Automatically initiate cloud status sync on import and stop Seraphia & Star Fusion registration
+// Automatically initiate cloud status sync on import and stop closed registrations
 if (typeof window !== 'undefined') {
   try {
     const map = getEventRegistrationStatusMap();
@@ -262,6 +288,21 @@ if (typeof window !== 'undefined') {
       map['starfusion'] = false;
       map['STARFUSION'] = false;
       localStorage.setItem('celestia_starfusion_closed_final', 'true');
+      changed = true;
+    }
+
+    if (map['mememania'] !== false || map['MEMEMANIA'] !== false || !localStorage.getItem('celestia_mememania_closed_final')) {
+      map['mememania'] = false;
+      map['MEMEMANIA'] = false;
+      map['memania'] = false;
+      localStorage.setItem('celestia_mememania_closed_final', 'true');
+      changed = true;
+    }
+
+    if (map['cineverse'] !== false || map['CINEVERSE'] !== false || !localStorage.getItem('celestia_cineverse_closed_final')) {
+      map['cineverse'] = false;
+      map['CINEVERSE'] = false;
+      localStorage.setItem('celestia_cineverse_closed_final', 'true');
       changed = true;
     }
 

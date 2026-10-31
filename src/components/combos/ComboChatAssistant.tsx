@@ -91,15 +91,10 @@ export const ComboChatAssistant: React.FC<ComboChatAssistantProps> = ({
 
     // 1. Digital Events
     if (q.includes('meme') || q.includes('reel') || q.includes('digital') || q.includes('cineverse') || q.includes('199')) {
-      const combo = COMBO_OFFERS.find((c) => c.id === 'viral-takeover');
-      if (combo) {
-        return {
-          text: "✨ For creators and digital enthusiasts, the **Viral Takeover Combo** gives you entry into both MemeMania and Cineverse for just ₹199 (flat ₹101 off)! You can submit your work online before the deadlines.",
-          combo,
-          events: getDefaultEventsForCombo(combo),
-          prompts: ['What are the rules for digital events?', 'Show me team combos instead'],
-        };
-      }
+      return {
+        text: "⚠️ Registration for **Memania / Mememania** (Meme Competition) and **Cineverse** (Movie Recreation Reel) is officially **Closed**. No further entries are currently being accepted.",
+        prompts: ['Show me open solo events', 'Show me team combos instead'],
+      };
     }
 
     // 2. Fashion Royale

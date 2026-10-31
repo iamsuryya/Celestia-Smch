@@ -24,6 +24,7 @@ import {
   Moon
 } from 'lucide-react';
 import { FESTIVAL_SCHEDULE, EVENTS_DATA, FESTIVAL_METADATA, EventItem } from '../data/festivalData';
+import { isEventRegistrationOpen } from '../utils/registrationStatus';
 
 interface SchedulePageProps {
   onViewEventDetails?: (event: EventItem) => void;
@@ -538,12 +539,22 @@ export const SchedulePage: React.FC<SchedulePageProps> = ({
                           )}
 
                           {linkedEvent && onOpenRegister && (
-                            <button
-                              onClick={() => onOpenRegister(linkedEvent)}
-                              className="px-3 py-1 text-xs font-semibold rounded-md bg-gradient-to-r from-[#D4AF37] to-[#B38D1B] text-[#050714] hover:shadow-md transition-all cursor-pointer"
-                            >
-                              Register Now
-                            </button>
+                            isEventRegistrationOpen(linkedEvent.id) && isEventRegistrationOpen(linkedEvent.code) ? (
+                              <button
+                                onClick={() => onOpenRegister(linkedEvent)}
+                                className="px-3 py-1 text-xs font-semibold rounded-md bg-gradient-to-r from-[#D4AF37] to-[#B38D1B] text-[#050714] hover:shadow-md transition-all cursor-pointer"
+                              >
+                                Register Now
+                              </button>
+                            ) : (
+                              <button
+                                disabled
+                                className="px-2.5 py-1 text-[11px] font-bold rounded-md bg-rose-950/60 text-rose-300 border border-rose-500/40 cursor-not-allowed flex items-center gap-1 opacity-90"
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                                <span>Registration Closed</span>
+                              </button>
+                            )
                           )}
                         </div>
                       </div>

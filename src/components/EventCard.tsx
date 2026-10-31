@@ -38,9 +38,9 @@ export const EventCard: React.FC<EventCardProps> = ({
         <div className="absolute inset-0 bg-gradient-to-t from-[#080C1F] via-[#080C1F]/40 to-transparent" />
         
         {!isRegOpen && (
-          <div className="absolute top-3 left-3 bg-rose-600/90 text-white font-mono font-bold text-[10px] sm:text-[11px] uppercase tracking-wider px-2.5 py-1 rounded-md shadow-lg border border-rose-400 backdrop-blur-md flex items-center gap-1.5 z-10">
+          <div className="absolute top-3 left-3 bg-rose-600/95 text-white font-mono font-bold text-[10px] sm:text-[11px] tracking-wider px-2.5 py-1 rounded-md shadow-lg border border-rose-400 backdrop-blur-md flex items-center gap-1.5 z-10">
             <span className="w-2 h-2 rounded-full bg-rose-200 animate-pulse" />
-            <span>REGISTRATION CLOSED</span>
+            <span>Registration Closed</span>
           </div>
         )}
 
@@ -124,9 +124,10 @@ export const EventCard: React.FC<EventCardProps> = ({
           {!isRegOpen ? (
             <button
               disabled
-              className="min-h-[40px] py-2 px-3 sm:px-4 text-[11px] font-bold tracking-wider uppercase text-rose-300 bg-rose-950/60 border border-rose-500/50 rounded-lg cursor-not-allowed whitespace-nowrap shadow-inner"
+              className="min-h-[40px] py-2 px-3 sm:px-4 text-xs font-bold tracking-wider text-rose-300 bg-rose-950/60 border border-rose-500/50 rounded-lg cursor-not-allowed whitespace-nowrap shadow-inner flex items-center justify-center gap-1.5"
             >
-              REGISTRATION CLOSED
+              <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+              <span>Registration Closed</span>
             </button>
           ) : (
             <button

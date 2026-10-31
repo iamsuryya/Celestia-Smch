@@ -208,13 +208,23 @@ export const ComboOffersPage: React.FC<ComboOffersPageProps> = ({
 
               {/* Action Footer */}
               <div className="p-6 pt-0 mt-2">
-                <button
-                  onClick={() => handleDirectComboSelection(offer)}
-                  className="w-full py-3.5 px-4 rounded-xl font-bold text-sm bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 shadow-md shadow-amber-500/20 hover:shadow-amber-500/30 flex items-center justify-center gap-2 transition-all cursor-pointer"
-                >
-                  <span>{offer.buttonText}</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
+                {offer.id === 'viral-takeover' && (!isEventRegistrationOpen('mememania') && !isEventRegistrationOpen('cineverse')) ? (
+                  <button
+                    disabled
+                    className="w-full py-3.5 px-4 rounded-xl font-bold text-sm bg-rose-950/60 text-rose-300 border border-rose-500/40 cursor-not-allowed flex items-center justify-center gap-2 opacity-90 shadow-inner"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                    <span>Registration Closed</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleDirectComboSelection(offer)}
+                    className="w-full py-3.5 px-4 rounded-xl font-bold text-sm bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 shadow-md shadow-amber-500/20 hover:shadow-amber-500/30 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                  >
+                    <span>{offer.buttonText}</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             </div>
           );
