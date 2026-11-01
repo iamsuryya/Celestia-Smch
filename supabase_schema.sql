@@ -57,36 +57,54 @@ ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS combo_name TEXT DEFAUL
 ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS combo_type TEXT DEFAULT NULL;
 ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS combo_discount_amount NUMERIC DEFAULT NULL;
 
--- Backfill and reconcile payment columns (paid_amount, pending_amount, payment_status):
-UPDATE public.registrations AS r
-SET 
-  paid_amount = COALESCE(r.paid_amount, (SELECT p.amount_paid FROM public.payment_submissions p WHERE p.registration_id = r.id ORDER BY p.created_at DESC LIMIT 1), r.total_fee, 0),
-  pending_amount = GREATEST(0, COALESCE(r.total_fee, 0) - COALESCE(r.paid_amount, (SELECT p.amount_paid FROM public.payment_submissions p WHERE p.registration_id = r.id ORDER BY p.created_at DESC LIMIT 1), r.total_fee, 0)),
-  payment_status = CASE 
-    WHEN r.is_host_college = true THEN 'Paid in Full'
-    WHEN GREATEST(0, COALESCE(r.total_fee, 0) - COALESCE(r.paid_amount, (SELECT p.amount_paid FROM public.payment_submissions p WHERE p.registration_id = r.id ORDER BY p.created_at DESC LIMIT 1), r.total_fee, 0)) = 0 AND COALESCE(r.total_fee, 0) > 0 THEN 'Paid in Full'
-    WHEN COALESCE(r.paid_amount, (SELECT p.amount_paid FROM public.payment_submissions p WHERE p.registration_id = r.id ORDER BY p.created_at DESC LIMIT 1), 0) > 0 THEN 'Advance Paid'
-    ELSE 'Pending'
-  END
-WHERE r.paid_amount IS NULL OR r.pending_amount IS NULL;
+-- 1. Synchronize total_fee to original_amount for all registrations (SMCH host college = 0)
+UPDATE public.registrations
+SET total_fee = CASE
+  WHEN (is_host_college = true OR (college_name ILIKE '%srinivasan%' AND college_name NOT ILIKE '%dhanalakshmi%')) THEN 0
+  ELSE COALESCE(NULLIF(original_amount, 0), total_fee, 0)
+END;
 
--- 1. Fix Tvmc dance crew advance payment (UTR: 667134329031): paid 500 advance, total 2500, due 2000
+-- 2. Update the two advance paying registrations (paid 500 each, remaining pending):
+-- UUID 1: 44749e06-4bd5-4630-b4d0-93bf2cd7bc60
+-- UUID 2: acb227ae-fd43-4798-8827-0466e8830cd1
 UPDATE public.registrations
 SET 
-  total_fee = 2500,
+  total_fee = CASE
+    WHEN (is_host_college = true OR (college_name ILIKE '%srinivasan%' AND college_name NOT ILIKE '%dhanalakshmi%')) THEN 0
+    ELSE COALESCE(NULLIF(original_amount, 0), total_fee, 0)
+  END,
   paid_amount = 500,
-  pending_amount = 2000,
+  pending_amount = GREATEST(0, COALESCE(NULLIF(original_amount, 0), total_fee, 0) - 500),
   payment_status = 'Advance Paid'
-WHERE team_name ILIKE '%tvmc%' OR id IN (SELECT registration_id FROM public.payment_submissions WHERE utr_number = '667134329031');
+WHERE id IN (
+  '44749e06-4bd5-4630-b4d0-93bf2cd7bc60',
+  'acb227ae-fd43-4798-8827-0466e8830cd1'
+);
 
--- 2. Fix Hrithik Roshan advance payment: paid 500 advance, total 4500, due 4000
+-- 3. Update all other participants: paid_amount equals total_fee, pending_amount is 0
+-- SMCH Host students: paid_amount = 0, pending_amount = 0, payment_status = 'Paid in Full'
+-- All other participants: paid_amount = total_fee, pending_amount = 0, payment_status = 'Paid in Full'
 UPDATE public.registrations
 SET 
-  total_fee = 4500,
-  paid_amount = 500,
-  pending_amount = 4000,
-  payment_status = 'Advance Paid'
-WHERE id IN (SELECT registration_id FROM public.participants WHERE full_name ILIKE '%hrithik%');
+  paid_amount = CASE
+    WHEN (is_host_college = true OR (college_name ILIKE '%srinivasan%' AND college_name NOT ILIKE '%dhanalakshmi%')) THEN 0
+    ELSE total_fee
+  END,
+  pending_amount = 0,
+  payment_status = 'Paid in Full'
+WHERE id NOT IN (
+  '44749e06-4bd5-4630-b4d0-93bf2cd7bc60',
+  'acb227ae-fd43-4798-8827-0466e8830cd1'
+);
+
+-- 4. Sync payment_submissions table records for the two advance registrations
+-- Note: payment_submissions uses 'Verified' (since receipt is verified) and amount_paid = 500
+UPDATE public.payment_submissions
+SET amount_paid = 500, payment_status = 'Verified'
+WHERE registration_id IN (
+  '44749e06-4bd5-4630-b4d0-93bf2cd7bc60',
+  'acb227ae-fd43-4798-8827-0466e8830cd1'
+);
 
 -- 3. Create Participants Table
 CREATE TABLE IF NOT EXISTS public.participants (

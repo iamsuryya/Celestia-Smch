@@ -130,6 +130,52 @@ export function getDeskStatus(reg: RegistrationSubmission): DeskStatus {
   return 'PENDING';
 }
 
+export interface CustomPaymentOverrideRecord {
+  paidAmount: number;
+  pendingAmount: number;
+  paymentStatus: PaymentStatus;
+  totalAmount?: number;
+}
+
+export function getCustomPaymentOverrides(): Record<string, CustomPaymentOverrideRecord> {
+  try {
+    const raw = localStorage.getItem('celestia_custom_payments');
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveCustomPaymentOverride(
+  id: string,
+  regCode: string | undefined,
+  paid: number,
+  pending: number,
+  status: PaymentStatus,
+  total?: number
+) {
+  try {
+    const current = getCustomPaymentOverrides();
+    const record: CustomPaymentOverrideRecord = {
+      paidAmount: paid,
+      pendingAmount: pending,
+      paymentStatus: status,
+      totalAmount: total,
+    };
+    if (id) {
+      current[id] = record;
+      current[id.toLowerCase()] = record;
+    }
+    if (regCode) {
+      current[regCode] = record;
+      current[regCode.toLowerCase()] = record;
+    }
+    localStorage.setItem('celestia_custom_payments', JSON.stringify(current));
+  } catch (e) {
+    console.warn('Error saving custom payment override:', e);
+  }
+}
+
 export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = ({
   onExit,
   onNavigateToTabulation,
@@ -473,6 +519,15 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
         if (pend === 0 && total > 0) st = 'Paid in Full';
         else if (paid > 0) st = 'Advance Paid';
 
+        saveCustomPaymentOverride(
+          inspectRegistration.id,
+          inspectRegistration.registrationCode,
+          paid,
+          pend,
+          st,
+          total
+        );
+
         const updatedReg: RegistrationSubmission = {
           ...inspectRegistration,
           totalAmount: total,
@@ -797,9 +852,18 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
         finalTotal = matched.feeType === 'per_head' ? matched.feeAmount * pCount : matched.feeAmount;
       }
 
+      // Read any explicit admin custom overrides
+      const regIdLower = (r.id || '').toLowerCase();
+      const regCodeLower = (r.registrationCode || '').toLowerCase();
+      const customPaymentOverrides = getCustomPaymentOverrides();
+      const customOverride = customPaymentOverrides[r.id] || 
+                             customPaymentOverrides[r.registrationCode || ''] || 
+                             customPaymentOverrides[regIdLower] || 
+                             customPaymentOverrides[regCodeLower];
+
       let finalPaid = 0;
       let finalPending = 0;
-      let finalPaymentStatus: PaymentStatus = r.paymentStatus || 'Pending';
+      let finalPaymentStatus: PaymentStatus = 'Paid in Full';
 
       if (isSmchHost) {
         finalTotal = 0;
@@ -811,39 +875,41 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
         finalPaid = 0;
         finalPending = 0;
         finalPaymentStatus = 'Paid in Full';
-      } else if (r.paidAmount !== undefined && r.paidAmount !== null && !isNaN(Number(r.paidAmount))) {
-        // STRICT RULE: Respect explicit amount paid edited by admin or stored in database
-        finalPaid = Number(r.paidAmount);
-        finalPending = r.pendingAmount !== undefined && r.pendingAmount !== null && !isNaN(Number(r.pendingAmount))
-          ? Number(r.pendingAmount)
-          : Math.max(0, finalTotal - finalPaid);
-
-        if (finalPending === 0 && finalTotal > 0) {
-          finalPaymentStatus = 'Paid in Full';
-        } else if (finalPaid > 0 && finalPending > 0) {
-          finalPaymentStatus = 'Advance Paid';
-        } else if (finalTotal === 0) {
-          finalPaymentStatus = 'Paid in Full';
-        } else {
-          finalPaymentStatus = r.paymentStatus || 'Pending';
-        }
+      } else if (customOverride) {
+        // 1. Explicit admin edit for one of the "2 or 3 that didn't pay that amount"
+        finalTotal = customOverride.totalAmount !== undefined && customOverride.totalAmount > 0 ? customOverride.totalAmount : finalTotal;
+        finalPaid = customOverride.paidAmount;
+        finalPending = customOverride.pendingAmount !== undefined ? customOverride.pendingAmount : Math.max(0, finalTotal - finalPaid);
+        finalPaymentStatus = customOverride.paymentStatus || (finalPending === 0 ? 'Paid in Full' : 'Advance Paid');
       } else if (isTvmc) {
-        finalTotal = finalTotal > 0 ? finalTotal : 2500;
+        // 2. TVMC Dance Crew: ₹500 advance paid, ₹2,500 total, ₹2,000 due
+        finalTotal = 2500;
         finalPaid = 500;
-        finalPending = Math.max(0, finalTotal - 500);
+        finalPending = 2000;
         finalPaymentStatus = 'Advance Paid';
       } else if (isHrithik) {
-        finalTotal = finalTotal > 0 ? finalTotal : 4500;
+        // 3. Hrithik Roshan: ₹500 advance paid, ₹4,500 total, ₹4,000 due
+        finalTotal = 4500;
         finalPaid = 500;
-        finalPending = Math.max(0, finalTotal - 500);
+        finalPending = 4000;
+        finalPaymentStatus = 'Advance Paid';
+      } else if (
+        r.paymentStatus === 'Advance Paid' &&
+        r.paidAmount !== undefined &&
+        Number(r.paidAmount) > 0 &&
+        Number(r.paidAmount) < finalTotal
+      ) {
+        // 4. Any record specifically flagged as Advance Paid with a partial amount
+        finalPaid = Number(r.paidAmount);
+        finalPending = r.pendingAmount !== undefined ? Number(r.pendingAmount) : Math.max(0, finalTotal - finalPaid);
         finalPaymentStatus = 'Advance Paid';
       } else {
-        // Default fallback for remaining participants: full payment completed
+        // 5. "The amount shown in denominator is correct and that amount they have mostly paid..
+        // So can u make it as paid for all.. Only 2 or 3 didnt pay that amount , that i will edit"
+        // By default, everyone has paid the full denominator amount!
         finalPaid = finalTotal;
         finalPending = 0;
-        if (finalPaymentStatus === 'Pending' || finalPaymentStatus === 'Submitted') {
-          finalPaymentStatus = 'Paid in Full';
-        }
+        finalPaymentStatus = 'Paid in Full';
       }
 
       return {
@@ -1533,6 +1599,14 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
 
     // Optimistically update cloud & local list state
     const pend = Math.max(0, editFormData.totalAmount - editFormData.paidAmount);
+    saveCustomPaymentOverride(
+      editingRegistration.id,
+      editingRegistration.registrationCode,
+      editFormData.paidAmount,
+      pend,
+      editFormData.paymentStatus,
+      editFormData.totalAmount
+    );
     setCloudRegistrations((prev) =>
       prev.map((r) => {
         if (r.id === editingRegistration.id || r.registrationCode === editingRegistration.registrationCode) {
