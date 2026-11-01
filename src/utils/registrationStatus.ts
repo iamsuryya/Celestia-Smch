@@ -99,6 +99,20 @@ export function isEventRegistrationOpen(eventCodeOrId: string | undefined): bool
     return false;
   }
 
+  // Elaris (Fashion Walk Solo) registration is closed / stopped
+  if (
+    normalized === 'elaris' ||
+    normalized === 'f01' ||
+    normalized === 'cosplay' ||
+    normalized === 'fashion-walk-solo'
+  ) {
+    const elarisOverride = typeof window !== 'undefined' ? localStorage.getItem('celestia_elaris_manual_override') : null;
+    if (elarisOverride !== null) {
+      return elarisOverride === 'true';
+    }
+    return false;
+  }
+
   const map = getEventRegistrationStatusMap();
 
   // 1. Direct exact key lookup in status map
@@ -145,6 +159,9 @@ export function setEventRegistrationOpen(eventCodeOrId: string, isOpen: boolean)
     }
     if (normalized === 'seraphia' || normalized === 'solo-singing') {
       localStorage.setItem('celestia_seraphia_manual_override', String(isOpen));
+    }
+    if (normalized === 'elaris' || normalized === 'f01' || normalized === 'cosplay') {
+      localStorage.setItem('celestia_elaris_manual_override', String(isOpen));
     }
     
     map[eventCodeOrId] = isOpen;

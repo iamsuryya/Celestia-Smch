@@ -49,6 +49,32 @@ export interface ParticipantMember {
   role?: string; // e.g. "Team Leader", "Performer", "Accompanist"
   registerNumber?: string;
   batch?: string;
+  
+  // Event Day Attendance & ID Badge fields
+  participantId?: string;
+  attendanceStatus?: 'NOT_ARRIVED' | 'PRESENT';
+  checkedInAt?: string;
+  checkedInBy?: string;
+  idCardStatus?: 'NOT_ISSUED' | 'ISSUED';
+  idCardNumber?: string;
+  idCardIssuedAt?: string;
+  idCardIssuedBy?: string;
+}
+
+export type RegistrationSource = 'ONLINE' | 'ON_SPOT';
+export type CheckInStatus = 'NOT_CHECKED_IN' | 'PARTIAL' | 'CHECKED_IN';
+
+export interface AuditLogEntry {
+  id: string;
+  action: string;
+  registrationId?: string;
+  registrationCode?: string;
+  participantId?: string;
+  participantName?: string;
+  volunteerRole: string;
+  volunteerName: string;
+  details?: Record<string, any>;
+  createdAt: string;
 }
 
 export interface PromoCode {
@@ -118,6 +144,12 @@ export interface RegistrationSubmission {
   comboDiscountAmount?: number;
   comboEventIndex?: number;
   comboTotalEvents?: number;
+  
+  // Event Day Registration Source & Attendance Metadata
+  registrationSource?: RegistrationSource;
+  checkInStatus?: CheckInStatus;
+  checkedInBy?: string;
+  checkedInAt?: string;
   
   // Statuses
   paymentStatus: PaymentStatus;

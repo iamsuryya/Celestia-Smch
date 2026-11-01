@@ -19,7 +19,7 @@
  *    - Strictly limited to APPROVED registrations verified by Admin.
  */
 
-export type UserRole = 'admin' | 'result' | 'incharges';
+export type UserRole = 'admin' | 'result' | 'incharges' | 'regdesk' | 'onspot';
 
 export interface AuthProfileInfo {
   role: UserRole;
@@ -63,6 +63,26 @@ export const AUTH_PROFILES: Record<UserRole, AuthProfileInfo> = {
     defaultDestination: 'incharges',
     description: 'Real-time dashboard for event in-charges to classify and audit all official ADMIN-APPROVED participant rosters and teams.',
   },
+  regdesk: {
+    role: 'regdesk',
+    title: 'Registration Check-In Desk',
+    badge: 'Registration Desk',
+    usernameDisplay: 'Registration Desk',
+    allowedUsernames: ['regdesk', 'registrationdesk', 'regdesk@celestia.edu'],
+    password: 'regdeskcelestia@',
+    defaultDestination: 'regdesk',
+    description: 'Operational desk for pre-registered attendees check-in, team member additions, 1-tap attendance marking, and physical ID card issuance.',
+  },
+  onspot: {
+    role: 'onspot',
+    title: 'On-Spot Venue Registration Desk',
+    badge: 'On-Spot Desk',
+    usernameDisplay: 'On-Spot Desk',
+    allowedUsernames: ['onspot', 'onspotregistration', 'onspot@celestia.edu'],
+    password: 'onspotcelestia@',
+    defaultDestination: 'onspot',
+    description: 'Venue registration desk for processing new team & individual entries, locked official fee collection, volunteer UTR entry, and instant badge generation.',
+  },
 };
 
 /**
@@ -86,10 +106,6 @@ export function authenticateProfile(username: string, pass: string): {
 
   // 1. Direct password match (foolproof single key entry)
   if (cleanPass === AUTH_PROFILES.admin.password) {
-    // If username is provided, verify it is not explicitly another role
-    if (!cleanUser || cleanUser.includes('admin') || cleanUser === 'admin') {
-      return { authenticated: true, role: 'admin', profile: AUTH_PROFILES.admin };
-    }
     return { authenticated: true, role: 'admin', profile: AUTH_PROFILES.admin };
   }
 
@@ -99,6 +115,14 @@ export function authenticateProfile(username: string, pass: string): {
 
   if (cleanPass === AUTH_PROFILES.incharges.password) {
     return { authenticated: true, role: 'incharges', profile: AUTH_PROFILES.incharges };
+  }
+
+  if (cleanPass === AUTH_PROFILES.regdesk.password) {
+    return { authenticated: true, role: 'regdesk', profile: AUTH_PROFILES.regdesk };
+  }
+
+  if (cleanPass === AUTH_PROFILES.onspot.password) {
+    return { authenticated: true, role: 'onspot', profile: AUTH_PROFILES.onspot };
   }
 
   // 2. Strict Role/Username Match
@@ -115,7 +139,7 @@ export function authenticateProfile(username: string, pass: string): {
 
   return {
     authenticated: false,
-    error: 'Invalid credentials. Only authorized Admin, Result, or Incharges profiles are permitted.',
+    error: 'Invalid credentials. Only authorized Admin, Result, Incharges, Registration Desk, or On-Spot profiles are permitted.',
   };
 }
 
@@ -125,10 +149,16 @@ export function authenticateProfile(username: string, pass: string): {
 export function getCurrentAuthRole(): UserRole | null {
   if (typeof window === 'undefined') return null;
   const role = sessionStorage.getItem('celestia_active_role') as UserRole | null;
-  if (role && (role === 'admin' || role === 'result' || role === 'incharges')) {
+  if (role && (role === 'admin' || role === 'result' || role === 'incharges' || role === 'regdesk' || role === 'onspot')) {
     return role;
   }
   // Fallback checks
+  if (sessionStorage.getItem('celestia_regdesk_auth') === 'true') {
+    return 'regdesk';
+  }
+  if (sessionStorage.getItem('celestia_onspot_auth') === 'true') {
+    return 'onspot';
+  }
   if (sessionStorage.getItem('celestia_admin1_auth') === 'true' && sessionStorage.getItem('celestia_admin_auth') === 'true') {
     return 'admin';
   }
@@ -152,14 +182,32 @@ export function persistAuthRole(role: UserRole) {
     sessionStorage.setItem('celestia_admin_auth', 'true');
     sessionStorage.setItem('celestia_admin1_auth', 'true');
     sessionStorage.setItem('celestia_incharges_auth', 'true');
+    sessionStorage.setItem('celestia_regdesk_auth', 'true');
+    sessionStorage.setItem('celestia_onspot_auth', 'true');
+  } else if (role === 'regdesk') {
+    sessionStorage.setItem('celestia_regdesk_auth', 'true');
+    sessionStorage.removeItem('celestia_admin_auth');
+    sessionStorage.removeItem('celestia_admin1_auth');
+    sessionStorage.removeItem('celestia_incharges_auth');
+    sessionStorage.removeItem('celestia_onspot_auth');
+  } else if (role === 'onspot') {
+    sessionStorage.setItem('celestia_onspot_auth', 'true');
+    sessionStorage.removeItem('celestia_admin_auth');
+    sessionStorage.removeItem('celestia_admin1_auth');
+    sessionStorage.removeItem('celestia_incharges_auth');
+    sessionStorage.removeItem('celestia_regdesk_auth');
   } else if (role === 'result') {
     sessionStorage.setItem('celestia_admin_auth', 'true');
     sessionStorage.removeItem('celestia_admin1_auth');
     sessionStorage.removeItem('celestia_incharges_auth');
+    sessionStorage.removeItem('celestia_regdesk_auth');
+    sessionStorage.removeItem('celestia_onspot_auth');
   } else if (role === 'incharges') {
     sessionStorage.setItem('celestia_incharges_auth', 'true');
     sessionStorage.removeItem('celestia_admin_auth');
     sessionStorage.removeItem('celestia_admin1_auth');
+    sessionStorage.removeItem('celestia_regdesk_auth');
+    sessionStorage.removeItem('celestia_onspot_auth');
   }
 }
 
@@ -172,6 +220,8 @@ export function clearAuthSession() {
   sessionStorage.removeItem('celestia_admin_auth');
   sessionStorage.removeItem('celestia_admin1_auth');
   sessionStorage.removeItem('celestia_incharges_auth');
+  sessionStorage.removeItem('celestia_regdesk_auth');
+  sessionStorage.removeItem('celestia_onspot_auth');
 }
 
 /**

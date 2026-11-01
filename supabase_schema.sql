@@ -57,6 +57,21 @@ ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS combo_name TEXT DEFAUL
 ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS combo_type TEXT DEFAULT NULL;
 ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS combo_discount_amount NUMERIC DEFAULT NULL;
 
+-- Event Day Check-In & On-Spot Source Columns
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS registration_source TEXT DEFAULT 'ONLINE';
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS check_in_status TEXT DEFAULT 'NOT_CHECKED_IN';
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS checked_in_by TEXT DEFAULT NULL;
+ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS checked_in_at TIMESTAMPTZ DEFAULT NULL;
+
+-- Participants Attendance & ID Card Columns
+ALTER TABLE public.participants ADD COLUMN IF NOT EXISTS attendance_status TEXT DEFAULT 'NOT_ARRIVED';
+ALTER TABLE public.participants ADD COLUMN IF NOT EXISTS checked_in_at TIMESTAMPTZ DEFAULT NULL;
+ALTER TABLE public.participants ADD COLUMN IF NOT EXISTS checked_in_by TEXT DEFAULT NULL;
+ALTER TABLE public.participants ADD COLUMN IF NOT EXISTS id_card_status TEXT DEFAULT 'NOT_ISSUED';
+ALTER TABLE public.participants ADD COLUMN IF NOT EXISTS id_card_number TEXT DEFAULT NULL;
+ALTER TABLE public.participants ADD COLUMN IF NOT EXISTS id_card_issued_at TIMESTAMPTZ DEFAULT NULL;
+ALTER TABLE public.participants ADD COLUMN IF NOT EXISTS id_card_issued_by TEXT DEFAULT NULL;
+
 -- 1. Synchronize total_fee to original_amount for all registrations (SMCH host college = 0)
 UPDATE public.registrations
 SET total_fee = CASE

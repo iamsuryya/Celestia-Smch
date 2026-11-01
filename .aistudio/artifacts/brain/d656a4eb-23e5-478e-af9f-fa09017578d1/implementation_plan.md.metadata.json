@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan to standardize Supabase payment calculations: setting total_fee equal to original_amount, setting paid_amount to full fee for all participants except two advance IDs (44749e06-4bd5-4630-b4d0-93bf2cd7bc60 and acb227ae-fd43-4798-8827-0466e8830cd1 paying 500 each) and host students (0 fee), and pending_amount as the exact difference, across both Supabase SQL and the Admin sync button.",
-  "updatedAt":  "2026-11-01T05:11:03.821085416Z",
+  "summary":  "Revised implementation plan for the Celestia'26 Event Day Registration & Check-In System featuring dedicated Registration Desk and On-Spot Registration dashboards, plus extra ease-of-use enhancements (QR scanner search, 1-tap team check-in, offline resilience queue, and live metrics counter).",
+  "updatedAt":  "2026-11-01T07:01:52.263910800Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

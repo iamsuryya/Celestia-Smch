@@ -1017,7 +1017,14 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
 
                     {/* Registration Code */}
                     <td className="py-3 px-3 font-mono font-semibold text-white whitespace-nowrap">
-                      {code}
+                      <div>{code}</div>
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold font-mono border inline-block mt-0.5 ${
+                        reg.registrationSource === 'ON_SPOT' || (reg.registrationCode && reg.registrationCode.includes('SPOT'))
+                          ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
+                          : 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                      }`}>
+                        {reg.registrationSource === 'ON_SPOT' || (reg.registrationCode && reg.registrationCode.includes('SPOT')) ? 'ON_SPOT' : 'ONLINE'}
+                      </span>
                     </td>
 
                     {/* Team Name */}
@@ -1170,6 +1177,13 @@ export const InchargesPortalPage: React.FC<InchargesPortalPageProps> = ({
                       <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
                         <CheckCircle className="w-3 h-3 text-emerald-400" />
                         <span>Approved</span>
+                      </span>
+                      <span className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold border flex items-center gap-1 ${
+                        reg.registrationSource === 'ON_SPOT' || (reg.registrationCode && reg.registrationCode.includes('SPOT'))
+                          ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
+                          : 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                      }`}>
+                        {reg.registrationSource === 'ON_SPOT' || (reg.registrationCode && reg.registrationCode.includes('SPOT')) ? 'ON_SPOT' : 'ONLINE'}
                       </span>
                     </div>
 

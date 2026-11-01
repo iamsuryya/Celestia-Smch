@@ -16,6 +16,8 @@ import { AccommodationPage } from './pages/AccommodationPage';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import { Admin1RegistrationsPage } from './pages/Admin1RegistrationsPage';
 import { InchargesPortalPage } from './pages/InchargesPortalPage';
+import { RegistrationDeskPage } from './pages/RegistrationDeskPage';
+import { OnSpotRegistrationPage } from './pages/OnSpotRegistrationPage';
 import { AboutPage } from './pages/AboutPage';
 import { ContactPage } from './pages/ContactPage';
 import { ComboOffersPage } from './pages/ComboOffersPage';
@@ -29,6 +31,12 @@ function AppContent() {
     // Support direct navigation to /admin, /admin1, /incharges or hash variations
     const path = window.location.pathname.toLowerCase();
     const hash = window.location.hash.toLowerCase();
+    if (path.includes('regdesk') || hash.includes('regdesk')) {
+      return 'regdesk';
+    }
+    if (path.includes('onspot') || hash.includes('onspot')) {
+      return 'onspot';
+    }
     if (path.includes('incharges') || hash.includes('incharges')) {
       return 'incharges';
     }
@@ -60,12 +68,18 @@ function AppContent() {
     document.body.scrollTop = 0;
   }, [currentPage, isRegisteringView, activeComboWizard]);
 
-  // Listen to popstate / hashchange to allow direct route /admin, /admin1, /incharges typing
+  // Listen to popstate / hashchange to allow direct route typing
   React.useEffect(() => {
     const handleUrlChange = () => {
       const path = window.location.pathname.toLowerCase();
       const hash = window.location.hash.toLowerCase();
-      if (path.includes('incharges') || hash.includes('incharges')) {
+      if (path.includes('regdesk') || hash.includes('regdesk')) {
+        setCurrentPage('regdesk');
+        setIsRegisteringView(false);
+      } else if (path.includes('onspot') || hash.includes('onspot')) {
+        setCurrentPage('onspot');
+        setIsRegisteringView(false);
+      } else if (path.includes('incharges') || hash.includes('incharges')) {
         setCurrentPage('incharges');
         setIsRegisteringView(false);
       } else if (path.includes('admin1') || hash.includes('admin1') || path.includes('celestiasmch') || hash.includes('celestiasmch')) {
@@ -95,6 +109,10 @@ function AppContent() {
       window.history.pushState(null, '', '#/admin1');
     } else if (page === 'incharges') {
       window.history.pushState(null, '', '#/incharges');
+    } else if (page === 'regdesk') {
+      window.history.pushState(null, '', '#/regdesk');
+    } else if (page === 'onspot') {
+      window.history.pushState(null, '', '#/onspot');
     } else if (page === 'home') {
       window.history.pushState(null, '', window.location.pathname);
     } else {
@@ -238,6 +256,21 @@ function AppContent() {
             />
           )}
 
+          {currentPage === 'regdesk' && (
+            <RegistrationDeskPage
+              onExit={() => handleNavigate('home')}
+              onNavigateToOnSpot={() => handleNavigate('onspot')}
+              onNavigateToAdmin={() => handleNavigate('admin1')}
+            />
+          )}
+
+          {currentPage === 'onspot' && (
+            <OnSpotRegistrationPage
+              onExit={() => handleNavigate('home')}
+              onNavigateToRegDesk={() => handleNavigate('regdesk')}
+            />
+          )}
+
           {currentPage === 'about' && <AboutPage />}
 
           {currentPage === 'contact' && (
@@ -256,8 +289,8 @@ function AppContent() {
         onRegister={(ev) => handleOpenRegister(ev)}
       />
 
-      {/* Footer (shown on main website views, hidden when in admin, admin1, incharges, combo wizard or registering) */}
-      {!isRegisteringView && !activeComboWizard && currentPage !== 'admin' && currentPage !== 'admin1' && currentPage !== 'incharges' && (
+      {/* Footer (shown on main website views, hidden when in admin, admin1, incharges, regdesk, onspot, combo wizard or registering) */}
+      {!isRegisteringView && !activeComboWizard && currentPage !== 'admin' && currentPage !== 'admin1' && currentPage !== 'incharges' && currentPage !== 'regdesk' && currentPage !== 'onspot' && (
         <Footer
           onNavigate={handleNavigate}
           onOpenRegister={() => handleOpenRegister()}

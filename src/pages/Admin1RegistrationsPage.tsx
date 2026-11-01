@@ -97,6 +97,7 @@ import { exportAccountsVerificationCSV } from '../utils/exportAccountsHelper';
 import { isExactSmchHost } from '../utils/collegeTagging';
 import { CaptainContactModal } from '../components/admin/CaptainContactModal';
 import { CollegeAuditModal } from '../components/admin/CollegeAuditModal';
+import { AuditLogsModal } from '../components/admin/AuditLogsModal';
 import { Smartphone } from 'lucide-react';
 
 interface Admin1RegistrationsPageProps {
@@ -212,6 +213,7 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
   const [cloudDiagnostics, setCloudDiagnostics] = useState<CloudDiagnostics | null>(null);
   const [isCheckingCloud, setIsCheckingCloud] = useState(false);
   const [showCloudModal, setShowCloudModal] = useState(false);
+  const [showAuditLogsModal, setShowAuditLogsModal] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
 
   // Test Generator Suite State
@@ -2935,6 +2937,17 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
           >
             <CreditCard className="w-3.5 h-3.5 text-cyan-950" />
             <span>Accounts Verification Sheet (CSV)</span>
+          </button>
+
+          {/* Volunteer Audit Logs */}
+          <button
+            type="button"
+            onClick={() => setShowAuditLogsModal(true)}
+            className="px-3.5 py-2 rounded-xl font-bold text-xs uppercase tracking-wider text-purple-950 bg-gradient-to-r from-purple-300 via-fuchsia-300 to-indigo-300 hover:brightness-110 transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-purple-500/20"
+            title="Inspect volunteer check-in actions, on-spot creations, and ID badge logs"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-purple-950" />
+            <span>Volunteer Audit Logs</span>
           </button>
 
           {/* Sync Payment Columns to Supabase */}
@@ -6356,6 +6369,12 @@ CREATE POLICY "Allow public access to celestia_promo_codes" ON public.celestia_p
         registrations={allRegistrations}
         onAuditCompleted={loadData}
         showToast={showToast}
+      />
+
+      {/* MODAL: VOLUNTEER AUDIT LOGS TRAIL */}
+      <AuditLogsModal
+        isOpen={showAuditLogsModal}
+        onClose={() => setShowAuditLogsModal(false)}
       />
 
       {/* Admin 1 Desk Footer */}

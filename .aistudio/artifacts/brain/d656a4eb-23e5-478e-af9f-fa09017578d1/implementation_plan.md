@@ -1,100 +1,140 @@
-# Supabase Payment Column Reconciliation & Advance Fee Rule Plan
+# Celestia'26 Event Day Registration & Check-In System
 
-Standardize payment data across Supabase and the Admin 1 Console by synchronizing `total_fee`, `paid_amount`, and `pending_amount` according to the confirmed financial rules, while pinning the two advance-paying registrations to ₹500 paid with balance due.
+A unified, high-speed event-day operational suite for Celestia'26 festival grounds. Enables venue volunteers to quickly check in pre-registered online attendees, append arriving team members, track individual attendance and ID card distribution, and process on-spot team and individual registrations with live integration into the Event Incharge Dashboard.
+
+---
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> All parameters have been aligned with your exact instructions:
-
-- **Confirmed Decision 1**: `total_fee` will equal `original_amount` for all external registrations (with fallback to calculated event fee if `original_amount` is unset or NULL).
-- **Confirmed Decision 2**: `paid_amount` equals `total_fee` (paid in full) for all participants EXCEPT:
-  - `44749e06-4bd5-4630-b4d0-93bf2cd7bc60` (paid ₹500)
-  - `acb227ae-fd43-4798-8827-0466e8830cd1` (paid ₹500)
-- **Confirmed Decision 3**: Srinivasan Medical College & Hospital (SMCH) host students have `total_fee = 0`, `paid_amount = 0`, and `pending_amount = 0`.
-- **Confirmed Decision 4**: `pending_amount` is calculated as `GREATEST(0, total_fee - paid_amount)` (yielding ₹0 for everyone, and `original_amount - 500` for the two advance entries).
-- **Confirmed Decision 5**: Applied in both the Supabase SQL schema script and the Admin 1 Desk 1-click "Sync Payment Columns to Supabase" button.
-
----
-
-### 1. Overview & Core Concept
-
-- **What It Does**: Resolves discrepancies between Supabase columns and the admin interface by systematically backfilling and maintaining `total_fee`, `paid_amount`, `pending_amount`, and `payment_status`.
-- **Target Audience**: Festival Central Admins, Event Incharges, and the Accounts Verification Desk auditing remittance figures.
-- **Key Value**: Total collected revenue, individual student payment cards, export spreadsheets, and raw Supabase Table Editor rows will report identical, mathematically balanced numbers.
+> The following architectural decisions incorporate your confirmed preferences and requested ease-of-use additions:
+> 
+> - **Two Dedicated Pages & Portals**: Dedicated `/regdesk` (Registration Desk) and `/onspot` (On-Spot Registration) dashboards with role-based credentials managed by Central Admin.
+> - **Added Ease-of-Use Enhancements (Fast-Queue Optimizations)**:
+>   1. **1-Tap "Check In All Present" Button**: Single-click button on team profiles to mark all arriving members as Present & Issue Badges instantly during rush hours.
+>   2. **Fast QR & Camera Search**: Live QR / Registration ID scanner capability to lookup tickets without typing.
+>   3. **Live Counter Bar**: Real-time venue counters showing total checked-in, pending badges, and on-spot registrations processed today.
+>   4. **Offline Resilience Queue**: LocalStorage caching so volunteers can continue operating smoothly even during temporary spotty Wi-Fi on festival grounds.
+> - **Venue Payment & UTR Entry**: Canonical event fees displayed (non-editable); volunteers enter student UTR numbers after manual student payment.
+> - **Zero-Data-Silo Incharge Integration**: All on-spot entries and newly added team members directly update the core database. The Event Incharges portal updates in real time with an `ONLINE` or `ON_SPOT` source badge.
 
 ---
 
-### 2. User Experience & Visual Design
+## 1. Overview & Core Concept
 
-- **Admin 1 Console Display**:
-  - The two advance registrations (`44749e06-4bd5-4630-b4d0-93bf2cd7bc60` and `acb227ae-fd43-4798-8827-0466e8830cd1`) will clearly display:
-    - **Paid**: `₹500`
-    - **Total Fee**: `₹[original_amount]`
-    - **Due (Pending)**: `₹[original_amount - 500]`
-    - **Badge**: `Advance Paid` (Amber badge)
-  - All other non-host registrations will show:
-    - **Paid**: `₹[total_fee]`
-    - **Total Fee**: `₹[total_fee]`
-    - **Due**: `₹0`
-    - **Badge**: `Paid in Full` or `Verified`
-  - Srinivasan Medical College students will show `₹0 / ₹0 (Host Waived)`.
-- **1-Click Sync & Modal**:
-  - When clicking **"Sync Payment Columns to Supabase"**, a confirmation modal details how many records will be updated, verifies the two advance IDs, and pushes the changes directly to Supabase via PostgREST.
-  - The **"Database Setup Guide"** modal provides the updated copy-paste SQL snippet.
+- **What It Does**: Provides fast, mobile-optimized tools for venue volunteers during peak registration rush on festival mornings:
+  1. **Registration Desk (`REGISTRATION_DESK`)**: Multi-parameter search (ID, Captain Name, Phone, College, QR Scan), on-the-fly addition of arriving team members up to event limits, per-person attendance (`NOT ARRIVED` vs `PRESENT`), 1-tap bulk check-in, and independent ID card issuance tracking.
+  2. **On-Spot Desk (`ON_SPOT_REGISTRATION`)**: Rapid registration for newly arriving teams and solo participants with duplicate pre-checks, non-editable official event fee locking, volunteer UTR entry, rules acceptance, instant ID card generation, and immediate check-in.
+  3. **Event Incharge Live Sync**: Real-time visibility of online and on-spot registrations in the Incharges Portal, with team member rosters, attendance indicators, and badge counts.
+- **Target Audience**: Student desk volunteers, event coordinators, stage managers, and festival administrators.
 
 ---
 
-### 3. Key Product Decisions & Trade-Offs
+## 2. User Experience & Visual Design
 
-- **Decision 1: Direct UUID Targeting vs. String Matching**:
-  - *Chosen Approach*: Specifically match `id = '44749e06-4bd5-4630-b4d0-93bf2cd7bc60'` and `id = 'acb227ae-fd43-4798-8827-0466e8830cd1'` directly in both SQL queries and JavaScript sync loops.
-  - *Why*: Eliminates any risk of accidentally misclassifying teams with similar names or multiple team members.
-- **Decision 2: Synchronization Redundancy**:
-  - *Chosen Approach*: Update both `supabase_schema.sql` (for SQL Editor execution) and `supabaseRegistrationService.ts` / `Admin1RegistrationsPage.tsx` (for client-side live sync and UI display).
-  - *Why*: Guarantees that whether you run the SQL script in Supabase or click the Sync button in the web browser, both databases and browser caches stay completely aligned.
+### Key User Flows
 
----
-
-### 4. Technical Architecture & Data Strategy
+#### A. Registration Desk Flow (`/regdesk`)
+1. **Fast Search / QR Scanner**: Type code/name/phone or use quick camera scan.
+2. **Instant Profile Card**: Displays college, event name, team size, payment status (`Paid in Full` / `Advance Paid`), and attendance summary.
+3. **Team Roster & Member Additions**:
+   - Shows existing members.
+   - Click **`+ Add Arriving Member`** to append teammates arriving at the venue.
+   - Enforces max team size rules and checks duplicate phone/names.
+4. **Attendance & ID Badge Actions**:
+   - **`1-Tap Check-In All Present`** for instant batch processing.
+   - Per-participant discrete toggles: **`Mark Present`** / **`Issue Badge`**.
+   - Auto-calculates team status: `NOT ARRIVED`, `PARTIAL` (e.g., 3/5 present), or `ALL PRESENT`.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                        DATA RECONCILIATION FLOW                        │
+│ [C26-1049]  TEAM THUNDER · IPL AUCTION                      [ONLINE]   │
+│ St. Joseph's College of Engineering · ₹1,200 Paid · 0 Due              │
+├────────────────────────────────────────────────────────────────────────┤
+│ Roster & Attendance (3 of 5 Present · PARTIAL)                         │
+│ [⚡ 1-Tap Check-In All Present]                                        │
+│                                                                        │
+│ 1. Rahul Sharma (Captain) · 9876543210                                 │
+│    Attendance: [✓ PRESENT 08:42 AM]      Badge: [✓ ISSUED #C26-0104]  │
+│                                                                        │
+│ 2. Arjun V (Member) · 9876543211                                       │
+│    Attendance: [✓ PRESENT 08:45 AM]      Badge: [✓ ISSUED #C26-0105]  │
+│                                                                        │
+│ 3. Karthik M (Member - Added at Venue) · 9876543212                    │
+│    Attendance: [✓ PRESENT 08:46 AM]      Badge: [⏳ Issue Badge]       │
+│                                                                        │
+│ 4. Vishnu R (Member) · 9876543213                                      │
+│    Attendance: [○ NOT ARRIVED]           Badge: [○ Not Issued]         │
+│                                                                        │
+│ [+ Add Arriving Team Member (1 slot remaining)]                        │
 └────────────────────────────────────────────────────────────────────────┘
-
-  [Supabase Database: registrations]
-       │
-       ├──► Step 1: Set total_fee = COALESCE(original_amount, total_fee)
-       │            (SMCH Host = 0)
-       │
-       ├──► Step 2: Set paid_amount:
-       │            ├─ If ID in ('44749e06...', 'acb227ae...'): paid_amount = 500
-       │            ├─ If is_host_college: paid_amount = 0
-       │            └─ For all others: paid_amount = total_fee
-       │
-       ├──► Step 3: Set pending_amount:
-       │            └─ GREATEST(0, total_fee - paid_amount)
-       │
-       └──► Step 4: Set payment_status:
-                    ├─ 'Advance Paid' (for the two advance IDs)
-                    └─ 'Paid in Full' (for all others)
-
-                           ▲
-                           │ Direct REST Sync or SQL Execution
-                           │
-       ┌───────────────────┴───────────────────────┐
-       │   Celestia '26 Admin 1 Desk Operations   │
-       │   - "Sync Payment Columns to Supabase"   │
-       │   - Accounts Verification Sheet (CSV)    │
-       │   - Total Collected Metric Card          │
-       └───────────────────────────────────────────┘
 ```
 
-#### File Implementation Scope:
-1. `supabase_schema.sql`:
-   - Incorporate the exact SQL update logic with UUID conditions for `44749e06-4bd5-4630-b4d0-93bf2cd7bc60` and `acb227ae-fd43-4798-8827-0466e8830cd1`.
-2. `src/services/supabaseRegistrationService.ts`:
-   - Update `syncAllRegistrationPaymentColumns` to apply this exact formula when pushing updates via the REST API.
-3. `src/pages/Admin1RegistrationsPage.tsx`:
-   - Update `sanitizeRegistration` and the SQL guide modal copy snippet so UI rendering matches Supabase 1:1.
+#### B. On-Spot Registration Flow (`/onspot`)
+1. **Event Selector**: Lists open events with fixed fee & max size.
+2. **Duplicate Detection Guard**: Auto-checks phone or team name against database to prevent accidental double entry.
+3. **Roster Input**: Captain details + 1-click member fields up to event capacity.
+4. **Payment Review**: Locked official event fee shown; prompt for volunteer to enter UTR reference number.
+5. **Instant Check-In**: Creates registration, assigns badge numbers, marks participants present, and produces event pass.
+
+---
+
+## 3. Technical Architecture & Data Strategy
+
+### Database Schema Migration (Non-Destructive)
+
+```sql
+-- 1. Extend public.registrations
+ALTER TABLE public.registrations 
+  ADD COLUMN IF NOT EXISTS registration_source TEXT DEFAULT 'ONLINE',
+  ADD COLUMN IF NOT EXISTS check_in_status TEXT DEFAULT 'NOT_CHECKED_IN',
+  ADD COLUMN IF NOT EXISTS checked_in_by TEXT DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS checked_in_at TIMESTAMPTZ DEFAULT NULL;
+
+-- 2. Extend public.participants
+ALTER TABLE public.participants 
+  ADD COLUMN IF NOT EXISTS attendance_status TEXT DEFAULT 'NOT_ARRIVED',
+  ADD COLUMN IF NOT EXISTS checked_in_at TIMESTAMPTZ DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS checked_in_by TEXT DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS id_card_status TEXT DEFAULT 'NOT_ISSUED',
+  ADD COLUMN IF NOT EXISTS id_card_number TEXT DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS id_card_issued_at TIMESTAMPTZ DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS id_card_issued_by TEXT DEFAULT NULL;
+
+-- 3. Create Audit Logs Table
+CREATE TABLE IF NOT EXISTS public.celestia_audit_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    action TEXT NOT NULL,
+    registration_id TEXT,
+    registration_code TEXT,
+    participant_id TEXT,
+    participant_name TEXT,
+    volunteer_role TEXT NOT NULL,
+    volunteer_name TEXT NOT NULL,
+    details JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- 4. Enable RLS and Permissive Policies
+ALTER TABLE public.celestia_audit_logs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow public insert and read audit_logs" ON public.celestia_audit_logs;
+CREATE POLICY "Allow public insert and read audit_logs" ON public.celestia_audit_logs 
+  FOR ALL USING (true) WITH CHECK (true);
+```
+
+### Pages & Routing Structure
+- `/regdesk` -> `src/pages/RegistrationDeskPage.tsx`
+- `/onspot` -> `src/pages/OnSpotRegistrationPage.tsx`
+- `/incharges` -> `src/pages/InchargesPortalPage.tsx` (Enhanced with `ONLINE` / `ON_SPOT` badges & member check-in states)
+- Core Logic Service -> `src/services/eventDayService.ts`
+
+---
+
+## 4. Verification Plan
+
+1. **Authentication**: Verify login for `REGISTRATION_DESK` (`regdesk@celestia.edu`) and `ON_SPOT_REGISTRATION` (`onspot@celestia.edu`).
+2. **Pre-Registered Check-In**: Search existing registration, mark members present, issue badges, verify persistence.
+3. **Team Member Addition**: Add new members to an existing team under event max limits.
+4. **On-Spot Registration**: Create team and solo entries with UTR entry. Verify immediate appearance in `InchargesPortalPage.tsx`.
+5. **Partial Team Attendance**: Verify teams with partial check-ins render as `PARTIAL`.
+6. **Audit Logs**: Verify audit logs in Central Admin for all volunteer actions.
