@@ -57,14 +57,36 @@ ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS combo_name TEXT DEFAUL
 ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS combo_type TEXT DEFAULT NULL;
 ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS combo_discount_amount NUMERIC DEFAULT NULL;
 
--- Backfill Existing Verified Registrations to Paid in Full
-UPDATE public.registrations 
+-- Backfill and reconcile payment columns (paid_amount, pending_amount, payment_status):
+UPDATE public.registrations AS r
 SET 
-  paid_amount = COALESCE(total_fee, 0),
-  pending_amount = 0,
-  payment_status = 'Paid in Full'
-WHERE (registration_status = 'Confirmed' OR payment_status = 'Verified' OR payment_status IS NULL) 
-  AND (paid_amount IS NULL);
+  paid_amount = COALESCE(r.paid_amount, (SELECT p.amount_paid FROM public.payment_submissions p WHERE p.registration_id = r.id ORDER BY p.created_at DESC LIMIT 1), r.total_fee, 0),
+  pending_amount = GREATEST(0, COALESCE(r.total_fee, 0) - COALESCE(r.paid_amount, (SELECT p.amount_paid FROM public.payment_submissions p WHERE p.registration_id = r.id ORDER BY p.created_at DESC LIMIT 1), r.total_fee, 0)),
+  payment_status = CASE 
+    WHEN r.is_host_college = true THEN 'Paid in Full'
+    WHEN GREATEST(0, COALESCE(r.total_fee, 0) - COALESCE(r.paid_amount, (SELECT p.amount_paid FROM public.payment_submissions p WHERE p.registration_id = r.id ORDER BY p.created_at DESC LIMIT 1), r.total_fee, 0)) = 0 AND COALESCE(r.total_fee, 0) > 0 THEN 'Paid in Full'
+    WHEN COALESCE(r.paid_amount, (SELECT p.amount_paid FROM public.payment_submissions p WHERE p.registration_id = r.id ORDER BY p.created_at DESC LIMIT 1), 0) > 0 THEN 'Advance Paid'
+    ELSE 'Pending'
+  END
+WHERE r.paid_amount IS NULL OR r.pending_amount IS NULL;
+
+-- 1. Fix Tvmc dance crew advance payment (UTR: 667134329031): paid 500 advance, total 2500, due 2000
+UPDATE public.registrations
+SET 
+  total_fee = 2500,
+  paid_amount = 500,
+  pending_amount = 2000,
+  payment_status = 'Advance Paid'
+WHERE team_name ILIKE '%tvmc%' OR id IN (SELECT registration_id FROM public.payment_submissions WHERE utr_number = '667134329031');
+
+-- 2. Fix Hrithik Roshan advance payment: paid 500 advance, total 4500, due 4000
+UPDATE public.registrations
+SET 
+  total_fee = 4500,
+  paid_amount = 500,
+  pending_amount = 4000,
+  payment_status = 'Advance Paid'
+WHERE id IN (SELECT registration_id FROM public.participants WHERE full_name ILIKE '%hrithik%');
 
 -- 3. Create Participants Table
 CREATE TABLE IF NOT EXISTS public.participants (

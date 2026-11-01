@@ -82,6 +82,12 @@ export function exportAccountsVerificationCSV(
       calculatedPaid = 0;
       pending = 0;
       paymentStatusLabel = 'Host Waiver (Free ₹0)';
+    } else if (r.paidAmount !== undefined && r.paidAmount !== null && !isNaN(Number(r.paidAmount))) {
+      calculatedPaid = Number(r.paidAmount);
+      pending = r.pendingAmount !== undefined && r.pendingAmount !== null && !isNaN(Number(r.pendingAmount))
+        ? Number(r.pendingAmount)
+        : Math.max(0, nominalFee - calculatedPaid);
+      paymentStatusLabel = pending === 0 ? 'Paid in Full' : `Advance Paid (₹${calculatedPaid} / ₹${nominalFee})`;
     } else if (isHrithik) {
       calculatedPaid = 500;
       pending = 4000;
@@ -93,7 +99,7 @@ export function exportAccountsVerificationCSV(
       } else {
         calculatedPaid = nominalFee;
       }
-      pending = 0;
+      pending = Math.max(0, nominalFee - calculatedPaid);
       paymentStatusLabel = r.promoCode ? `Paid in Full (${r.promoCode})` : 'Paid in Full';
     }
 

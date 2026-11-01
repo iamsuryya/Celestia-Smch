@@ -504,6 +504,32 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
     }
   };
 
+  const [isSyncingPaymentColumns, setIsSyncingPaymentColumns] = useState<boolean>(false);
+
+  const handleSyncPaymentColumnsToSupabase = async () => {
+    if (!isMainAdmin) {
+      showToast('Permission Denied: Only Main Central Admin can sync payment columns to Supabase.');
+      return;
+    }
+    if (!window.confirm('Sync and repair all payment columns (total_fee, paid_amount, pending_amount, payment_status) directly into Supabase database? This ensures Supabase Table Editor shows accurate Paid and Pending amounts for all teams.')) {
+      return;
+    }
+    setIsSyncingPaymentColumns(true);
+    try {
+      const res = await supabaseRegistrationService.syncAllRegistrationPaymentColumns(allRegistrations);
+      if (res.success) {
+        showToast(res.message);
+        await loadData();
+      } else {
+        showToast(`Sync error: ${res.message}`);
+      }
+    } catch (err: any) {
+      showToast(`Error: ${err?.message || 'Sync failed'}`);
+    } finally {
+      setIsSyncingPaymentColumns(false);
+    }
+  };
+
   const getWhatsAppLink = (mobile: string | undefined, captainName: string, eventTitle: string | undefined, regCode: string) => {
     if (!mobile) return '#';
     const cleanNumber = mobile.replace(/\D/g, '');
@@ -757,7 +783,20 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
         (r.participants?.[0]?.fullName || '').toLowerCase().includes('hrithik') ||
         (r.participants || []).some((p) => (p.fullName || '').toLowerCase().includes('hrithik'));
 
+      // Check if participant is Tvmc dance crew (UTR: 667134329031 - paid ₹500 advance, total ₹2,500, pending ₹2,000)
+      const isTvmc = 
+        (r.teamName || '').toLowerCase().includes('tvmc') ||
+        (r.utrNumber || '').trim() === '667134329031';
+
+      const isComboChild = Boolean(r.comboGroupId || r.comboId) && Number(r.totalAmount) === 0;
+
+      // Determine nominal total registration fee:
       let finalTotal = isSmchHost ? 0 : (Number(r.totalAmount) || 0);
+      if (!isSmchHost && !isComboChild && finalTotal === 0 && matched) {
+        const pCount = r.participantCount || r.participants?.length || 1;
+        finalTotal = matched.feeType === 'per_head' ? matched.feeAmount * pCount : matched.feeAmount;
+      }
+
       let finalPaid = 0;
       let finalPending = 0;
       let finalPaymentStatus: PaymentStatus = r.paymentStatus || 'Pending';
@@ -767,13 +806,39 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
         finalPaid = 0;
         finalPending = 0;
         finalPaymentStatus = 'Paid in Full';
-      } else if (isHrithik) {
-        finalTotal = 4500;
+      } else if (isComboChild) {
+        finalTotal = 0;
+        finalPaid = 0;
+        finalPending = 0;
+        finalPaymentStatus = 'Paid in Full';
+      } else if (r.paidAmount !== undefined && r.paidAmount !== null && !isNaN(Number(r.paidAmount))) {
+        // STRICT RULE: Respect explicit amount paid edited by admin or stored in database
+        finalPaid = Number(r.paidAmount);
+        finalPending = r.pendingAmount !== undefined && r.pendingAmount !== null && !isNaN(Number(r.pendingAmount))
+          ? Number(r.pendingAmount)
+          : Math.max(0, finalTotal - finalPaid);
+
+        if (finalPending === 0 && finalTotal > 0) {
+          finalPaymentStatus = 'Paid in Full';
+        } else if (finalPaid > 0 && finalPending > 0) {
+          finalPaymentStatus = 'Advance Paid';
+        } else if (finalTotal === 0) {
+          finalPaymentStatus = 'Paid in Full';
+        } else {
+          finalPaymentStatus = r.paymentStatus || 'Pending';
+        }
+      } else if (isTvmc) {
+        finalTotal = finalTotal > 0 ? finalTotal : 2500;
         finalPaid = 500;
-        finalPending = 4000;
+        finalPending = Math.max(0, finalTotal - 500);
+        finalPaymentStatus = 'Advance Paid';
+      } else if (isHrithik) {
+        finalTotal = finalTotal > 0 ? finalTotal : 4500;
+        finalPaid = 500;
+        finalPending = Math.max(0, finalTotal - 500);
         finalPaymentStatus = 'Advance Paid';
       } else {
-        // Remaining all non-host participants have paid full amount (including combos and offers)
+        // Default fallback for remaining participants: full payment completed
         finalPaid = finalTotal;
         finalPending = 0;
         if (finalPaymentStatus === 'Pending' || finalPaymentStatus === 'Submitted') {
@@ -2798,6 +2863,17 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
             <span>Accounts Verification Sheet (CSV)</span>
           </button>
 
+          {/* Sync Payment Columns to Supabase */}
+          <button
+            type="button"
+            onClick={handleSyncPaymentColumnsToSupabase}
+            disabled={isSyncingPaymentColumns}
+            className="px-3.5 py-2 rounded-xl font-bold text-xs uppercase tracking-wider text-emerald-950 bg-gradient-to-r from-emerald-300 via-teal-300 to-green-400 hover:brightness-110 transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-500/20 disabled:opacity-50"
+            title="Populates paid_amount, pending_amount, and total_fee directly into Supabase database table for all registrations"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-emerald-950 ${isSyncingPaymentColumns ? 'animate-spin' : ''}`} />
+            <span>{isSyncingPaymentColumns ? 'Syncing Supabase...' : 'Sync Payment Columns to Supabase'}</span>
+          </button>
         </div>
       </div>
 
@@ -3103,11 +3179,13 @@ export const Admin1RegistrationsPage: React.FC<Admin1RegistrationsPageProps> = (
                         <div className="font-bold font-mono text-xs">
                           {reg.college?.isHostCollege ? (
                             <span className="text-emerald-400">₹0 (Host Pass)</span>
-                          ) : reg.paymentStatus === 'Advance Paid' ? (
+                          ) : ((reg.pendingAmount !== undefined && reg.pendingAmount > 0) || reg.paymentStatus === 'Advance Paid') ? (
                             <div>
-                              <span className="text-amber-400">₹{reg.paidAmount !== undefined ? reg.paidAmount : 500}</span>
+                              <span className="text-amber-400">₹{reg.paidAmount !== undefined ? reg.paidAmount : 0}</span>
                               <span className="text-[10px] text-slate-400 ml-1">/ ₹{reg.totalAmount}</span>
-                              <span className="block text-[9px] text-amber-300 font-normal">Due: ₹{reg.pendingAmount !== undefined ? reg.pendingAmount : 4000}</span>
+                              <span className="block text-[9px] text-amber-300 font-normal">
+                                Due: ₹{reg.pendingAmount !== undefined ? reg.pendingAmount : Math.max(0, (Number(reg.totalAmount) || 0) - (Number(reg.paidAmount) || 0))}
+                              </span>
                             </div>
                           ) : (
                             <div>
@@ -5173,6 +5251,29 @@ ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS combo_id TEXT DEFAULT 
 ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS combo_name TEXT DEFAULT NULL;
 ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS combo_type TEXT DEFAULT NULL;
 ALTER TABLE public.registrations ADD COLUMN IF NOT EXISTS combo_discount_amount NUMERIC DEFAULT NULL;
+
+-- Backfill and reconcile payment columns (paid_amount, pending_amount, payment_status):
+UPDATE public.registrations AS r
+SET 
+  paid_amount = COALESCE(r.paid_amount, (SELECT p.amount_paid FROM public.payment_submissions p WHERE p.registration_id = r.id ORDER BY p.created_at DESC LIMIT 1), r.total_fee, 0),
+  pending_amount = GREATEST(0, COALESCE(r.total_fee, 0) - COALESCE(r.paid_amount, (SELECT p.amount_paid FROM public.payment_submissions p WHERE p.registration_id = r.id ORDER BY p.created_at DESC LIMIT 1), r.total_fee, 0)),
+  payment_status = CASE 
+    WHEN r.is_host_college = true THEN 'Paid in Full'
+    WHEN GREATEST(0, COALESCE(r.total_fee, 0) - COALESCE(r.paid_amount, (SELECT p.amount_paid FROM public.payment_submissions p WHERE p.registration_id = r.id ORDER BY p.created_at DESC LIMIT 1), r.total_fee, 0)) = 0 AND COALESCE(r.total_fee, 0) > 0 THEN 'Paid in Full'
+    WHEN COALESCE(r.paid_amount, (SELECT p.amount_paid FROM public.payment_submissions p WHERE p.registration_id = r.id ORDER BY p.created_at DESC LIMIT 1), 0) > 0 THEN 'Advance Paid'
+    ELSE 'Pending'
+  END
+WHERE r.paid_amount IS NULL OR r.pending_amount IS NULL;
+
+-- 1. Fix Tvmc dance crew advance payment (UTR: 667134329031): paid 500 advance, total 2500, due 2000
+UPDATE public.registrations
+SET total_fee = 2500, paid_amount = 500, pending_amount = 2000, payment_status = 'Advance Paid'
+WHERE team_name ILIKE '%tvmc%' OR id IN (SELECT registration_id FROM public.payment_submissions WHERE utr_number = '667134329031');
+
+-- 2. Fix Hrithik Roshan advance payment: paid 500 advance, total 4500, due 4000
+UPDATE public.registrations
+SET total_fee = 4500, paid_amount = 500, pending_amount = 4000, payment_status = 'Advance Paid'
+WHERE id IN (SELECT registration_id FROM public.participants WHERE full_name ILIKE '%hrithik%');
 
 CREATE TABLE IF NOT EXISTS public.participants (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

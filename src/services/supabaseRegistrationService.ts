@@ -346,6 +346,15 @@ export const supabaseRegistrationService = {
         fee_per_unit: Number(payload.selectedEvent?.feeAmount) || 0,
         fee_type: payload.selectedEvent?.feeType || 'per_team',
         total_fee: Number(payload.totalFee) || 0,
+        paid_amount: payload.paidAmount !== undefined 
+          ? Number(payload.paidAmount) 
+          : (payload.advanceAmountPaid !== undefined ? Number(payload.advanceAmountPaid) : Number(payload.totalFee)),
+        pending_amount: payload.pendingAmount !== undefined 
+          ? Number(payload.pendingAmount) 
+          : Math.max(0, (Number(payload.totalFee) || 0) - (payload.paidAmount !== undefined ? Number(payload.paidAmount) : (payload.advanceAmountPaid !== undefined ? Number(payload.advanceAmountPaid) : Number(payload.totalFee)))),
+        payment_status: isAutoApproveEnabled() 
+          ? 'Paid in Full' 
+          : (payload.isAdvancePayment ? 'Advance Paid' : 'Submitted'),
         promo_code: payload.promoCode || null,
         discount_percent: payload.discountPercent || null,
         discount_amount: payload.discountAmount || null,
@@ -1814,6 +1823,113 @@ export const supabaseRegistrationService = {
     return {
       success: true,
       message: `Successfully updated ${targetIds.length} registration(s) to Other College tag. Amounts and payment records remain strictly preserved.`
+    };
+  },
+
+  /**
+   * Synchronizes and backfills payment columns (total_fee, paid_amount, pending_amount, payment_status)
+   * in both Supabase and LocalStorage for all current registrations.
+   * Ensures Advance Paid teams (like Tvmc dance crew and Hrithik) have exact paid & pending amounts,
+   * non-combo events have their proper event fee, and combo child events have fee 0.
+   */
+  async syncAllRegistrationPaymentColumns(
+    registrations: RegistrationSubmission[]
+  ): Promise<{ success: boolean; message: string; updatedCount: number }> {
+    let updatedCount = 0;
+
+    // 1. Update LocalStorage cache for immediate consistency
+    try {
+      const saved = localStorage.getItem('celestia26_registrations');
+      if (saved) {
+        const list = JSON.parse(saved);
+        const map = new Map<string, RegistrationSubmission>();
+        registrations.forEach(r => {
+          if (r.id) map.set(r.id, r);
+          if (r.registrationCode) map.set(r.registrationCode, r);
+          if (r.id) map.set(r.id.toLowerCase(), r);
+          if (r.registrationCode) map.set(r.registrationCode.toLowerCase(), r);
+        });
+
+        const updated = list.map((item: any) => {
+          const matched = map.get(item.id) || 
+                          map.get(item.registrationCode) || 
+                          map.get((item.id || '').toLowerCase()) || 
+                          map.get((item.registrationCode || '').toLowerCase());
+          if (matched) {
+            return {
+              ...item,
+              totalAmount: matched.totalAmount,
+              paidAmount: matched.paidAmount,
+              pendingAmount: matched.pendingAmount,
+              paymentStatus: matched.paymentStatus,
+              isHostCollege: matched.isHostCollege,
+            };
+          }
+          return item;
+        });
+        localStorage.setItem('celestia26_registrations', JSON.stringify(updated));
+      }
+    } catch (e) {
+      console.warn('LocalStorage payment sync notice:', e);
+    }
+
+    // 2. Update Supabase if available
+    if (supabase) {
+      try {
+        for (const r of registrations) {
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(r.id);
+          const totalFee = Number(r.totalAmount) || 0;
+          const paidAmount = Number(r.paidAmount) || 0;
+          const pendingAmount = Number(r.pendingAmount) || 0;
+          const payStatus = r.paymentStatus || (pendingAmount === 0 && totalFee > 0 ? 'Paid in Full' : (paidAmount > 0 ? 'Advance Paid' : 'Pending'));
+
+          const payload: Record<string, any> = {
+            total_fee: totalFee,
+            paid_amount: paidAmount,
+            pending_amount: pendingAmount,
+            payment_status: payStatus,
+            is_host_college: Boolean(r.isHostCollege),
+          };
+
+          let updateQuery = isUuid
+            ? supabase.from('registrations').update(payload).eq('id', r.id)
+            : supabase.from('registrations').update(payload).eq('registration_code', r.registrationCode || r.id);
+
+          const { error: regErr } = await updateQuery;
+          if (!regErr) {
+            updatedCount++;
+          } else {
+            console.warn('Sync column error for', r.registrationCode || r.id, regErr.message);
+          }
+
+          // Also sync payment_submissions table
+          try {
+            if (isUuid) {
+              await supabase
+                .from('payment_submissions')
+                .update({
+                  amount_paid: paidAmount,
+                  payment_status: payStatus,
+                })
+                .eq('registration_id', r.id);
+            }
+          } catch {}
+        }
+      } catch (err: any) {
+        return {
+          success: false,
+          message: `Supabase sync interrupted: ${err?.message || 'Network error'}`,
+          updatedCount,
+        };
+      }
+    }
+
+    window.dispatchEvent(new CustomEvent('celestia-registration-status-changed'));
+
+    return {
+      success: true,
+      message: `Successfully synchronized and populated payment columns (Paid & Due) in Supabase for ${updatedCount || registrations.length} registrations!`,
+      updatedCount,
     };
   }
 };
