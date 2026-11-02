@@ -12,15 +12,12 @@ export interface EventRegistrationStatusMap {
 /**
  * Returns whether global registrations are open.
  * Default is CLOSED (false) as registrations for ALL events are now officially stopped.
+/**
+ * Returns whether global registrations are open.
+ * Unconditionally returns false (REGISTRATION CLOSED FOR ALL EVENTS).
  */
 export function isGlobalRegistrationOpen(): boolean {
-  try {
-    const val = localStorage.getItem(GLOBAL_STATUS_STORAGE_KEY);
-    if (val === 'true') return true; // Explicit admin override to re-open
-    return false; // Default is CLOSED for all events
-  } catch {
-    return false;
-  }
+  return false;
 }
 
 /**
@@ -28,9 +25,9 @@ export function isGlobalRegistrationOpen(): boolean {
  */
 export function setGlobalRegistrationOpen(isOpen: boolean): void {
   try {
-    localStorage.setItem(GLOBAL_STATUS_STORAGE_KEY, String(isOpen));
+    localStorage.setItem(GLOBAL_STATUS_STORAGE_KEY, 'false');
     window.dispatchEvent(new CustomEvent('celestia-registration-status-changed'));
-    saveStatusToSupabase(getEventRegistrationStatusMap(), isOpen);
+    saveStatusToSupabase(getEventRegistrationStatusMap(), false);
   } catch {}
 }
 
@@ -49,101 +46,10 @@ export function getEventRegistrationStatusMap(): EventRegistrationStatusMap {
 
 /**
  * Returns whether registration for a specific event is open.
- * All festival events (including Seraphia) default to OPEN (true) until explicitly toggled CLOSED by admin.
+ * Unconditionally returns false for ALL events (REGISTRATION CLOSED).
  */
-export function isEventRegistrationOpen(eventCodeOrId: string | undefined): boolean {
-  if (!isGlobalRegistrationOpen()) return false;
-  if (!eventCodeOrId) return true;
-
-  const normalized = eventCodeOrId.toLowerCase().trim();
-
-  // Seraphia (Solo Singing) registration is closed / stopped
-  if (normalized === 'seraphia' || normalized === 'solo-singing') {
-    const seraphiaOverride = typeof window !== 'undefined' ? localStorage.getItem('celestia_seraphia_manual_override') : null;
-    if (seraphiaOverride !== null) {
-      return seraphiaOverride === 'true';
-    }
-    return false;
-  }
-
-  // Star Fusion / Starfusion (Group Dance) registration is closed / stopped
-  if (
-    normalized === 'starfusion' ||
-    normalized === 'star fusion' ||
-    normalized === 'star-fusion' ||
-    normalized === 'group-dance'
-  ) {
-    return false;
-  }
-
-  // Memania / Mememania (Meme Competition) registration is closed / stopped
-  if (
-    normalized === 'mememania' ||
-    normalized === 'memania' ||
-    normalized === 'meme-mania' ||
-    normalized === 'meme mania' ||
-    normalized === 'meme-competition' ||
-    normalized === 'md01'
-  ) {
-    return false;
-  }
-
-  // Cineverse (Movie Recreation Reel) registration is closed / stopped
-  if (
-    normalized === 'cineverse' ||
-    normalized === 'cine-verse' ||
-    normalized === 'movie-recreation-reel' ||
-    normalized === 'reels' ||
-    normalized === 'md02'
-  ) {
-    return false;
-  }
-
-  // Elaris (Fashion Walk Solo) registration is closed / stopped
-  if (
-    normalized === 'elaris' ||
-    normalized === 'f01' ||
-    normalized === 'cosplay' ||
-    normalized === 'fashion-walk-solo'
-  ) {
-    const elarisOverride = typeof window !== 'undefined' ? localStorage.getItem('celestia_elaris_manual_override') : null;
-    if (elarisOverride !== null) {
-      return elarisOverride === 'true';
-    }
-    return false;
-  }
-
-  const map = getEventRegistrationStatusMap();
-
-  // 1. Direct exact key lookup in status map
-  if (map[eventCodeOrId] !== undefined) {
-    return map[eventCodeOrId];
-  }
-
-  // 2. Case-insensitive key lookup in status map
-  if (map[normalized] !== undefined) {
-    return map[normalized];
-  }
-
-  for (const [key, val] of Object.entries(map)) {
-    if (key.toLowerCase().trim() === normalized) {
-      return val;
-    }
-  }
-
-  // 3. Match against EVENTS_DATA by ID or Code in status map
-  const found = EVENTS_DATA.find(
-    (e) => e.id.toLowerCase() === normalized || e.code.toLowerCase() === normalized
-  );
-  if (found) {
-    if (map[found.id] !== undefined) return map[found.id];
-    if (map[found.code] !== undefined) return map[found.code];
-    if (map[found.id.toLowerCase()] !== undefined) return map[found.id.toLowerCase()];
-    if (map[found.code.toLowerCase()] !== undefined) return map[found.code.toLowerCase()];
-  }
-
-  // Default is OPEN for all other festival events
-  return true;
+export function isEventRegistrationOpen(_eventCodeOrId: string | undefined): boolean {
+  return false;
 }
 
 /**
