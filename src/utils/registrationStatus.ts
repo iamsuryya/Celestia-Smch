@@ -11,15 +11,15 @@ export interface EventRegistrationStatusMap {
 
 /**
  * Returns whether global registrations are open.
- * Always defaults to true (OPEN) until explicitly stopped by admin.
+ * Default is CLOSED (false) as registrations for ALL events are now officially stopped.
  */
 export function isGlobalRegistrationOpen(): boolean {
   try {
     const val = localStorage.getItem(GLOBAL_STATUS_STORAGE_KEY);
-    if (val === 'false') return false;
-    return true; // Default is OPEN
+    if (val === 'true') return true; // Explicit admin override to re-open
+    return false; // Default is CLOSED for all events
   } catch {
-    return true;
+    return false;
   }
 }
 
